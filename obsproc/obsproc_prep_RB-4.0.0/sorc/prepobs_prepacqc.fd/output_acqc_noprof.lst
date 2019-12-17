@@ -1,0 +1,2036 @@
+Page 1           Source Listing                  OUTPUT_ACQC_NOPROF
+2017-04-18 11:09                                 output_acqc_noprof.f
+
+      1 c$$$  Subprogram Documentation Block
+      2 c   BEST VIEWED WITH 94-CHARACTER WIDTH WINDOW
+      3 c
+      4 c Subprogram: output_acqc_noprof 
+      5 c   Programmer: D. Keyser       Org: NP22       Date: 2015-12-09
+      6 c
+      7 c Abstract: Reads an input, pre-PREPACQC PREPBUFR file and matches the subsets within to the
+      8 c   "merged" reports contained within the arrays output by the NRL aircraft QC subroutine
+      9 c   acftobs_qc. Calls subroutine tranQCflags to translate the QC information (for each
+     10 c   variable: pressure, altitude, temperature and moisture for the mass piece; and pressure,
+     11 c   altitude and wind for the wind piece) from NRL standards (c_qc array) to their NCEP
+     12 c   counterparts and to establish event reason codes for each variable. All of this QC
+     13 c   information is then encoded as event stacks in the output PREPBUFR file which will be
+     14 c   identical to the input PREPBUFR file except for the new events added by this program and
+     15 c   aircraft reports that are removed (possibly) for being outside the requested time window
+     16 c   or geographical domain).
+     17 c
+     18 c Program History Log:
+     19 c 2010-11-15  S. Bender  -- Original Author
+     20 c 2012-05-08  D. Keyser  -- Prepared for operational implementation
+     21 c 2012-11-20  J. Woollen -- Initial port to WCOSS
+     22 c 2013-02-07  D. Keyser  -- If the maximum number of merged reports that can be processed
+     23 c                           ("max_reps") is exceeded when updating reports in PREPBUFR file
+     24 c                           with QC changes, program will no longer stop with r.c. 31, as
+     25 c                           though there is an indexing error, instead all original reports
+     26 c                           above "max_reps" will be written out without any QC and a message
+     27 c                           will be printed to stdout (a diagnostic will have already been
+     28 c                           sent to the production joblog file in this case when reports were
+     29 c                           first read in by subroutine INPUT_ACQC)
+     30 c 2013-02-07  D. Keyser  -- Final changes to run on WCOSS: use formatted print statements
+     31 c                           where previously unformatted print was > 80 characters
+     32 c 2014-03-06  D. Keyser  -- Moved BUFRLIB routine OPENMB call to after time window and
+     33 c                           geographic domain checks to prevent creation of an empty, but
+     34 c                           open, BUFR message (type AIRCAR) in (rare) cases where absolutely
+     35 c                           no aircraft reports pass these checks (would cause a BUFRLIB
+     36 c                           abort due to previous message being open when attempting to copy
+     37 c                           first non-aircraft message from input to output PREPBUFR file
+     38 c 2015-03-16  D. Keyser  -- Fixed a bug which, for cases where the maximum number of merged
+     39 c                           reports that can be processed ("max_reps") is exceeded, prevented
+     40 c                           any original reports above "max_reps" from being written out
+     41 c                           (without any QC).
+     42 c 2015-12-09  D. Keyser  -- 
+     43 c                    - Variables holding latitude and longitude data (including input
+     44 c                      arguments "alat" and "alon") now double precision. XOB and YOB in
+     45 c                      PREPBUFR file now scaled to 10**5 (was 10**2) to handle new v7 AMDAR
+     46 c                      and MDCRS reports which have this higher precision.
+     47 c                      BENEFIT: Retains exact precison here. Improves QC processing.
+     48 c                         - The format for all print statements containing latitude and longitude
+     49 c                           changed to print to 5 decimal places.
+     50 c
+     51 c Usage: call output_acqc_noprof(inlun,outlun,nrpts4QC_pre,max_reps,
+     52 c                                bmiss,alat,alon,ht_ft,idt,c_qc,
+     53 c                                trad,l_otw,l_nhonly,
+     54 c                                ncep_qm_p,ncep_rc_p,
+     55 c                                ncep_qm_z,ncep_rc_z,
+     56 c                                ncep_qm_t,ncep_rc_t,
+     57 c                                ncep_qm_q,ncep_rc_q,
+
+Page 2           Source Listing                  OUTPUT_ACQC_NOPROF
+2017-04-18 11:09                                 output_acqc_noprof.f
+
+     58 c                                ncep_qm_w,ncep_rc_w,
+     59 c                                ncep_rej,
+     60 c                                nrlacqc_pc)
+     61 c
+     62 c   Input argument list:
+     63 c     inlun        - Unit number for the input pre-PREPACQC PREPBUFR file containing all data
+     64 c                    (separate mass/wind pieces)
+     65 c     outlun       - Unit number for the output PREPBUFR file containing all data plus now
+     66 c                    with NRLACQC events (separate mass/wind pieces)
+     67 c     nrpts4QC_pre - Number of reports in the "merged" single-level aircraft report arrays
+     68 c     max_reps     - Maximum number of reports accepted by acftobs_qc
+     69 c     bmiss        - BUFRLIB missing value (set in main program)
+     70 c     alat         - Array of latitudes for the "merged" reports 
+     71 c     alon         - Array of longitudes for the "merged" reports 
+     72 c     ht_ft        - Array of altitudes for the "merged" reports
+     73 c     idt          - Array of ob-cycle times for the "merged" reports (in seconds)
+     74 c     c_qc         - Array of NRLACQC quality information (11 char. string) ("merged" reports)
+     75 c     trad         - Time window radius for outputting reports (if l_otw=T) (read in via
+     76 c                    namelist)
+     77 c     l_otw        - Logical whether or not to eliminate reports outside the time window
+     78 c                    radius (trad) (read in via namelist)
+     79 c     l_nhonly     - Logical Whether or not to eliminate reports south of 20S latitude (i.e,
+     80 c                    outside the tropics and N. Hemisphere) (read in via namelist)
+     81 c     nrlacqc_pc   - PREPBUFR program code for the NRLACQC step
+     82 c
+     83 c   Output argument list:
+     84 c     ncep_qm_p    - Array of NCEP PREPBUFR quality marks on pressure for the "merged" reports
+     85 c     ncep_rc_p    - Array of NCEP PREPBUFR reason codes on pressure for the "merged" reports
+     86 c     ncep_qm_z    - Array of NCEP PREPBUFR quality marks on altitude for the "merged" rpts
+     87 c     ncep_rc_z    - Array of NCEP PREPBUFR reason codes on altitude for the "merged" rpts
+     88 c     ncep_qm_t    - Array of NCEP PREPBUFR quality marks on temperature for the "merged" rpts
+     89 c     ncep_rc_t    - Array of NCEP PREPBUFR reason codes on temperature for the "merged" rpts
+     90 c     ncep_qm_q    - Array of NCEP PREPBUFR quality marks on moisture for the "merged" reports
+     91 c     ncep_rc_q    - Array of NCEP PREPBUFR reason codes on moisture for the "merged" reports
+     92 c     ncep_qm_w    - Array of NCEP PREPBUFR quality marks on wind for the "merged" reports
+     93 c     ncep_rc_w    - Array of NCEP PREPBUFR reason codes on wind for the "merged" reports
+     94 c     ncep_rej     - Array indicating if "merged" report is (=0) or is not (=1) to be written
+     95 c                    to output PREPBUFR file
+     96 c   Input files:
+     97 c     Unit inlun   - PREPBUFR file containing all obs, prior to any processing by this program
+     98 c
+     99 c   Output files:
+    100 c     Unit 06      - Standard output print
+    101 c     Unit outlun  - PREPBUFR file identical to input except containing NRLACQC events
+    102 c
+    103 c   Subprograms called:
+    104 c     Unique:    TRANQCFLAGS
+    105 c     Library:
+    106 c       SYSTEM:  SYSTEM
+    107 c       W3NCO:   ERREXIT    W3TAGE
+    108 c	BUFRLIB: IREADMG    COPYMG     OPENMB     IREADSB    UFBINT     UFBCPY     WRITSB
+    109 c                WRITLC     CLOSMG     IBFMS
+    110 c
+    111 c   Exit States:
+    112 c     Cond =  0 - successful run
+    113 c            31 - indexing problem encountered when trying to match QC'd data in arrays to
+    114 c                 mass and wind pieces in original PREPBUFR file 
+
+Page 3           Source Listing                  OUTPUT_ACQC_NOPROF
+2017-04-18 11:09                                 output_acqc_noprof.f
+
+    115 c
+    116 c Remarks: Called by main program.
+    117 c
+    118 c Attributes:
+    119 c   Language: FORTRAN 90
+    120 c   Machine:  NCEP WCOSS
+    121 c
+    122 c$$$
+    123       subroutine output_acqc_noprof(inlun,outlun,nrpts4QC_pre,max_reps,
+    124      +                              bmiss,alat,alon,ht_ft,idt,c_qc,
+    125      +                              trad,l_otw,l_nhonly,
+    126      +                              ncep_qm_p,ncep_rc_p,
+    127      +                              ncep_qm_z,ncep_rc_z,
+    128      +                              ncep_qm_t,ncep_rc_t,
+    129      +                              ncep_qm_q,ncep_rc_q,
+    130      +                              ncep_qm_w,ncep_rc_w,
+    131      +                              ncep_rej,
+    132      +                              nrlacqc_pc)
+    133 
+    134       implicit none
+    135 
+    136 c ------------------------------
+    137 c Parameter statements/constants
+    138 c ------------------------------
+    139       integer    inlun              ! input unit number for pre-PREPACQC PREPBUFR file to
+    140                                     !  which we are adding NRLACQC events
+    141      +,          outlun             ! output unit number for post-PREPACQC PREPBUFR file
+    142                                     !  with added NRLACQC events
+    143      +,          max_reps           ! maximum number of input merged (mass + wind piece)
+    144                                     !  aircraft-type reports allowed
+    145       real       m2ft
+    146       parameter (m2ft = 3.28084)    ! conversion factor to convert m to ft
+    147 cvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+    148 c replace above with this in event of future switch to dynamic memory allocation
+    149 
+    150 calloc  integer    max_reps           ! original number of input reports obtained from
+    151 calloc                                !  first pass through to get total for array allocation
+    152 c^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    153       real*8     bmiss              ! BUFRLIB missing value (set in main program)
+    154 
+    155 
+    156 c ----------------------
+    157 c Declaration statements
+    158 c ----------------------
+    159 
+    160 c Variables for BUFRLIB interface
+    161 c -------------------------------
+    162       character*8  mesgtype          ! BUFR message type (e.g., 'AIRCFT  ')
+    163       integer      mesgdate          ! date time from BUFR message (YYYYMMDDHH)
+    164 
+    165 c Indices/counters 
+    166 c ----------------
+    167       integer      i,j               ! loop indices
+    168 
+    169       integer      nrpts4QC_pre      ! original number of input merged (mass + wind piece)
+    170                                      !  aircraft-type reports (read in from PREPBUFR file)
+    171 
+
+Page 4           Source Listing                  OUTPUT_ACQC_NOPROF
+2017-04-18 11:09                                 output_acqc_noprof.f
+
+    172 c Functions
+    173 c ---------
+    174       integer      ireadmg           ! BUFRLIB - for reading messages 
+    175      +,            ireadsb           ! BUFRLIB - for reading subsets
+    176      +,            ibfms             ! BUFRLIB - for testing for missing
+    177 
+    178       character*11 c_qc(max_reps)    ! character QC flags output from NRL QC code
+    179                                      !   1st char - info about reject (if ob was rejected)
+    180                                      !   2nd char - reason why time was rejected
+    181                                      !   3rd char - reason why latitude was rejected
+    182                                      !   4th char - reason why longitude was rejected
+    183                                      !   5th char - reason why pressure/atitude was rejected
+    184                                      !   6th char - readon why temperature was rejected
+    185                                      !   7th char - reason why wind direction was rejected
+    186                                      !   8th char - reason why wind speed was rejected
+    187                                      !   9th char - reason why mixing ratio was rejected
+    188                                      !  10th char - reason for blacklisting the aircraft
+    189                                      !  11th char - info about flight phase
+    190 
+    191       real*8       alat(max_reps)    ! latitude
+    192      +,            alon(max_reps)    ! longitude
+    193       real         ht_ft(max_reps)   ! altitude in feet
+    194       integer      idt(max_reps)     ! time in seconds to anal. time (- before, + after)
+    195       integer      ncep_qm_p(max_reps) ! NCEP PREPBUFR quality mark pressure (PQM)
+    196      +,            ncep_rc_p(max_reps) ! NCEP PREPBUFR NRLACQC pressure event reason code(PRC)
+    197      +,            ncep_qm_z(max_reps) ! NCEP PREPBUFR quality mark on altitude (ZQM)
+    198      +,            ncep_rc_z(max_reps) ! NCEP PREPBUFR NRLACQC alt/hght event reason code(ZRC)
+    199      +,            ncep_qm_t(max_reps) ! NCEP PREPBUFR quality mark on temperature (TQM)
+    200      +,            ncep_rc_t(max_reps) ! NCEP PREPBUFR NRLACQC temperature evnt rea. code(TRC)
+    201      +,            ncep_qm_q(max_reps) ! NCEP PREPBUFR quality mark on moisture (QQM)
+    202      +,            ncep_rc_q(max_reps) ! NCEP PREPBUFR NRLACQC moisture reason code (QRC)
+    203      +,            ncep_qm_w(max_reps) ! NCEP PREPBUFR quality mark on wind (WQM)
+    204      +,            ncep_rc_w(max_reps) ! NCEP PREPBUFR NRLACQC wind event reason code (WRC)
+    205      +,            ncep_rej(max_reps)  ! NCEP PREPBUFR rejection indicator
+    206 
+    207 c Variables for reading (writing) numeric data out of (in to) BUFR files via BUFRLIB
+    208 c ----------------------------------------------------------------------------------
+    209       real*8       arr_8(10,10)      ! array holding BUFR subset values from BUFRLIB call to
+    210                                      !  input PREPBUFR file
+    211      +,            dhr_corr(2)       ! array holding rehabilitated time (DHR TCOR)
+    212      +,            yob_corr(3)       ! array holding rehabilitated latitude (YOB YCOR YORG)
+    213      +,            xob_corr(3)       ! array holding rehabilitated longitude (XOB XCOR XORG)
+    214 
+    215       integer      nlev              ! number of report levels returned from BUFRLIB call
+    216                                      !  (should always be 1 !)
+    217       integer      iret              ! return code for call to BUFRLIB routine ufbint when
+    218                                      !  writing to PREPBUFR file
+    219 
+    220 c Variables for updating input PREPBUFR reports with QC results/events from NRLACQC
+    221 c ---------------------------------------------------------------------------------
+    222       integer      ninssrd           ! number of subsets read in from the input PREPBUFR file
+    223      +,            QCdrptsidx        ! index for report-oriented arrays that are output from
+    224                                      !  acftobs_qc
+    225 
+    226       real*8    p_event(4)          ! array used to update a pressure event stack
+    227      +,         z_event(4)          ! array used to update an altitude event stack 
+    228      +,         t_event(4)          ! array used to update a temperature event stack
+
+Page 5           Source Listing                  OUTPUT_ACQC_NOPROF
+2017-04-18 11:09                                 output_acqc_noprof.f
+
+    229      +,	        q_event(4)          ! array used to update a moisture event stack
+    230      +,	        w_event(5)          ! array used to update a wind event stack
+    231 
+    232       logical   l_eventupdate       ! T = event was added for the last PREPBUFR report read
+    233                                     ! F = no events were added to the last PREPBUFR rpt read
+    234 
+    235       integer   input_sqn           ! sequence number of input PREPBUFR report for which we
+    236                                     !  are attempting to add events
+    237      +,         input_sqn_last      ! sequence number of previous PREPBUFR report for which
+    238                                     !  we had attempted to add events
+    239       real*8    input_alat          ! latitude of input PREPBUFR report for which we are 
+    240                                     !  attempting to add events
+    241      +,         input_alon          ! longitude of input PREPBUFR report for which we are
+    242                                     !  attempting to add events
+    243       real      input_ht_ft         ! altitude of input PREPBUFR report for which we are
+    244                                     !  attempting to add events
+    245      +,         input_dhr           ! ob time - cycle time in decimal hours
+    246  
+    247       integer   input_idt           ! ob time - cycle time in seconds of input PREPBUFR
+    248                                     !  report for which we are attempting to add events
+    249      +,         input_typ           ! PREPBUFR report type for input report for which we are
+    250                                     !  attempting to add events
+    251       logical   l_badrpt_p          ! T = pressure/altitude is bad per NRLACQC info (c_qc)
+    252      +,         l_badrpt_z          ! T = pressure/altitude is bad per NRLACQC info (c_qc)
+    253      +,         l_badrpt_t          ! T = temperature is bad per NRLACQC info (c_qc)
+    254      +,         l_badrpt_q          ! T = moisture is bad per NRLACQC info (c_qc)
+    255      +,         l_badrpt_w          ! T = wind is bad per NRLACQC info (c_qc)
+    256 
+    257       logical   l_duprpt            ! T = report is marked as a duplicate per NRLACQC info
+    258                                     !  (c_qc(1:1)=D/d)
+    259 
+    260       integer   ipqm_topstk         ! event PQM at top of stack before adding any events 
+    261                                     !  containing info from NRLACQC
+    262      +,         izqm_topstk         ! event ZQM at top of stack before adding any events
+    263                                     !  containing info from NRLACQC
+    264      +,         itqm_topstk         ! event TQM at top of stack before adding any events
+    265                                     !  containing info from NRLACQC
+    266      +,	        iqqm_topstk         ! event QQM at top of stack before adding any events
+    267                                     !  containing info from NRLACQC
+    268      +,	        iwqm_topstk         ! event WQM at top of stack before adding any events
+    269                                     !  containing info from NRLACQC
+    270 
+    271       integer   ipqm_nrlacqc     ! value for pressure q.m. (PQM) returned from tranQCflags
+    272      +,         iprc_nrlacqc     ! value for pressure r.c. (PRC) returned from tranQCflags
+    273      +,         izqm_nrlacqc     ! value for altitude q.m. (ZQM) returned from tranQCflags
+    274      +,         izrc_nrlacqc     ! value for altitude r.c. (ZRC) returned from tranQCflags
+    275      +,         itqm_nrlacqc     ! value for temperature q.m. (TQM) returned from tranQCflags
+    276      +,         itrc_nrlacqc     ! value for temperature r.c. (TRC) returned from tranQCflags
+    277      +,         iqqm_nrlacqc     ! value for moisture q.m. (QQM) returned from tranQCflags
+    278      +,         iqrc_nrlacqc     ! value for moisture r.c. (QRC) returned from tranQCflags
+    279      +,         iwqm_nrlacqc     ! value for wind q.m. (WQM) returned from tranQCflags
+    280      +,         iwrc_nrlacqc     ! value for wind r.c. (WRC) returned from tranQCflags
+    281 
+    282 c Event counters
+    283 c --------------
+    284       integer   nevrd(5)
+    285       integer   nevwrt(5)           ! number of [p,z,t,q,w] events written to output PREPBUFR
+
+Page 6           Source Listing                  OUTPUT_ACQC_NOPROF
+2017-04-18 11:09                                 output_acqc_noprof.f
+
+    286                                     !  file
+    287       integer   nev_noupd(5)        ! number of subsets from input PREPBUFR file with no
+    288                                     !  updated [p,z,t,q,w] event
+    289       integer   qm_knt(5,0:15,0:15) ! count of [p,z,t,q,w] NCEP quality marks changed from i
+    290                                     !  (input PREPBUFR value) to j (output PREPBUFR value)
+    291                                     !  by NRLACQC
+    292       integer   p_qm_knt_tot        ! total number of pressure QMs (and therefore events)
+    293                                     !  added to the output PREPBUFR file
+    294      +,         z_qm_knt_tot        ! total number of altitude QMs (and therefore events)
+    295                                     !  added to the output PREPBUFR file
+    296      +,         t_qm_knt_tot        ! total number of temperature QMs (and therefore events)
+    297                                     !  added to the output PREPBUFR file
+    298      +,         q_qm_knt_tot        ! total number of moisture QMs (and therefore events)
+    299                                     !  added to the output PREPBUFR file
+    300      +,         w_qm_knt_tot        ! total number of wind QMs (and therefore events)
+    301                                     !  added to the output PREPBUFR file
+    302 
+    303       integer   npqm_msg_in         ! number of PQM that are missing in input PREPBUFR file
+    304      +,         npqm_msg_out        ! number of PQM that are missing in output PREPBUFR file
+    305      +,         nzqm_msg_in         ! number of ZQM that are missing in input PREPBUFR file
+    306      +,         nzqm_msg_out        ! number of ZQM that are missing in output PREPBUFR file
+    307      +,         ntqm_msg_in         ! number of TQM that are missing in input PREPBUFR file
+    308      +,         ntqm_msg_out        ! number of TQM that are missing in output PREPBUFR file
+    309      +,         nqqm_msg_in         ! number of QQM that are missing in input PREPBUFR file
+    310      +,         nqqm_msg_out        ! number of QQM that are missing in output PREPBUFR file
+    311      +,         nwqm_msg_in         ! number of WQM that are missing in input PREPBUFR file
+    312      +,         nwqm_msg_out        ! number of WQM that are missing in output PREPBUFR file
+    313 
+    314 c Switches controlling processing (read in from namelist in main program)
+    315 c -----------------------------------------------------------------------
+    316       real      trad            ! Time window radius for outputting reports (if l_otw=T)
+    317       logical   l_otw           ! T=eliminate reports outside cycle time window radius (trad)
+    318      +,         l_nhonly        ! T=filter out obs outside tropics and Northern Hemisphere
+    319 
+    320 c Counters
+    321       integer   elim_knt(2,3)   ! Count of input PREPBUFR reports (subsets) eliminated from
+    322                                 !  write to output PREPBUFR file, and those kept for write to
+    323                                 !  output PREPBUFR file -
+    324                                 !  first index, message type: 1 - AIRCFT, 2 - AIRCAR
+    325                                 !  second index:
+    326                                 !    1 - # of reports (subsets) eliminated due to being
+    327                                 !         outside time window radius (prior to any
+    328                                 !         geographical domain checking)
+    329                                 !    2 - # of reports (subsets) eliminated due to being
+    330                                 !         outside geographical domain (had passed time window
+    331                                 !         radius check)
+    332                                 !    3 - # of reports (subsets) passing both time window
+    333                                 !         radius and geographical domain checks and thus
+    334                                 !         retained for processing into output PREPBUFR file
+    335 
+    336 
+    337 c Variables to add NRLACQC quality marks to reports
+    338 c -------------------------------------------------
+    339       character*11 c_nrlqm                    ! variable used to store NRLACQC quality marks
+    340                                               !  in output PREPBUFR file
+    341 
+    342 c MISC
+
+Page 7           Source Listing                  OUTPUT_ACQC_NOPROF
+2017-04-18 11:09                                 output_acqc_noprof.f
+
+    343 c ----
+    344       real         nrlacqc_pc ! PREPBUFR program code for the NRLACQC step
+    345 
+    346       logical      l_skip     ! If true, skip block of code, otherwise exectute block of code
+    347       logical      l_hit_limit! If true, hit limit for number of reports that can be QC'd
+    348 
+    349       integer      i_hit_limit_first ! flag indicating whether l_hit_limit has occurred prior
+    350                                      !  to this point (if yes, = 1; if no, = 0)
+    351 
+    352 c *******************************************************************
+    353 
+    354 c Initialize variables
+    355 c --------------------
+    356       nevwrt      =    0
+    357       ninssrd     =    0
+    358       ncep_qm_p   = 9999
+    359       ncep_rc_p   = 9999
+    360       ncep_qm_z   = 9999
+    361       ncep_rc_z   = 9999
+    362       ncep_qm_t   = 9999
+    363       ncep_rc_t   = 9999
+    364       ncep_qm_q   = 9999
+    365       ncep_rc_q   = 9999
+    366       ncep_qm_w   = 9999
+    367       ncep_rc_w   = 9999
+    368       ncep_rej    =    0
+    369       elim_knt    =    0
+    370 
+    371       i_hit_limit_first = 0
+    372 
+    373       npqm_msg_in       = 0
+    374       npqm_msg_out      = 0
+    375       nzqm_msg_in       = 0
+    376       nzqm_msg_out      = 0
+    377       ntqm_msg_in       = 0
+    378       ntqm_msg_out      = 0
+    379       nqqm_msg_in       = 0
+    380       nqqm_msg_out      = 0
+    381       nwqm_msg_in       = 0
+    382       nwqm_msg_out      = 0
+    383 
+    384       p_qm_knt_tot      = 0
+    385       z_qm_knt_tot      = 0
+    386       t_qm_knt_tot      = 0
+    387       q_qm_knt_tot      = 0
+    388       w_qm_knt_tot      = 0
+    389 
+    390 c Start subroutine
+    391 c ----------------
+    392       write(*,*)
+    393       write(*,*) '******************************'
+    394       write(*,*) 'Welcome to output_acqc_noprof.'
+    395       call system('date')
+    396       write(*,*) '******************************'
+    397       write(*,*)
+    398 
+    399 c ----------------------------------------------------------------------
+
+Page 8           Source Listing                  OUTPUT_ACQC_NOPROF
+2017-04-18 11:09                                 output_acqc_noprof.f
+
+    400 c Translate NRLACQC flags to NCEP events and add events to PREPBUFR file
+    401 c ----------------------------------------------------------------------
+    402       l_eventupdate = .false.
+    403 
+    404       print *
+    405       print *, 'Input/Output PREPBUFR files are open.'
+    406       print *
+    407       print *, 'Reading input PREPBUFR file...'
+    408       print *, 'Applying NRLACQC events to reports...'
+    409 
+    410       QCdrptsidx = 0       ! starting point for QC'd data arrays' index
+    411       input_sqn_last = -99 ! initial value for last report's sequence number (ensures no
+    412                            !  match for first report read in)
+    413 
+    414       l_hit_limit = .false.
+    415 
+    416       do while(ireadmg(inlun,mesgtype,mesgdate).eq.0)
+    417 
+    418         if(mesgtype.ne.'AIRCFT'.and.mesgtype.ne.'AIRCAR') then
+    419           if(l_eventupdate) then ! need to close leftover AIRCAR or AIRCFT message originally
+    420                                  !  opened by openmb before copymg can copy over an entire
+    421                                  !  message from input to output
+    422             call closmg(outlun)
+    423             l_eventupdate = .false.
+    424           endif
+    425 
+    426           call copymg(inlun,outlun) ! for non-aircraft BUFR messages, just copy to output
+    427         else
+    428           do while(ireadsb(inlun).eq.0)
+    429 
+    430 c Initialize variables
+    431 c --------------------
+    432             ipqm_topstk = 9999
+    433             izqm_topstk = 9999
+    434             itqm_topstk = 9999
+    435             iqqm_topstk = 9999
+    436             iwqm_topstk = 9999
+    437 
+    438             ninssrd = ninssrd + 1   ! number of input subsets read
+    439 
+    440 c Unpack lat/lon, altitude, ob time, report type and sequence number - will be used to make
+    441 c  sure PREPBUFR and QC'd obs are lining up OK
+    442 c -----------------------------------------------------------------------------------------
+    443             call ufbint(inlun,arr_8,10,10,nlev,
+    444      +                  'YOB XOB ELV DHR TYP SQN SID')
+    445 
+    446             input_alat = arr_8(1,1)
+    447             input_alon = arr_8(2,1)
+    448             input_ht_ft = nint(arr_8(3,1)*m2ft)
+    449             input_dhr = arr_8(4,1)    
+    450             input_idt = nint(arr_8(4,1)*3600.)    
+    451             input_typ = nint(arr_8(5,1))
+    452             input_sqn = nint(arr_8(6,1))
+    453             if(input_sqn.ne.input_sqn_last) then
+    454 
+    455 c This input report's sequence number is different that that for the previous report read in
+    456 c  - we are at the next report in the QC'd data arrays so increment index QCdrptsidx by 1
+
+Page 9           Source Listing                  OUTPUT_ACQC_NOPROF
+2017-04-18 11:09                                 output_acqc_noprof.f
+
+    457               QCdrptsidx = QCdrptsidx + 1
+    458 ccccc         if(QCdrptsidx.eq.47955) print *,'WE ARE AT ',QCdrptsidx,'!'
+    459 
+    460               if(QCdrptsidx.gt.nrpts4QC_pre) then 
+    461 
+    462 c .... the number of merged mass + wind reports read in from the input (non-QC'd) PREPBUFR
+    463 c      file exceeds the number of reports QC'd in acftobs_qc - likely due to there being more
+    464 c      than "max_reps" merged arcraft reports in the input PREPBUFR file -- in this case no
+    465 c      more input PREPBUFR aircraft reports can be QC'd - all remaining reports in input
+    466 c      PREPBUFR file will be copied to output PREPBUFR file but they will not be QC'd
+    467                 if(i_hit_limit_first.eq.0)  then
+    468                   print *
+    469                   print *, '#####VVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV'
+    470                   print *, 'WARNING: QD''d data array index exceeds ',
+    471      +             'the limit of ', nrpts4QC_pre,' - no more reports ',
+    472      +             'can be QC''d'
+    473                   print *, '#####^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^'
+    474                   print *
+    475                 endif
+    476                 i_hit_limit_first = 1
+    477                 l_hit_limit = .true.
+    478                 go to 3400
+    479               endif
+    480 
+    481               if(QCdrptsidx.gt.1) then
+    482                 if(c_qc(QCdrptsidx-1)(2:2).eq.'R'.or.       ! time reabilitated
+    483      +             c_qc(QCdrptsidx-1)(3:3).eq.'R'.or.       ! latitude reabilitated
+    484      +             c_qc(QCdrptsidx-1)(4:4).eq.'R'.or.       ! longitude reabilitated
+    485      +             c_qc(QCdrptsidx-1)(5:5).eq.'R'.or.       ! pressure/altitude reabilitated
+    486      +             c_qc(QCdrptsidx-1)(6:6).eq.'R'.or.       ! temperature reabilitated
+    487      +             c_qc(QCdrptsidx-1)(5:5).eq.'r') print 65 ! pressure/altitude reabilitated
+    488    65 format(131('^'))
+    489               endif
+    490               if(c_qc(QCdrptsidx)(2:2).eq.'R'.or.           ! time reabilitated
+    491      +           c_qc(QCdrptsidx)(3:3).eq.'R'.or.           ! latitude reabilitated
+    492      +           c_qc(QCdrptsidx)(4:4).eq.'R'.or.           ! longitude reabilitated
+    493      +           c_qc(QCdrptsidx)(5:5).eq.'R'.or.           ! pressure/altitude reabilitated
+    494      +           c_qc(QCdrptsidx)(6:6).eq.'R'.or.           ! temperature reabilitated
+    495      +           c_qc(QCdrptsidx)(5:5).eq.'r') then         ! pressure/altitude reabilitated
+    496                 print 61
+    497    61 format(131('v'))
+    498                 if(c_qc(QCdrptsidx)(2:2).eq.'R') then
+    499 
+    500 c Case where time was rehabiltated by NRLACQC, make note of it
+    501 c ------------------------------------------------------------
+    502                   print 62,  QCdrptsidx,arr_8(7,1),input_alat,
+    503      +                       input_alon,input_dhr,nint(arr_8(3,1)),
+    504      +                       c_qc(QCdrptsidx)
+    505    62 format(' TIME rehabilitated: input rpt # ',i6,': id ',A8,
+    506      + ', lat ',f9.5,', lon ',f9.5,', dhr ',f10.5,', hght(m)',i6,
+    507      + ', NRLQMS "',A11,'"')
+    508                   print 63, input_dhr,input_idt
+    509    63 format(' INPUT time from PRE-QC PREPBUFR file [DHR,idt(sec)] ',
+    510      + 'is: ',f10.5,i8)
+    511                   print 64, idt(QCdrptsidx)/3600.,idt(QCdrptsidx)
+    512    64 format(' REHABILITATED time from  acftobs_qc  [DHR,idt(sec)] ',
+    513      + 'is: ',f10.5,i8)
+
+Page 10          Source Listing                  OUTPUT_ACQC_NOPROF
+2017-04-18 11:09                                 output_acqc_noprof.f
+
+    514                 endif
+    515                 if(c_qc(QCdrptsidx)(3:3).eq.'R') then
+    516 
+    517 c Case where latitude was rehabiltated by NRLACQC, make note of it
+    518 c ----------------------------------------------------------------
+    519                   print 72,  QCdrptsidx,arr_8(7,1),input_alat,
+    520      +                       input_alon,input_dhr,nint(arr_8(3,1)),
+    521      +                       c_qc(QCdrptsidx)
+    522    72 format(' LAT  rehabilitated: input rpt # ',i6,': id ',A8,
+    523      + ', lat ',f9.5,', lon ',f9.5,', dhr ',f10.5,', hght(m)',i6,
+    524      + ', NRLQMS "',A11,'"')
+    525                   print 73, input_alat
+    526    73 format(' INPUT latitude from PRE-QC PREPBUFR file (YOB) is: ',
+    527      + f9.5)
+    528                   print 74, alat(QCdrptsidx)
+    529    74 format(' REHABILITATED latitude from  acftobs_qc  (YOB) is: ',
+    530      + f9.5)
+    531                 endif
+    532                 if(c_qc(QCdrptsidx)(4:4).eq.'R') then
+    533 
+    534 c Case where longitude was rehabiltated by NRLACQC, make note of it
+    535 c -----------------------------------------------------------------
+    536                   print 82,  QCdrptsidx,arr_8(7,1),input_alat,
+    537      +                       input_alon,input_dhr,nint(arr_8(3,1)),
+    538      +                       c_qc(QCdrptsidx)
+    539    82 format(' LON  rehabilitated: input rpt # ',i6,': id ',A8,
+    540      + ', lat ',f9.5,', lon ',f9.5,', dhr ',f10.5,', hght(m)',i6,
+    541      + ', NRLQMS "',A11,'"')
+    542                   print 83, input_alon
+    543    83 format(' INPUT longitude from PRE-QC PREPBUFR file (XOB) is: ',
+    544      + f9.5)
+    545                   print 84, alon(QCdrptsidx)
+    546    84 format(' REHABILITATED longitude from  acftobs_qc  (XOB) is: ',
+    547      + f9.5)
+    548                 endif
+    549                 if(c_qc(QCdrptsidx)(5:5).eq.'R'.or.
+    550      +             c_qc(QCdrptsidx)(5:5).eq.'r') then
+    551 
+    552 c Case where pressure/altitude was rehabiltated by NRLACQC, make note of it
+    553 c -------------------------------------------------------------------------
+    554                   print 92,  QCdrptsidx,arr_8(7,1),input_alat,
+    555      +                       input_alon,input_dhr,nint(arr_8(3,1)),
+    556      +                       c_qc(QCdrptsidx)
+    557    92 format(' P/A  rehabilitated: input rpt # ',i6,': id ',A8,
+    558      + ', lat ',f9.5,', lon ',f9.5,', dhr ',f10.5,', hght(m)',i6,
+    559      + ', NRLQMS "',A11,'"')
+    560                   print 93
+    561    93 format(' %%%%%%%%%%'/' %%%%% WARNING: Currently not accounted ',
+    562      +       'for in output PREPBUFR file'/' %%%%%%%%%%')
+    563                 endif
+    564                 if(c_qc(QCdrptsidx)(6:6).eq.'R') then
+    565 
+    566 c Case where temperature was rehabiltated by NRLACQC, make note of it
+    567 c -------------------------------------------------------------------
+    568                   print 102,  QCdrptsidx,arr_8(7,1),input_alat,
+    569      +                       input_alon,input_dhr,nint(arr_8(3,1)),
+    570      +                       c_qc(QCdrptsidx)
+
+Page 11          Source Listing                  OUTPUT_ACQC_NOPROF
+2017-04-18 11:09                                 output_acqc_noprof.f
+
+    571   102 format(' TMP  rehabilitated: input rpt # ',i6,': id ',A8,
+    572      + ', lat ',f9.5,', lon ',f9.5,', dhr ',f10.5,', hght(m)',i6,
+    573      + ', NRLQMS "',A11,'"')
+    574                   print 93
+    575                 endif
+    576               endif
+    577             endif
+    578 
+    579             dhr_corr = bmiss
+    580             yob_corr = bmiss
+    581             xob_corr = bmiss
+    582             if(c_qc(QCdrptsidx)(2:2).eq.'R') then ! Rehabilitated time
+    583               dhr_corr(1) = idt(QCdrptsidx)/3600. ! Store updated d-time (DHR)
+    584               dhr_corr(2) = 3                     ! Set correction indicator (TCOR) to 3
+    585                                                   ! Original time already stored in RPT
+    586               input_idt = idt(QCdrptsidx)         ! Prevents match check below from failing
+    587               input_dhr = idt(QCdrptsidx)/3600.   ! Allows time window check below to use
+    588                                                   !  rehabilitated time
+    589             endif
+    590             if(c_qc(QCdrptsidx)(3:3).eq.'R') then ! Rehabilitated latitude
+    591               yob_corr(1) = alat(QCdrptsidx)      ! Store updated latitude (YOB)
+    592               yob_corr(2) = 3                     ! Set correction indicator (YCOR) to 3
+    593               yob_corr(3) = input_alat            ! Store original latitude (YORG)
+    594               input_alat = alat(QCdrptsidx)       ! Prevents match check below from failing
+    595                                                   !  and allows geographic domain check below
+    596                                                   !  to use rehabilitated latitude
+    597             endif
+    598             if(c_qc(QCdrptsidx)(4:4).eq.'R') then ! Rehabilitated longitude
+    599               xob_corr(1) = alon(QCdrptsidx)      ! Store updated longitude (XOB)
+    600               xob_corr(2) = 3                     ! Set correction indicator (XCOR) to 3
+    601               xob_corr(3) = input_alon            ! Store original longitude (XORG)
+    602               input_alon = alon(QCdrptsidx)       ! Prevents match check below from failing
+    603                                                   !  and allows geographic domain check below
+    604                                                   !  to use rehabilitated longitude
+    605             endif
+    606 
+    607             input_sqn_last = input_sqn
+    608 
+    609 c At every 10,000'th QC'd (merged mass + wind) aircraft-type report and at last report, test
+    610 c  its lat/lon, time and altitude against corresponding PREPBUFR report values - if values DO
+    611 c  NOT match, PROBLEM!!!
+    612 c -------------------------------------------------------------------------------------------
+    613             if(mod(QCdrptsidx,10000).eq.0.or.
+    614      +         QCdrptsidx.eq.nrpts4QC_pre) then
+    615               print *, 'ipoint match check at report # ',QCdrptsidx
+    616      	      if(alat(QCdrptsidx).ne.input_alat .or.
+    617      +	         alon(QCdrptsidx).ne.input_alon .or.
+    618      +	         ht_ft(QCdrptsidx).ne.input_ht_ft .or.
+    619      +	         idt(QCdrptsidx).ne. input_idt) then
+    620                 print *, 'NO MATCH AT QCdrptsidx = ',QCdrptsidx
+    621                 print'(" Indexing problem... could not find the ",
+    622      +                 "current input PREPBUFR report in the report-",
+    623      +	               "oriented arrays.")'
+    624                 print *, 'EXITING PROGRAM.'
+    625      
+    626                 call w3tage('PREPOBS_PREPACQC')
+    627                 call  errexit(31)
+
+Page 12          Source Listing                  OUTPUT_ACQC_NOPROF
+2017-04-18 11:09                                 output_acqc_noprof.f
+
+    628               endif
+    629               print *, 'MATCH AT QCdrptsidx = ',QCdrptsidx
+    630      	    endif
+    631 
+    632  3400       continue
+    633 
+    634 c Before processing this input PREPBUFR report (subset) any further, make sure it is within
+    635 c  the requested time window (defined by namelist switch trad) and it is within the requested
+    636 c  geographical domain (here north of 20S latitude, if namelist switch l_nhonly is true)
+    637 c -------------------------------------------------------------------------------------------
+    638 
+    639             if(l_otw) then ! check if report (subset) is outside time window (prior to any
+    640                            ! geographical domain checking)
+    641               if(input_dhr.lt.-trad.or.input_dhr.gt.trad) then
+    642                 if(mesgtype.eq.'AIRCFT') then
+    643                   elim_knt(1,1) = elim_knt(1,1) + 1
+    644                 elseif(mesgtype.eq.'AIRCAR') then
+    645                   elim_knt(2,1) = elim_knt(2,1) + 1
+    646                 endif
+    647                 if(.not.l_hit_limit) then
+    648                   ncep_rej(QCdrptsidx) = 1
+    649                 endif
+    650                 cycle ! don't write this subset to output file, move on to next subset
+    651               endif
+    652             endif
+    653 
+    654             if(l_nhonly) then ! if report (subset) passed time window radius check, then
+    655                               !  check to see if it is outside geographical domain (i.e.,
+    656                               !  south of 20S)
+    657               if(input_alat.lt.-20.0) then
+    658                 if(mesgtype.eq.'AIRCFT') then
+    659                   elim_knt(1,2) = elim_knt(1,2) + 1
+    660                 elseif(mesgtype.eq.'AIRCAR') then
+    661                   elim_knt(2,2) = elim_knt(2,2) + 1
+    662                 endif
+    663                 if(.not.l_hit_limit) then
+    664                   ncep_rej(QCdrptsidx) = 1
+    665                 endif
+    666                 cycle ! don't write this subset to output file, move on to next subset
+    667               endif
+    668             endif
+    669 
+    670 c Counter for number of PREPBUFR reports (subsets) kept
+    671 c -----------------------------------------------------
+    672             if(mesgtype.eq.'AIRCFT') then
+    673               elim_knt(1,3) = elim_knt(1,3) + 1
+    674             elseif(mesgtype.eq.'AIRCAR') then
+    675               elim_knt(2,3) = elim_knt(2,3) + 1
+    676             endif
+    677 
+    678 c If the report passes the time window and geographic domain checks, copy the subset to the
+    679 c  output PREPBUFR file in anticipation of adding events
+    680 c -----------------------------------------------------------------------------------------
+    681             call openmb(outlun,mesgtype,mesgdate) 
+    682 
+    683             call ufbcpy(inlun,outlun)
+    684 
+
+Page 13          Source Listing                  OUTPUT_ACQC_NOPROF
+2017-04-18 11:09                                 output_acqc_noprof.f
+
+    685             if(l_hit_limit) then
+    686 
+    687 c If this subset exceeds the "max_rep" limit, don't attempt to add QC to it because there is
+    688 c  none, instead just write subset to the output PREPBUFR file and move on to next subset
+    689 c  (which won't be QC'd either)
+    690 c-------------------------------------------------------------------------------------------
+    691 
+    692                call writsb(outlun)
+    693                cycle
+    694             endif
+    695 
+    696             if(c_qc(QCdrptsidx)(2:2).eq.'R') then
+    697 
+    698 c Encode rehabilitated time and time correction indicator
+    699 c -------------------------------------------------------
+    700               print 66, dhr_corr,input_typ,QCdrptsidx
+    701    66 format(' ENCODE REHABILITATED time ',f10.5, ' as DHR with TCOR=',
+    702      + f3.0,' into PREPBUFR file, rtyp = ',i3,', for input report # ',
+    703      + i8)
+    704               call ufbint(outlun,dhr_corr,2,1,iret,'DHR TCOR')
+    705             endif
+    706             if(c_qc(QCdrptsidx)(3:3).eq.'R') then
+    707 
+    708 c Encode rehabilitated latitude, latitude correction indicator and original latitude
+    709 c ----------------------------------------------------------------------------------
+    710               print 76, yob_corr,input_typ,QCdrptsidx
+    711    76 format(' ENCODE REHABILITATED latitude ',f9.5, ' as YOB with ',
+    712      + 'YCOR=',f3.0,' and YORG=',f9.5,' into PREPBUFR file, rtyp = ',i3,
+    713      + ', for input rpt # ',i8)
+    714               call ufbint(outlun,yob_corr,3,1,iret,'YOB YCOR YORG')
+    715             endif
+    716             if(c_qc(QCdrptsidx)(4:4).eq.'R') then
+    717 
+    718 c Encode rehabilitated longitude, longitude correction indicator and original longitude
+    719 c -------------------------------------------------------------------------------------
+    720               print 86, xob_corr,input_typ,QCdrptsidx
+    721    86 format(' ENCODE REHABILITATED longitude ',f9.5, ' as XOB with ',
+    722      + 'XCOR=',f3.0,' and XORG=',f9.5,' into PREPBUFR file, rtyp = ',i3,
+    723      + ', for input rpt # ',i8)
+    724               call ufbint(outlun,xob_corr,3,1,iret,'XOB XCOR XORG')
+    725             endif
+    726 
+    727 c If the input PREPBUFR report is a mass report, update the event stack with mass events
+    728 c
+    729 c If the input PREPBUFR report is a wind rpt, update the event stack with wind events
+    730 c
+    731 c Also, first initialize the "bad report", "suspect report", and "duplicate report" flags as
+    732 c  false - these flags will be set to true if the NRLACQC quality information (array c_qc)
+    733 c  indicates that the report or any part of it is bad, suspect or a duplicate
+    734 c ------------------------------------------------------------------------------------------
+    735             l_badrpt_p = .false.
+    736             l_badrpt_z = .false.
+    737             l_badrpt_t = .false.
+    738             l_badrpt_q = .false.
+    739             l_badrpt_w = .false.
+    740 
+    741             l_duprpt = .false.
+
+Page 14          Source Listing                  OUTPUT_ACQC_NOPROF
+2017-04-18 11:09                                 output_acqc_noprof.f
+
+    742 
+    743 c Pressure
+    744 c --------
+    745 
+    746 c Get POB and PQM at top of stack coming in and store in array p_event, translate NRLACQC
+    747 c  quality flags in c_qc to NCEP standards for pressure and store in ipqm_nrlacqc, also store
+    748 c  reason code in iprc_nrlacqc (pressure data apply to both mass and wind obs)
+    749 c -------------------------------------------------------------------------------------------
+    750             call ufbint(inlun,p_event,4,1,nlev,'POB PQM')
+    751 ccccc       if(QCdrptsidx.eq.47955) print *,'input p_event = ',p_event
+    752             nevrd(1) = nevrd(1) + 1
+    753 
+    754             if(ibfms(p_event(2)).eq.0) then
+    755               if(nint(p_event(2)).ge.0.and.nint(p_event(2)).le.15) then
+    756 c PQM for event at top of stack (prior to adding any NRLACQC events)
+    757                 ipqm_topstk = nint(p_event(2))
+    758               else
+    759                 npqm_msg_in = npqm_msg_in + 1
+    760               endif
+    761             else
+    762               npqm_msg_in = npqm_msg_in + 1
+    763             endif
+    764 
+    765 ccccc       if(QCdrptsidx.eq.47955)
+    766 ccccc+       print *,'prior to tranQCflags p_event = ',p_event
+    767             call tranQCflags(c_qc(QCdrptsidx),'p',ipqm_nrlacqc,
+    768      +                       iprc_nrlacqc,l_badrpt_p,l_duprpt)
+    769 
+    770 c if PQM = 2 and PRC = 099 returned from tranQCflags, then can't translate!
+    771             if(ipqm_nrlacqc.eq.2 .and. iprc_nrlacqc.eq.099) then
+    772               print *
+    773               print *, 'Unknown c_qc flag on pressure/altitude:',
+    774      +                 c_qc(QCdrptsidx)(5:5)
+    775               print *, 'PREPBUFR aircraft report number: ',ninssrd
+    776               print *, 'QC ob array index: ',QCdrptsidx
+    777               print *
+    778             endif
+    779 ccccc       if(QCdrptsidx.eq.47955)
+    780 ccccc+       print *,'after call to tranQCflags PQM, PRC = ',
+    781 ccccc+      ipqm_nrlacqc,iprc_nrlacqc
+    782 
+    783 c Altitude
+    784 c --------
+    785 
+    786 c Get ZOB and ZQM at top of stack coming in and store in array z_event, translate NRLACQC
+    787 c  quality flags in c_qc to NCEP standards for altitude and store in izqm_nrlacqc, also store
+    788 c  reason code in izrc_nrlacqc (altitude applies to both mass and wind obs)
+    789 c
+    790 c Use same quality marks for altitude as were used for pressure - NRLACQC has one flag for
+    791 c  both (c_qc(5:5))
+    792 c -------------------------------------------------------------------------------------------
+    793             call ufbint(inlun,z_event,4,1,nlev,'ZOB ZQM')
+    794             nevrd(2) = nevrd(2) + 1
+    795 
+    796             if(ibfms(z_event(2)).eq.0) then
+    797               if(nint(z_event(2)).ge.0.and.nint(z_event(2)).le.15) then
+    798 c ZQM for event at top of stack (prior to adding any NRLACQC events)
+
+Page 15          Source Listing                  OUTPUT_ACQC_NOPROF
+2017-04-18 11:09                                 output_acqc_noprof.f
+
+    799                 izqm_topstk = nint(z_event(2))
+    800               else
+    801                 nzqm_msg_in = nzqm_msg_in + 1
+    802               endif
+    803             else
+    804               nzqm_msg_in = nzqm_msg_in + 1
+    805             endif
+    806 
+    807             call tranQCflags(c_qc(QCdrptsidx),'z',izqm_nrlacqc,
+    808      +                       izrc_nrlacqc,l_badrpt_z,l_duprpt)
+    809 
+    810 c if ZQM = 2 and ZRC = 099 returned from tranQCflags, then can't translate!
+    811             if(izqm_nrlacqc.eq.2 .and. izrc_nrlacqc.eq.099) then
+    812               print *
+    813               print *, 'Unknown c_qc flag on pressure/altitude:',
+    814      +         c_qc(QCdrptsidx)(5:5)
+    815               print *, 'PREPBUFR aircraft report number: ',ninssrd
+    816               print *, 'QC ob array index: ',QCdrptsidx
+    817               print *
+    818             endif
+    819 
+    820 c If the input PREPBUFR report is a mass report, then see if we need to add an event for
+    821 c  temperature and moisture - if the input PREPBUFR report is a wind report, then see if we
+    822 c  need to add an event for wind
+    823 c -----------------------------------------------------------------------------------------
+    824 
+    825             if(int(input_typ/100).eq.1) then
+    826 
+    827 c -----------
+    828 c MASS REPORT
+    829 c -----------
+    830 
+    831 c Temperature
+    832 c -----------
+    833 
+    834 c Get TOB and TQM at top of stack coming in and store in array t_event, translate NRLACQC
+    835 c  quality flags in c_qc to NCEP standards for temperature and store in itqm_nrlacqc, also
+    836 c  store reason code in itrc_nrlacqc
+    837 c ----------------------------------------------------------------------------------------
+    838               call ufbint(inlun,t_event,4,1,nlev,'TOB TQM')
+    839 ccccc         if(QCdrptsidx.eq.47955) print *,'input t_event = ',t_event
+    840               nevrd(3) = nevrd(3) + 1
+    841 
+    842               if(ibfms(t_event(2)).eq.0) then
+    843                 if(nint(t_event(2)).ge.0.and.nint(t_event(2)).le.15)then
+    844 c TQM for event at top of stack (prior to adding any NRLACQC events)
+    845                   itqm_topstk = nint(t_event(2))
+    846                 else
+    847                   ntqm_msg_in = ntqm_msg_in + 1
+    848                 endif
+    849               else
+    850                 ntqm_msg_in = ntqm_msg_in + 1
+    851               endif
+    852 
+    853 ccccc         if(QCdrptsidx.eq.47955)
+    854 ccccc+         print *,'prior to tranQCflags t_event = ',t_event
+    855               call tranQCflags(c_qc(QCdrptsidx),'t',itqm_nrlacqc,
+
+Page 16          Source Listing                  OUTPUT_ACQC_NOPROF
+2017-04-18 11:09                                 output_acqc_noprof.f
+
+    856      +                         itrc_nrlacqc,l_badrpt_t,l_duprpt)
+    857 
+    858 c if TQM = 2 and TRC = 099 returned from tranQCflags, then can't translate!
+    859               if(itqm_nrlacqc.eq.2 .and. itrc_nrlacqc.eq.099) then
+    860                 print *
+    861                 print *, 'Unknown c_qc flag on temperature:',
+    862      +           c_qc(QCdrptsidx)(6:6)
+    863                 print *, 'PREPBUFR aircraft report number: ',ninssrd
+    864                 print *, 'QC ob array index: ',QCdrptsidx
+    865                 print *
+    866               endif
+    867 ccccc         if(QCdrptsidx.eq.47955)
+    868 ccccc+         print *,'after call to tranQCflags TQM, TRC = ',
+    869 ccccc+         itqm_nrlacqc,itrc_nrlacqc
+    870 
+    871 
+    872 c Moisture
+    873 c --------
+    874 
+    875 c Get QOB and QQM at top of stack coming in and store in array q_event, translate NRLACQC
+    876 c  quality flags in c_qc to NCEP standards for moisture and store in iqqm_nrlacqc, also store
+    877 c  reason code in iqrc_nrlacqc
+    878 c -------------------------------------------------------------------------------------------
+    879               call ufbint(inlun,q_event,4,1,nlev,'QOB QQM')
+    880               nevrd(4) = nevrd(4) + 1
+    881 
+    882               if(ibfms(q_event(2)).eq.0) then
+    883                 if(nint(q_event(2)).ge.0.and.nint(q_event(2)).le.15)then
+    884 c QQM for event at top of stack (prior to adding any NRLACQC events)
+    885                   iqqm_topstk = nint(q_event(2))
+    886                 else
+    887                   nqqm_msg_in = nqqm_msg_in + 1
+    888                 endif
+    889               else
+    890                 nqqm_msg_in = nqqm_msg_in + 1
+    891               endif
+    892 
+    893               call tranQCflags(c_qc(QCdrptsidx),'q',iqqm_nrlacqc,
+    894      +                         iqrc_nrlacqc,l_badrpt_q,l_duprpt)
+    895 
+    896 c if QQM = 2 and QRC = 099 returned from tranQCflags, then can't translate!
+    897               if(iqqm_nrlacqc.eq.2 .and. iqrc_nrlacqc.eq.099) then
+    898                 print *
+    899                 print *, 'Unknown c_qc flag on moisture:',
+    900      +           c_qc(QCdrptsidx)(9:9)
+    901                 print *, 'PREPBUFR aircraft report number: ',ninssrd
+    902                 print *, 'QC ob array index: ',QCdrptsidx
+    903                 print *
+    904               endif
+    905 
+    906             elseif(int(input_typ/100).eq.2) then
+    907 
+    908 c -----------
+    909 c WIND REPORT
+    910 c -----------
+    911 
+    912 c Wind
+
+Page 17          Source Listing                  OUTPUT_ACQC_NOPROF
+2017-04-18 11:09                                 output_acqc_noprof.f
+
+    913 c ----
+    914 
+    915 c Get UOB, VOB and WQM at top of stack coming in and store in array w_event, translate
+    916 c  NRLACQC quality flags in c_qc to NCEP standards for wind and store in iwqm_nrlacqc, also
+    917 c  store reason code in iwrc_nrlacqc
+    918 c -----------------------------------------------------------------------------------------
+    919               call ufbint(inlun,w_event,5,1,nlev,'UOB VOB WQM')
+    920               nevrd(5) = nevrd(5) + 1
+    921 
+    922               if(ibfms(w_event(3)).eq.0) then
+    923                 if(nint(w_event(3)).ge.0.and.nint(w_event(3)).le.15)then
+    924 c WQM for event at top of stack (prior to adding any NRLACQC events)
+    925                   iwqm_topstk = nint(w_event(3))
+    926                 else
+    927                   nwqm_msg_in = nwqm_msg_in + 1
+    928                 endif
+    929               else
+    930                 nwqm_msg_in = nwqm_msg_in + 1
+    931               endif
+    932 
+    933               call tranQCflags(c_qc(QCdrptsidx),'w',iwqm_nrlacqc,
+    934      +                         iwrc_nrlacqc,l_badrpt_w,l_duprpt)
+    935 
+    936 c if WQM = 2 and WRC = 099 returned from tranQCflags, then can't translate!
+    937               if(iwqm_nrlacqc.eq.2 .and. iwrc_nrlacqc.eq.099) then
+    938                 print *
+    939                 print *, 'Unknown c_qc flag on wind:',
+    940      +           c_qc(QCdrptsidx)(7:7),'/',c_qc(QCdrptsidx)(8:8)
+    941                 print *, 'PREPBUFR aircraft report number: ',ninssrd
+    942                 print *, 'QC ob array index: ',QCdrptsidx
+    943                 print *
+    944               endif
+    945 
+    946             endif ! int(input_typ/100) = 1 or 2
+    947 
+    948 ccccc       if(QCdrptsidx.eq.47955)
+    949 ccccc+       print *,'prior to entire rpt rej PQM, PRC = ',
+    950 ccccc+      ipqm_nrlacqc,iprc_nrlacqc
+    951 
+    952 c If entire report is to be rejected, put reject flags (QM=13) on pressure, altitude,
+    953 c  temperature, moisture, and wind
+    954 c -----------------------------------------------------------------------------------
+    955             if(l_badrpt_p .or. l_badrpt_z .or.
+    956      +         l_badrpt_t .or. l_badrpt_q .or. l_badrpt_w) then
+    957 
+    958 ccccc       if(QCdrptsidx.eq.47955)
+    959 ccccc+       print *, 'we are in reject report logic'
+    960 
+    961               ipqm_nrlacqc = 13 ! PQM
+    962           ! PRC already encoded into iprc_nrlacqc in subr. tranQCflags
+    963 
+    964               izqm_nrlacqc = 13 ! ZQM
+    965           ! ZRC already encoded into izrc_nrlacqc in subr. tranQCflags
+    966 
+    967               if(int(input_typ/100).eq.1) then
+    968                 itqm_nrlacqc = 13 ! TQM
+    969           ! TRC already encoded into itrc_nrlacqc in subr. tranQCflags
+
+Page 18          Source Listing                  OUTPUT_ACQC_NOPROF
+2017-04-18 11:09                                 output_acqc_noprof.f
+
+    970 
+    971                 iqqm_nrlacqc = 13 ! QQM
+    972           ! QRC already encoded into iqrc_nrlacqc in subr. tranQCflags
+    973 
+    974               elseif(int(input_typ/100).eq.2) then
+    975 
+    976                 iwqm_nrlacqc = 13 ! WQM
+    977           ! WRC already encoded into iwrc_nrlacqc in subr. tranQCflags
+    978 
+    979               endif ! int(input_typ/100) = 1 or 2
+    980             endif ! l_badrpt_[p,z,t,q,w]
+    981 
+    982 ccccc       if(QCdrptsidx.eq.47955)
+    983 ccccc+       print *,'after entire rpt rej PQM, PRC = ',
+    984 ccccc+       ipqm_nrlacqc,iprc_nrlacqc
+    985 
+    986 c If report is marked as a duplicate (c_qc(1:1) = d or D), then mark the entire report with
+    987 c  a bad NCEP quality mark (=13)
+    988 c -----------------------------------------------------------------------------------------
+    989             if(l_duprpt) then
+    990               ipqm_nrlacqc = 13 ! PQM
+    991           ! PRC already encoded into iprc_nrlacqc in subr. tranQCflags
+    992 
+    993               izqm_nrlacqc = 13 ! ZQM
+    994           ! ZRC already encoded into izrc_nrlacqc in subr. tranQCflags
+    995 
+    996               if(int(input_typ/100).eq.1) then
+    997                 itqm_nrlacqc = 13 ! TQM
+    998           ! TRC already encoded into itrc_nrlacqc in subr. tranQCflags
+    999 
+   1000                 iqqm_nrlacqc = 13 ! QQM
+   1001           ! QRC already encoded into iqrc_nrlacqc in subr. tranQCflags
+   1002 
+   1003               elseif(int(input_typ/100).eq.2) then
+   1004 
+   1005                 iwqm_nrlacqc = 13 ! WQM
+   1006           ! WRC already encoded into iwrc_nrlacqc in subr. tranQCflags
+   1007 
+   1008               endif ! int(input_typ/100) = 1 or 2
+   1009             endif ! l_duprpt
+   1010 
+   1011 c Update pressure, altitude, temperature, moisture and wind stacks with new event in output
+   1012 c  PREPBUFR file when there has been a qualty mark change by NRLACQC (don't need to write out
+   1013 c  an event if quality mark has not been changed by this program)
+   1014 c 
+   1015 c EXCEPTION: Retain (honor) the incoming quality mark at the top of the stack (i.e., do not
+   1016 c            write event) when:
+   1017 c
+   1018 c       (1) The incoming quality mark at the top of the stack is 0 (keep flag)
+   1019 c       (2) The incoming quality mark at the top of the stack is between 4 and 15 (bad) -
+   1020 c           except when NRLACQC itself generates a BAD quality mark (translated to NCEP
+   1021 c           value of 13), allows reason code to denote why action taken by NRLACQC to mark
+   1022 c           obs as bad
+   1023 c       (3) The incoming quality mark at the top of the stack is not between 0 and 15
+   1024 c           (i.e.,missing)
+   1025 c       (4) The incoming quality mark at the top of the stack is 3 (suspect) and the NRLACQC
+   1026 c           generates a GOOD or NEUTRAL or SUSPECT quality mark (translated to NCEP values of
+
+Page 19          Source Listing                  OUTPUT_ACQC_NOPROF
+2017-04-18 11:09                                 output_acqc_noprof.f
+
+   1027 c           1, 2 and 3 resp.) {in other words, unless an ob previously marked as suspect was
+   1028 c           marked bad by NRLACQC, don't change a suspect quality mark assigned by a PREPBUFR
+   1029 c           processing step prior to the NRLACQC step}
+   1030 c       (5) The quality mark translated to its NCEP value is 2 (neutral) and the reason code
+   1031 c           is returned from tranQCflags is 099 - this indicates that the NRLACQC quality
+   1032 c           flags in c_qc pertaining to this ob are unknown to transQCflags (the routine
+   1033 c           tranQCflags may need to be updated to account for the c_qc flags that is coming
+   1034 c           out of the NRLACQC QC routine for this ob - this would probably only happen if
+   1035 c           NRL provides an updated/upgraded acftobs_qc module to NCEP)
+   1036 c       (6) The NCEP equivalent of the NRLACQC is the same as the incoming quality mark of
+   1037 c           the stack - if there is no change in the quality mark, then do not add a new
+   1038 c           event and leave the event at the top of the event stack as is with TWO
+   1039 c           exceptions:
+   1040 c              a) NRLACQC itself generates a GOOD quality mark (translated to NCEP value of
+   1041 c                 1)
+   1042 c              b) NRLACQC itself generates a BAD quality mark (translated to NCEP value of
+   1043 c                 13)  (see 2 above for more on this)
+   1044 c -------------------------------------------------------------------------------------------
+   1045 
+   1046 c Pressure
+   1047 c --------
+   1048 ccccc       if(QCdrptsidx.eq.47955)
+   1049 ccccc+       print *,'prior to writing ? event p_event = ',p_event(1),
+   1050 ccccc+      ipqm_nrlacqc,p_event(3),iprc_nrlacqc
+   1051 
+   1052             l_skip = .true. ! SKIP LOGIC TO WRITE PRESSURE EVENTS - there is no need to do so
+   1053                             !  since pressure is a vertical coordinate and it is not analyzed,
+   1054                             !  in addition, adding pressure events complicates reason code
+   1055                             !  logic
+   1056 
+   1057             if(.not.l_skip) then
+   1058 
+   1059 c .... if here, include logic to write pressure events
+   1060               if(ipqm_topstk.eq.0  .or.
+   1061      +          (ipqm_topstk.ge.4 .and. ipqm_topstk.le.15) .or. ! ob has already been marked
+   1062                                                                 !  bad by NCEP codes
+   1063      +           ipqm_topstk.eq.9999 .or.
+   1064      +          (ipqm_topstk.eq.3.and.ipqm_nrlacqc.le.3) .or.
+   1065      +          (ipqm_nrlacqc.eq.2.and.iprc_nrlacqc.eq.099) .or.
+   1066      +          (ipqm_topstk.eq.ipqm_nrlacqc.and.ipqm_nrlacqc.ne.1)
+   1067      +                  ) then                            ! no event needed; leave PQM as is
+   1068      
+   1069                 ipqm_nrlacqc = ipqm_topstk
+   1070 
+   1071                 nev_noupd(1) = nev_noupd(1) + 1
+   1072               else ! NRL QC produced an event; add this event to top of stack in output
+   1073                    !  PREPBUFR file
+   1074                 p_event(2) = ipqm_nrlacqc
+   1075                 p_event(3) = nrlacqc_pc
+   1076                 p_event(4) = iprc_nrlacqc
+   1077                 call ufbint(outlun,p_event,4,1,iret,'POB PQM PPC PRC') ! pressure & altitude
+   1078                                                                        !  apply to both mass
+   1079                                                                        !  & wind
+   1080                 nevwrt(1) = nevwrt(1) + 1
+   1081                 ncep_rc_p(QCdrptsidx) = iprc_nrlacqc
+   1082 ccccc           if(QCdrptsidx.eq.47955)
+   1083 ccccc+           print *,'after writing event p_event = ',p_event
+
+Page 20          Source Listing                  OUTPUT_ACQC_NOPROF
+2017-04-18 11:09                                 output_acqc_noprof.f
+
+   1084 ccccc           if(QCdrptsidx.eq.47955) print *,'after writing event ',
+   1085 ccccc+           ncep_rc_p = ',ncep_rc_p(QCdrptsidx)
+   1086               endif
+   1087 ccccc         if(QCdrptsidx.eq.47955) print *,'after writing event ',
+   1088 ccccc+         ncep_qm_p = 'ncep_qm_p(QCdrptsidx)
+   1089 
+   1090               if((ipqm_nrlacqc.ge.0.and.ipqm_nrlacqc.le.15).and.
+   1091      +           (ipqm_topstk.ge.0.and.ipqm_topstk.le.15)) then
+   1092                 ncep_qm_p(QCdrptsidx) = ipqm_nrlacqc
+   1093                 qm_knt(1,ipqm_topstk,ipqm_nrlacqc) =
+   1094      +          qm_knt(1,ipqm_topstk,ipqm_nrlacqc) + 1
+   1095               else
+   1096                 npqm_msg_out = npqm_msg_out + 1
+   1097               endif
+   1098 
+   1099             else
+   1100 
+   1101 c .... if here, SKIP logic to write pressure events
+   1102               ipqm_nrlacqc = ipqm_topstk
+   1103               nev_noupd(1) = nev_noupd(1) + 1
+   1104               if((ipqm_nrlacqc.ge.0.and.ipqm_nrlacqc.le.15).and.
+   1105      +           (ipqm_topstk.ge.0.and.ipqm_topstk.le.15)) then
+   1106                 ncep_qm_p(QCdrptsidx) = ipqm_nrlacqc
+   1107                 qm_knt(1,ipqm_topstk,ipqm_nrlacqc) =
+   1108      +          qm_knt(1,ipqm_topstk,ipqm_nrlacqc) + 1
+   1109               else
+   1110                 npqm_msg_out = npqm_msg_out + 1
+   1111               endif
+   1112 
+   1113             endif
+   1114 
+   1115 c Altitude
+   1116 c --------
+   1117 
+   1118             l_skip = .true. ! SKIP LOGIC TO WRITE ALTITUDE EVENTS - there is no need to do so
+   1119                             !  since altitude is a vertical coordinate and it is not analyzed,
+   1120                             !  in addition, adding altitude events complicates reason code
+   1121                             !  logic
+   1122 
+   1123             if(.not.l_skip) then
+   1124 
+   1125 c .... if here, include logic to write altitude events
+   1126               if(izqm_topstk.eq.0  .or.
+   1127      +          (izqm_topstk.ge.4 .and. izqm_topstk.le.15) .or. ! ob has already been marked
+   1128                                                                 !  bad by NCEP codes
+   1129      +           izqm_topstk.eq.9999 .or.
+   1130      +          (izqm_topstk.eq.3.and.izqm_nrlacqc.le.3) .or.
+   1131      +          (izqm_nrlacqc.eq.2.and.izrc_nrlacqc.eq.099) .or.
+   1132      +          (izqm_topstk.eq.izqm_nrlacqc.and.izqm_nrlacqc.ne.1)
+   1133      +                  ) then                            ! no event needed; leave ZQM as is
+   1134                 izqm_nrlacqc = izqm_topstk
+   1135 
+   1136                 nev_noupd(2) = nev_noupd(2) + 1
+   1137               else ! NRL QC produced an event; add this event to top of stack in output
+   1138                    !  PREPBUFR file
+   1139                 z_event(2) = izqm_nrlacqc
+   1140                 z_event(3) = nrlacqc_pc
+
+Page 21          Source Listing                  OUTPUT_ACQC_NOPROF
+2017-04-18 11:09                                 output_acqc_noprof.f
+
+   1141                 z_event(4) = izrc_nrlacqc
+   1142                 call ufbint(outlun,z_event,4,1,iret,'ZOB ZQM ZPC ZRC') ! pressure & altitude
+   1143                                                                        !  apply to both mass
+   1144                                                                        !  & wind
+   1145                 nevwrt(2) = nevwrt(2) + 1
+   1146                 ncep_rc_z(QCdrptsidx) = izrc_nrlacqc
+   1147               endif
+   1148 
+   1149               if((izqm_nrlacqc.ge.0.and.izqm_nrlacqc.le.15).and.
+   1150      +           (izqm_topstk.ge.0.and.izqm_topstk.le.15)) then
+   1151                 ncep_qm_z(QCdrptsidx) = izqm_nrlacqc
+   1152                 qm_knt(2,izqm_topstk,izqm_nrlacqc) =
+   1153      +          qm_knt(2,izqm_topstk,izqm_nrlacqc) + 1
+   1154               else
+   1155                 nzqm_msg_out = nzqm_msg_out + 1
+   1156               endif
+   1157 
+   1158             else
+   1159 
+   1160 c .... if here, SKIP logic to write altitude events
+   1161               izqm_nrlacqc = izqm_topstk
+   1162               nev_noupd(2) = nev_noupd(2) + 1
+   1163               if((izqm_nrlacqc.ge.0.and.izqm_nrlacqc.le.15).and.
+   1164      +           (izqm_topstk.ge.0.and.izqm_topstk.le.15)) then
+   1165                 ncep_qm_z(QCdrptsidx) = izqm_nrlacqc
+   1166                 qm_knt(2,izqm_topstk,izqm_nrlacqc) =
+   1167      +          qm_knt(2,izqm_topstk,izqm_nrlacqc) + 1
+   1168               else
+   1169                 nzqm_msg_out = nzqm_msg_out + 1
+   1170               endif
+   1171 
+   1172             endif
+   1173 
+   1174             if(int(input_typ/100).eq.1) then
+   1175 
+   1176 c Temperature
+   1177 c -----------
+   1178 
+   1179 c Obs/Events
+   1180               if((itqm_topstk.eq.0  .or.
+   1181      +          (itqm_topstk.ge.4 .and. itqm_topstk.le.15) .or.  ! ob has already been marked
+   1182                                                                  !  bad by NCEP codes
+   1183      +           itqm_topstk.eq.9999 .or.
+   1184      +          (itqm_topstk.eq.3.and.itqm_nrlacqc.le.3) .or. 
+   1185      +          (itqm_nrlacqc.eq.2.and.itrc_nrlacqc.eq.099) .or.
+   1186      +          (itqm_topstk.eq.itqm_nrlacqc.and.itqm_nrlacqc.ne.1)
+   1187      +                ) .and. (itqm_nrlacqc.ne.13.or.
+   1188      +                         itqm_topstk.eq.9999)) then  ! no event needed; leave TQM as is
+   1189 ccccc           if(QCdrptsidx.eq.47955)
+   1190 ccccc+           print *,'no t_event written for ',QCdrptsidx
+   1191                 itqm_nrlacqc = itqm_topstk
+   1192 
+   1193                 nev_noupd(3) = nev_noupd(3) + 1
+   1194 
+   1195               else ! NRL QC produced an event; add this event to top of stack in output
+   1196                    !  PREPBUFR file
+   1197 ccccc           if(QCdrptsidx.eq.47955)
+
+Page 22          Source Listing                  OUTPUT_ACQC_NOPROF
+2017-04-18 11:09                                 output_acqc_noprof.f
+
+   1198 ccccc+           print *,'new t_event written for ',QCdrptsidx
+   1199                 if(int(itrc_nrlacqc/100).eq.9 .and.
+   1200      +             itqm_nrlacqc.eq.13)  itqm_nrlacqc = 14 ! if temperature marked bad here
+   1201                                                           !  due to it being on reject list,
+   1202                                                           !  reset TQM to 14
+   1203                 t_event(2) = itqm_nrlacqc
+   1204                 t_event(3) = nrlacqc_pc
+   1205                 t_event(4) = itrc_nrlacqc
+   1206                 call ufbint(outlun,t_event,4,1,iret,'TOB TQM TPC TRC')
+   1207                 nevwrt(3) = nevwrt(3) + 1
+   1208                 ncep_rc_t(QCdrptsidx) = itrc_nrlacqc
+   1209               endif
+   1210 
+   1211               if((itqm_nrlacqc.ge.0.and.itqm_nrlacqc.le.15).and.
+   1212      +           (itqm_topstk.ge.0.and.itqm_topstk.le.15)) then
+   1213                 ncep_qm_t(QCdrptsidx) = itqm_nrlacqc
+   1214                 qm_knt(3,itqm_topstk,itqm_nrlacqc) =
+   1215      +          qm_knt(3,itqm_topstk,itqm_nrlacqc) + 1
+   1216               else
+   1217                 ntqm_msg_out = ntqm_msg_out + 1
+   1218               endif
+   1219 
+   1220 c Moisture
+   1221 c --------
+   1222 
+   1223 c Obs/Events
+   1224               if((iqqm_topstk.eq.0  .or. 
+   1225      +          (iqqm_topstk.ge.4 .and. iqqm_topstk.le.15) .or.  ! ob has already been marked
+   1226                                                                  !  bad by NCEP codes
+   1227      +           iqqm_topstk.eq.9999 .or.
+   1228      +          (iqqm_topstk.eq.3 .and. iqqm_nrlacqc.le.3) .or.
+   1229      +          (iqqm_nrlacqc.eq.2.and.iqrc_nrlacqc.eq.099) .or.
+   1230      +	        (iqqm_topstk.eq.iqqm_nrlacqc.and.iqqm_nrlacqc.ne.1)
+   1231      +                ) .and. (iqqm_nrlacqc.ne.13.or.
+   1232      +                         iqqm_topstk.eq.9999)) then  ! no event needed; leave QQM as is
+   1233                 iqqm_nrlacqc = iqqm_topstk
+   1234 
+   1235                 nev_noupd(4) = nev_noupd(4) + 1
+   1236 
+   1237               else ! NRL QC produced a new event; add this event to top of stack in output
+   1238                    !  PREPBUFR file
+   1239                 if(int(iqrc_nrlacqc/100).eq.9 .and.
+   1240      +             iqqm_nrlacqc.eq.13)  iqqm_nrlacqc = 14 ! if moisture marked bad here due
+   1241                                                           !  to temperature  being on reject
+   1242                                                           !  list, reset QQM to 14
+   1243                 q_event(2) = iqqm_nrlacqc
+   1244                 q_event(3) = nrlacqc_pc
+   1245                 q_event(4) = iqrc_nrlacqc
+   1246                 call ufbint(outlun,q_event,4,1,iret,'QOB QQM QPC QRC')
+   1247                 nevwrt(4) = nevwrt(4) + 1
+   1248                 ncep_rc_q(QCdrptsidx) = iqrc_nrlacqc
+   1249               endif
+   1250 
+   1251               if((iqqm_nrlacqc.ge.0.and.iqqm_nrlacqc.le.15).and.
+   1252      +           (iqqm_topstk.ge.0.and.iqqm_topstk.le.15))then
+   1253                 ncep_qm_q(QCdrptsidx) = iqqm_nrlacqc
+   1254                 qm_knt(4,iqqm_topstk,iqqm_nrlacqc) =
+
+Page 23          Source Listing                  OUTPUT_ACQC_NOPROF
+2017-04-18 11:09                                 output_acqc_noprof.f
+
+   1255      +          qm_knt(4,iqqm_topstk,iqqm_nrlacqc) + 1
+   1256               else
+   1257                 nqqm_msg_out = nqqm_msg_out + 1
+   1258               endif
+   1259 
+   1260             elseif(int(input_typ/100).eq.2) then
+   1261 
+   1262 c Wind
+   1263 C ----
+   1264 
+   1265 c Obs/Events
+   1266               if((iwqm_topstk.eq.0  .or.
+   1267      +          (iwqm_topstk.ge.4 .and. iwqm_topstk.le.15) .or.  ! ob has already been marked
+   1268                                                                  !  bad by NCEP codes
+   1269      +           iwqm_topstk.eq.9999 .or.
+   1270      +          (iwqm_topstk.eq.3 .and. iwqm_nrlacqc.le.3) .or.
+   1271      +          (iwqm_nrlacqc.eq.2.and.iwrc_nrlacqc.eq.099) .or.
+   1272      +          (iwqm_topstk.eq.iwqm_nrlacqc.and.iwqm_nrlacqc.ne.1)
+   1273      +                ) .and. (iwqm_nrlacqc.ne.13.or.
+   1274      +                         iwqm_topstk.eq.9999)) then  ! no event needed; leave WQM as is
+   1275                 iwqm_nrlacqc = iwqm_topstk
+   1276 
+   1277                 nev_noupd(5) = nev_noupd(5) + 1
+   1278 
+   1279               else ! NRL QC produced a new event; add this event to top of stack in output
+   1280                    !  PREPBUFR file
+   1281                 if(int(iwrc_nrlacqc/100).eq.9 .and.
+   1282      +             iwqm_nrlacqc.eq.13)  iwqm_nrlacqc = 14 ! if wind marked bad here due to it
+   1283                                                           !  being on reject list, reset WQM
+   1284                                                           !  to 14
+   1285                 w_event(3) = iwqm_nrlacqc
+   1286                 w_event(4) = nrlacqc_pc
+   1287                 w_event(5) = iwrc_nrlacqc
+   1288               call ufbint(outlun,w_event,5,1,iret,'UOB VOB WQM WPC WRC')
+   1289                 nevwrt(5) = nevwrt(5) + 1
+   1290                 ncep_rc_w(QCdrptsidx) = iwrc_nrlacqc
+   1291               endif
+   1292 
+   1293               if((iwqm_nrlacqc.ge.0.and.iwqm_nrlacqc.le.15).and.
+   1294      +           (iwqm_topstk.ge.0.and.iwqm_topstk.le.15))then
+   1295                 ncep_qm_w(QCdrptsidx) = iwqm_nrlacqc
+   1296                 qm_knt(5,iwqm_topstk,iwqm_nrlacqc) =
+   1297      +          qm_knt(5,iwqm_topstk,iwqm_nrlacqc) + 1
+   1298               else
+   1299                 nwqm_msg_out = nwqm_msg_out + 1
+   1300               endif
+   1301 
+   1302             endif
+   1303 
+   1304             l_eventupdate = .true.
+   1305 
+   1306 c After updating all event stacks {pressure (maybe), altitude (maybe), temperature, moisture
+   1307 c  and wind), write subset to the output PREPBUFR file - also add NRLACQC quality string to
+   1308 c  this subset, since the string is of length 11 characters, must call WRITLC after call to
+   1309 c  WRITSB
+   1310 c ------------------------------------------------------------------------------------------
+   1311             call writsb(outlun)
+
+Page 24          Source Listing                  OUTPUT_ACQC_NOPROF
+2017-04-18 11:09                                 output_acqc_noprof.f
+
+   1312 
+   1313 c ***** ----> BUFRLIB routine WRITLC trims the string that is stored, cutting off any blank
+   1314 c             (" ") characters - since blank characters have meaning in the originally-
+   1315 c             defined NRLACQC quality string (usually indicating passed all tests and thus
+   1316 c             good), we earlier (in subroutine acftobs_qc) replaced blank characters with dot
+   1317 c             (".") characters so these would be retained by WRITLC
+   1318 c -------------------------------------------------------------------------------------------
+   1319             c_nrlqm = c_qc(QCdrptsidx)
+   1320 
+   1321 ccccc       print *, 'in *noprof.f, writing c_nrlqm=', c_nrlqm
+   1322 
+   1323             call writlc(outlun,c_nrlqm,'NRLQMS')
+   1324 
+   1325 c Close loops here
+   1326 c ----------------
+   1327           enddo ! ireadsb
+   1328         endif ! check for AIRCFT and AIRCAR messages
+   1329       enddo ! ireadmg
+   1330 
+   1331 c Output counts
+   1332 c -------------
+   1333 
+   1334 c Detailed counts of reports eliminated from final PREPBUFR file
+   1335 c --------------------------------------------------------------
+   1336       print *
+   1337       print *, '----------------------------------------------------'
+   1338       print *, 'Info about reports tossed from final PREPBUFR file: '
+   1339       print *, '----------------------------------------------------'
+   1340       print *
+   1341       if(l_otw) then
+   1342         print 96, trad,elim_knt(1,1)
+   1343    96 format(' Subsets from AIRCFT msgs tossed because outside req. ',
+   1344      + 'time window radius of',F6.2,'hrs (prior to geographical domain',
+   1345      + ' chking):',i6)
+   1346         print 97, trad,elim_knt(2,1)
+   1347    97 format(' Subsets from AIRCAR msgs tossed because outside req. ',
+   1348      + 'time window radius of',F6.2,'hrs (prior to geographical domain',
+   1349      + ' chking):',i6)
+   1350       else
+   1351         print *, 'Time window radius check NOT performed, l_otw=',l_otw,
+   1352      +           ' (ZERO reports tossed)'
+   1353       endif
+   1354       print *
+   1355       if(l_nhonly) then
+   1356         print'(" Subsets from AIRCFT messages passing time window ",
+   1357      +         "radius check but outside geographical domain (i.e., S ",
+   1358      +         "of 20S lat): ",I0)', elim_knt(1,2)
+   1359         print'(" Subsets from AIRCAR messages passing time window ",
+   1360      +         "radius check but outside geographical domain (i.e., S ",
+   1361      +         "of 20S lat): ",I0)', elim_knt(2,2)
+   1362       else
+   1363         print'(" Geographical domain check not performed, l_nhonly=",L,
+   1364      +         " (ZERO reports tossed)")', l_nhonly
+   1365       endif
+   1366       print *
+   1367       print'(" Number of subsets from AIRCFT messages passing checks ",
+   1368      +       "and kept: ",I0)', elim_knt(1,3)
+
+Page 25          Source Listing                  OUTPUT_ACQC_NOPROF
+2017-04-18 11:09                                 output_acqc_noprof.f
+
+   1369       print'(" Number of subsets from AIRCAR messages passing checks ",
+   1370      +       "and kept: ",I0)', elim_knt(2,3)
+   1371       print *
+   1372       print'(" TOTAL NUMBER OF SUBSETS WRITTEN BACK OUT: ",I0)',
+   1373      +     elim_knt(1,3)+elim_knt(2,3)
+   1374 
+   1375 c Pressure details
+   1376 c ----------------
+   1377       print *
+   1378       print *, '***********************'
+   1379       print *, 'PQM changes/status quo: '
+   1380 
+   1381       print *
+   1382       print *, 'Input PQM info:'
+   1383       print *, 'PQMs read from PREPBUFR:',nevrd(1)
+   1384       print *, 'Obs with MISSING PQMs upon input:',npqm_msg_in
+   1385       print *
+   1386 
+   1387       print *, 'Output PQM info:'
+   1388       print *, 'PQMs written to output PREPBUFR:',nevwrt(1)
+   1389       print *, 'Obs with MISSING PQMs (not written to output):',
+   1390      +         npqm_msg_out
+   1391       print *, 'Obs with NRLACQC QM equal to previous QM (no new ',
+   1392      +         'event): ',nev_noupd(1)
+   1393  
+   1394       print *
+   1395       print *, 'Non-missing PQM Breakdown:'
+   1396       do i=0,15
+   1397         do j=0,15
+   1398           if(qm_knt(1,i,j).ne.0) then
+   1399             print 50, 'PQM:',i,'->',j,':',qm_knt(1,i,j)
+   1400             p_qm_knt_tot = p_qm_knt_tot + qm_knt(1,i,j)
+   1401           endif
+   1402         enddo
+   1403       enddo
+   1404 
+   1405       if(p_qm_knt_tot.eq.0) then
+   1406         print *, 'NO PQM RESULTS!'
+   1407       else
+   1408         print 51
+   1409         print 52,'TOTAL:',p_qm_knt_tot
+   1410       endif
+   1411 
+   1412    50 format(1x,a4,1x,i2,1x,a2,1x,i2,a1,1x,i6)
+   1413    51 format(1x,'---------------------')
+   1414    52 format(1x,a6,9x,i6)
+   1415 
+   1416 c Altitude details
+   1417 c ----------------
+   1418       print *
+   1419       print *, '***********************'
+   1420       print *, 'ZQM changes/status quo: '
+   1421 
+   1422       print *
+   1423       print *, 'Input ZQM info:'
+   1424       print *, 'ZQMs read from PREPBUFR:',nevrd(2)
+   1425       print *, 'Obs with MISSING ZQMs upon input:',nzqm_msg_in
+
+Page 26          Source Listing                  OUTPUT_ACQC_NOPROF
+2017-04-18 11:09                                 output_acqc_noprof.f
+
+   1426       print *
+   1427 
+   1428       print *, 'Output ZQM info:'
+   1429       print *, 'ZQMs written to output PREPBUFR:',nevwrt(2)
+   1430       print *, 'Obs with MISSING ZQMs (not written to output):',
+   1431      +         nzqm_msg_out
+   1432       print *, 'Obs with NRLACQC QM equal to previous QM (no new ',
+   1433      +         'event): ',nev_noupd(2)
+   1434 
+   1435       print *
+   1436       print *, 'Non-missing ZQM Breakdown:'
+   1437       do i=0,15
+   1438         do j=0,15
+   1439           if(qm_knt(2,i,j).ne.0) then
+   1440             print 50, 'ZQM:',i,'->',j,':',qm_knt(2,i,j)
+   1441             z_qm_knt_tot = z_qm_knt_tot + qm_knt(2,i,j)
+   1442           endif
+   1443         enddo
+   1444       enddo
+   1445 
+   1446       if(z_qm_knt_tot.eq.0) then
+   1447         print *, 'NO ZQM RESULTS!'
+   1448       else
+   1449         print 51
+   1450         print 52,'TOTAL:',z_qm_knt_tot
+   1451       endif
+   1452 
+   1453 c Temperature details
+   1454 c -------------------
+   1455       print *
+   1456       print *, '***********************'
+   1457       print *, 'TQM changes/status quo: '
+   1458 
+   1459       print *
+   1460       print *, 'Input TQM info:'
+   1461       print *, 'TQMs read from PREPBUFR:',nevrd(3)
+   1462       print *, 'Obs with MISSING TQMs upon input:',ntqm_msg_in
+   1463       print *
+   1464 
+   1465       print *, 'Output TQM info:'
+   1466       print *, 'TQMs written to output PREPBUFR:',nevwrt(3)
+   1467       print *, 'Obs with MISSING TQMs (not written to output):',
+   1468      +         ntqm_msg_out
+   1469       print *, 'Obs with NRLACQC QM equal to previous QM (no new ',
+   1470      +         'event): ',nev_noupd(3)
+   1471 
+   1472       print *
+   1473       print *, 'Non-missing TQM Breakdown:'
+   1474       do i=0,15
+   1475         do j=0,15
+   1476           if(qm_knt(3,i,j).ne.0) then
+   1477             print 50, 'TQM:',i,'->',j,':',qm_knt(3,i,j)
+   1478             t_qm_knt_tot = t_qm_knt_tot + qm_knt(3,i,j)
+   1479           endif
+   1480         enddo
+   1481       enddo
+   1482 
+
+Page 27          Source Listing                  OUTPUT_ACQC_NOPROF
+2017-04-18 11:09                                 output_acqc_noprof.f
+
+   1483       if(t_qm_knt_tot.eq.0) then
+   1484         print *, 'NO TQM RESULTS!'
+   1485       else
+   1486         print 51
+   1487         print 52,'TOTAL:',t_qm_knt_tot
+   1488       endif
+   1489 
+   1490 c Moisture details 
+   1491 c ----------------
+   1492       print *
+   1493       print *, '***********************'
+   1494       print *, 'QQM changes/status quo: '
+   1495 
+   1496       print *
+   1497       print *, 'Input QQM info:'
+   1498       print *, 'QQMs read from PREPBUFR:',nevrd(4)
+   1499       print *, 'Obs with MISSING QQMs upon input:',nqqm_msg_in
+   1500       print *
+   1501 
+   1502       print *, 'Output QQM info:'
+   1503       print *, 'QQMs written to output PREPBUFR:',nevwrt(4)
+   1504       print *, 'Obs with MISSING QQMs (not written to output):',
+   1505      +         nqqm_msg_out
+   1506       print *, 'Obs with NRLACQC QM equal to previous QM (no new ',
+   1507      +         'event): ',nev_noupd(4)
+   1508 
+   1509       print *
+   1510       print *, 'Non-missing QQM Breakdown:'
+   1511       do i=0,15
+   1512         do j=0,15
+   1513           if(qm_knt(4,i,j).ne.0) then
+   1514             print 50, 'QQM:',i,'->',j,':',qm_knt(4,i,j)
+   1515             q_qm_knt_tot = q_qm_knt_tot + qm_knt(4,i,j)
+   1516           endif
+   1517         enddo
+   1518       enddo
+   1519 
+   1520       if(q_qm_knt_tot.eq.0) then
+   1521         print *, 'NO QQM RESULTS!'
+   1522       else
+   1523         print 51
+   1524         print 52,'TOTAL:',q_qm_knt_tot
+   1525       endif
+   1526 
+   1527 c Wind details
+   1528 c ------------
+   1529       print *
+   1530       print *, '***********************'
+   1531       print *, 'WQM changes/status quo: '
+   1532 
+   1533       print *
+   1534       print *, 'Input WQM info:'
+   1535       print *, 'WQMs read from PREPBUFR:',nevrd(5)
+   1536       print *, 'Obs with MISSING WQMs upon input:',nwqm_msg_in
+   1537       print *
+   1538 
+   1539       print *, 'Output WQM info:'
+
+Page 28          Source Listing                  OUTPUT_ACQC_NOPROF
+2017-04-18 11:09                                 output_acqc_noprof.f
+
+   1540       print *, 'WQMs written to output PREPBUFR:',nevwrt(5)
+   1541       print *, 'Obs with MISSING WQMs (not written to output):',
+   1542      +         nwqm_msg_out
+   1543       print *, 'Obs with NRLACQC QM equal to previous QM (no new ',
+   1544      +         'event): ',nev_noupd(5)
+   1545 
+   1546       print *
+   1547       print *, 'Non-missing WQM Breakdown:'
+   1548       do i=0,15
+   1549         do j=0,15
+   1550           if(qm_knt(5,i,j).ne.0) then
+   1551             print 50, 'WQM:',i,'->',j,':',qm_knt(5,i,j)
+   1552             w_qm_knt_tot = w_qm_knt_tot + qm_knt(5,i,j)
+   1553           endif
+   1554         enddo
+   1555       enddo
+   1556 
+   1557       if(w_qm_knt_tot.eq.0) then
+   1558         print *, 'NO WQM RESULTS!'
+   1559       else
+   1560         print 51
+   1561         print 52,'TOTAL:',w_qm_knt_tot
+   1562       endif
+   1563 
+   1564 
+   1565       write(*,*)
+   1566       write(*,*) '****************************'
+   1567       write(*,*) 'output_acqc_noprof has ended'
+   1568       call system('date')
+   1569       write(*,*) '****************************'
+   1570       write(*,*)
+   1571 
+   1572       return
+   1573 
+   1574       end
+
+Page 29          Source Listing                  OUTPUT_ACQC_NOPROF
+2017-04-18 11:09 Entry Points                    output_acqc_noprof.f
+
+
+
+ENTRY POINTS
+
+  Name                           
+                                 
+ output_acqc_noprof_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ 102                        Label  571                                                            568                               
+ 3400                       Label  632                                                            478                               
+ 50                         Label  1412                                                           1399,1440,1477,1514,1551          
+ 51                         Label  1413                                                           1408,1449,1486,1523,1560          
+ 52                         Label  1414                                                           1409,1450,1487,1524,1561          
+ 61                         Label  497                                                            496                               
+ 62                         Label  505                                                            502                               
+ 63                         Label  509                                                            508                               
+ 64                         Label  512                                                            511                               
+ 65                         Label  488                                                            487                               
+ 66                         Label  701                                                            700                               
+ 72                         Label  522                                                            519                               
+ 73                         Label  526                                                            525                               
+ 74                         Label  529                                                            528                               
+ 76                         Label  711                                                            710                               
+ 82                         Label  539                                                            536                               
+ 83                         Label  543                                                            542                               
+ 84                         Label  546                                                            545                               
+ 86                         Label  721                                                            720                               
+ 92                         Label  557                                                            554                               
+ 93                         Label  561                                                            560,574                           
+ 96                         Label  1343                                                           1342                              
+ 97                         Label  1347                                                           1346                              
+ ALAT                       Dummy  124      R(8)            8     1     0        ARG,INOUT        528,591,594,616                   
+ ALON                       Dummy  124      R(8)            8     1     0        ARG,INOUT        545,599,602,617                   
+ ARR_8                      Local  209      R(8)            8     2     100                       443,446,447,448,449,450,451,452,50
+                                                                                                  2,503,519,520,536,537,554,555,568,
+                                                                                                  569                               
+ BMISS                      Dummy  124      R(8)            8           scalar   ARG,INOUT        579,580,581                       
+ CLOSMG                     Subr   422                                                            422                               
+ COPYMG                     Subr   426                                                            426                               
+ C_NRLQM                    Local  339      CHAR            11          scalar                    1319,1323                         
+ C_QC                       Dummy  124      CHAR            11    1     0        ARG,INOUT        482,483,484,485,486,487,490,491,49
+                                                                                                  2,493,494,495,498,504,515,521,532,
+                                                                                                  538,549,550,556,564,570,582,590,59
+                                                                                                  8,696,706,716,767,774,807,814,855,
+                                                                                                  862,893,900,933,940,1319          
+ DHR_CORR                   Local  211      R(8)            8     1     2                         579,583,584,700,704               
+ ELIM_KNT                   Local  321      I(4)            4     2     6                         369,643,645,659,661,673,675,1342,1
+                                                                                                  346,1358,1361,1368,1370,1373      
+ ERREXIT                    Subr   627                                                            627                               
+ HT_FT                      Dummy  124      R(4)            4     1     0        ARG,INOUT        618                               
+ I                          Local  167      I(4)            4           scalar                    1396,1398,1399,1400,1437,1439,1440
+                                                                                                  ,1441,1474,1476,1477,1478,1511,151
+
+Page 30          Source Listing                  OUTPUT_ACQC_NOPROF
+2017-04-18 11:09 Symbol Table                    output_acqc_noprof.f
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+                                                                                                  3,1514,1515,1548,1550,1551,1552   
+ IBFMS                      Func   176      I(4)            4           scalar                    754,796,842,882,922               
+ IDT                        Dummy  124      I(4)            4     1     0        ARG,INOUT        511,583,586,587,619               
+ INLUN                      Dummy  123      I(4)            4           scalar   ARG,INOUT        416,426,428,443,683,750,793,838,87
+                                                                                                  9,919                             
+ INPUT_ALAT                 Local  239      R(8)            8           scalar                    446,502,519,525,536,554,568,593,59
+                                                                                                  4,616,657                         
+ INPUT_ALON                 Local  241      R(8)            8           scalar                    447,503,520,537,542,555,569,601,60
+                                                                                                  2,617                             
+ INPUT_DHR                  Local  245      R(4)            4           scalar                    449,503,508,520,537,555,569,587,64
+                                                                                                  1                                 
+ INPUT_HT_FT                Local  243      R(4)            4           scalar                    448,618                           
+ INPUT_IDT                  Local  247      I(4)            4           scalar                    450,508,586,619                   
+ INPUT_SQN                  Local  235      I(4)            4           scalar                    452,453,607                       
+ INPUT_SQN_LAST             Local  237      I(4)            4           scalar                    411,453,607                       
+ INPUT_TYP                  Local  249      I(4)            4           scalar                    451,700,710,720,825,906,967,974,99
+                                                                                                  6,1003,1174,1260                  
+ INT                        Func   825                                  scalar                    825,906,967,974,996,1003,1174,1199
+                                                                                                  ,1239,1260,1281                   
+ IPQM_NRLACQC               Local  271      I(4)            4           scalar                    767,771,961,990,1064,1065,1066,106
+                                                                                                  9,1074,1090,1092,1093,1094,1102,11
+                                                                                                  04,1106,1107,1108                 
+ IPQM_TOPSTK                Local  260      I(4)            4           scalar                    432,757,1060,1061,1063,1064,1066,1
+                                                                                                  069,1091,1093,1094,1102,1105,1107,
+                                                                                                  1108                              
+ IPRC_NRLACQC               Local  272      I(4)            4           scalar                    768,771,1065,1076,1081            
+ IQQM_NRLACQC               Local  277      I(4)            4           scalar                    893,897,971,1000,1228,1229,1230,12
+                                                                                                  31,1233,1240,1243,1251,1253,1254,1
+                                                                                                  255                               
+ IQQM_TOPSTK                Local  266      I(4)            4           scalar                    435,885,1224,1225,1227,1228,1230,1
+                                                                                                  232,1233,1252,1254,1255           
+ IQRC_NRLACQC               Local  278      I(4)            4           scalar                    894,897,1229,1239,1245,1248       
+ IREADMG                    Func   174      I(4)            4           scalar                    416                               
+ IREADSB                    Func   175      I(4)            4           scalar                    428                               
+ IRET                       Local  217      I(4)            4           scalar                    704,714,724,1077,1142,1206,1246,12
+                                                                                                  88                                
+ ITQM_NRLACQC               Local  275      I(4)            4           scalar                    855,859,968,997,1184,1185,1186,118
+                                                                                                  7,1191,1200,1203,1211,1213,1214,12
+                                                                                                  15                                
+ ITQM_TOPSTK                Local  264      I(4)            4           scalar                    434,845,1180,1181,1183,1184,1186,1
+                                                                                                  188,1191,1212,1214,1215           
+ ITRC_NRLACQC               Local  276      I(4)            4           scalar                    856,859,1185,1199,1205,1208       
+ IWQM_NRLACQC               Local  279      I(4)            4           scalar                    933,937,976,1005,1270,1271,1272,12
+                                                                                                  73,1275,1282,1285,1293,1295,1296,1
+                                                                                                  297                               
+ IWQM_TOPSTK                Local  268      I(4)            4           scalar                    436,925,1266,1267,1269,1270,1272,1
+                                                                                                  274,1275,1294,1296,1297           
+ IWRC_NRLACQC               Local  280      I(4)            4           scalar                    934,937,1271,1281,1287,1290       
+ IZQM_NRLACQC               Local  273      I(4)            4           scalar                    807,811,964,993,1130,1131,1132,113
+                                                                                                  4,1139,1149,1151,1152,1153,1161,11
+                                                                                                  63,1165,1166,1167                 
+ IZQM_TOPSTK                Local  262      I(4)            4           scalar                    433,799,1126,1127,1129,1130,1132,1
+                                                                                                  134,1150,1152,1153,1161,1164,1166,
+                                                                                                  1167                              
+ IZRC_NRLACQC               Local  274      I(4)            4           scalar                    808,811,1131,1141,1146            
+
+Page 31          Source Listing                  OUTPUT_ACQC_NOPROF
+2017-04-18 11:09 Symbol Table                    output_acqc_noprof.f
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ I_HIT_LIMIT_FIRST          Local  349      I(4)            4           scalar                    371,467,476                       
+ J                          Local  167      I(4)            4           scalar                    1397,1398,1399,1400,1438,1439,1440
+                                                                                                  ,1441,1475,1476,1477,1478,1512,151
+                                                                                                  3,1514,1515,1549,1550,1551,1552   
+ L_BADRPT_P                 Local  251      L(4)            4           scalar                    735,768,955                       
+ L_BADRPT_Q                 Local  254      L(4)            4           scalar                    738,894,956                       
+ L_BADRPT_T                 Local  253      L(4)            4           scalar                    737,856,956                       
+ L_BADRPT_W                 Local  255      L(4)            4           scalar                    739,934,956                       
+ L_BADRPT_Z                 Local  252      L(4)            4           scalar                    736,808,955                       
+ L_DUPRPT                   Local  257      L(4)            4           scalar                    741,768,808,856,894,934,989       
+ L_EVENTUPDATE              Local  232      L(4)            4           scalar                    402,419,423,1304                  
+ L_HIT_LIMIT                Local  347      L(4)            4           scalar                    414,477,647,663,685               
+ L_NHONLY                   Dummy  125      L(4)            4           scalar   ARG,INOUT        654,1355,1364                     
+ L_OTW                      Dummy  125      L(4)            4           scalar   ARG,INOUT        639,1341,1351                     
+ L_SKIP                     Local  346      L(4)            4           scalar                    1052,1057,1118,1123               
+ M2FT                       Param  145      R(4)            4           scalar                    448                               
+ MAX_REPS                   Dummy  123      I(4)            4           scalar   ARG,INOUT        178,191,192,193,194,195,196,197,19
+                                                                                                  8,199,200,201,202,203,204,205     
+ MESGDATE                   Local  163      I(4)            4           scalar                    416,681                           
+ MESGTYPE                   Local  162      CHAR            8           scalar                    416,418,642,644,658,660,672,674,68
+                                                                                                  1                                 
+ MOD                        Func   613                                  scalar                    613                               
+ NCEP_QM_P                  Dummy  126      I(4)            4     1     0        ARG,INOUT        358,1092,1106                     
+ NCEP_QM_Q                  Dummy  129      I(4)            4     1     0        ARG,INOUT        364,1253                          
+ NCEP_QM_T                  Dummy  128      I(4)            4     1     0        ARG,INOUT        362,1213                          
+ NCEP_QM_W                  Dummy  130      I(4)            4     1     0        ARG,INOUT        366,1295                          
+ NCEP_QM_Z                  Dummy  127      I(4)            4     1     0        ARG,INOUT        360,1151,1165                     
+ NCEP_RC_P                  Dummy  126      I(4)            4     1     0        ARG,INOUT        359,1081                          
+ NCEP_RC_Q                  Dummy  129      I(4)            4     1     0        ARG,INOUT        365,1248                          
+ NCEP_RC_T                  Dummy  128      I(4)            4     1     0        ARG,INOUT        363,1208                          
+ NCEP_RC_W                  Dummy  130      I(4)            4     1     0        ARG,INOUT        367,1290                          
+ NCEP_RC_Z                  Dummy  127      I(4)            4     1     0        ARG,INOUT        361,1146                          
+ NCEP_REJ                   Dummy  131      I(4)            4     1     0        ARG,INOUT        368,648,664                       
+ NEVRD                      Local  284      I(4)            4     1     5                         752,794,840,880,920,1383,1424,1461
+                                                                                                  ,1498,1535                        
+ NEVWRT                     Local  285      I(4)            4     1     5                         356,1080,1145,1207,1247,1289,1388,
+                                                                                                  1429,1466,1503,1540               
+ NEV_NOUPD                  Local  287      I(4)            4     1     5                         1071,1103,1136,1162,1193,1235,1277
+                                                                                                  ,1392,1433,1470,1507,1544         
+ NINSSRD                    Local  222      I(4)            4           scalar                    357,438,775,815,863,901,941       
+ NINT                       Func   448                                  scalar                    448,450,451,452,503,520,537,555,56
+                                                                                                  9,755,757,797,799,843,845,883,885,
+                                                                                                  923,925                           
+ NLEV                       Local  215      I(4)            4           scalar                    443,750,793,838,879,919           
+ NPQM_MSG_IN                Local  303      I(4)            4           scalar                    373,759,762,1384                  
+ NPQM_MSG_OUT               Local  304      I(4)            4           scalar                    374,1096,1110,1390                
+ NQQM_MSG_IN                Local  309      I(4)            4           scalar                    379,887,890,1499                  
+ NQQM_MSG_OUT               Local  310      I(4)            4           scalar                    380,1257,1505                     
+ NRLACQC_PC                 Dummy  132      R(4)            4           scalar   ARG,INOUT        1075,1140,1204,1244,1286          
+ NRPTS4QC_PRE               Dummy  123      I(4)            4           scalar   ARG,INOUT        460,471,614                       
+ NTQM_MSG_IN                Local  307      I(4)            4           scalar                    377,847,850,1462                  
+ NTQM_MSG_OUT               Local  308      I(4)            4           scalar                    378,1217,1468                     
+ NWQM_MSG_IN                Local  311      I(4)            4           scalar                    381,927,930,1536                  
+ NWQM_MSG_OUT               Local  312      I(4)            4           scalar                    382,1299,1542                     
+ NZQM_MSG_IN                Local  305      I(4)            4           scalar                    375,801,804,1425                  
+
+Page 32          Source Listing                  OUTPUT_ACQC_NOPROF
+2017-04-18 11:09 Symbol Table                    output_acqc_noprof.f
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ NZQM_MSG_OUT               Local  306      I(4)            4           scalar                    376,1155,1169,1431                
+ OPENMB                     Subr   681                                                            681                               
+ OUTLUN                     Dummy  123      I(4)            4           scalar   ARG,INOUT        422,426,681,683,692,704,714,724,10
+                                                                                                  77,1142,1206,1246,1288,1311,1323  
+ OUTPUT_ACQC_NOPROF         Subr   123                                                                                              
+ P_EVENT                    Local  226      R(8)            8     1     4                         750,754,755,757,1074,1075,1076,107
+                                                                                                  7                                 
+ P_QM_KNT_TOT               Local  292      I(4)            4           scalar                    384,1400,1405,1409                
+ QCDRPTSIDX                 Local  223      I(4)            4           scalar                    410,457,460,481,482,483,484,485,48
+                                                                                                  6,487,490,491,492,493,494,495,498,
+                                                                                                  502,504,511,515,519,521,528,532,53
+                                                                                                  6,538,545,549,550,554,556,564,568,
+                                                                                                  570,582,583,586,587,590,591,594,59
+                                                                                                  8,599,602,613,614,615,616,617,618,
+                                                                                                  619,620,629,648,664,696,700,706,71
+                                                                                                  0,716,720,767,774,776,807,814,816,
+                                                                                                  855,862,864,893,900,902,933,940,94
+                                                                                                  2,1081,1092,1106,1146,1151,1165,12
+                                                                                                  08,1213,1248,1253,1290,1295,1319  
+ QM_KNT                     Local  289      I(4)            4     3     1280                      1093,1094,1107,1108,1152,1153,1166
+                                                                                                  ,1167,1214,1215,1254,1255,1296,129
+                                                                                                  7,1398,1399,1400,1439,1440,1441,14
+                                                                                                  76,1477,1478,1513,1514,1515,1550,1
+                                                                                                  551,1552                          
+ Q_EVENT                    Local  229      R(8)            8     1     4                         879,882,883,885,1243,1244,1245,124
+                                                                                                  6                                 
+ Q_QM_KNT_TOT               Local  298      I(4)            4           scalar                    387,1515,1520,1524                
+ SYSTEM                     Subr   395                                                            395,1568                          
+ TRAD                       Dummy  125      R(4)            4           scalar   ARG,INOUT        641,1342,1346                     
+ TRANQCFLAGS                Subr   767                                                            767,807,855,893,933               
+ T_EVENT                    Local  228      R(8)            8     1     4                         838,842,843,845,1203,1204,1205,120
+                                                                                                  6                                 
+ T_QM_KNT_TOT               Local  296      I(4)            4           scalar                    386,1478,1483,1487                
+ UFBCPY                     Subr   683                                                            683                               
+ UFBINT                     Subr   443                                                            443,704,714,724,750,793,838,879,91
+                                                                                                  9,1077,1142,1206,1246,1288        
+ W3TAGE                     Subr   626                                                            626                               
+ WRITLC                     Subr   1323                                                           1323                              
+ WRITSB                     Subr   692                                                            692,1311                          
+ W_EVENT                    Local  230      R(8)            8     1     5                         919,922,923,925,1285,1286,1287,128
+                                                                                                  8                                 
+ W_QM_KNT_TOT               Local  300      I(4)            4           scalar                    388,1552,1557,1561                
+ XOB_CORR                   Local  213      R(8)            8     1     3                         581,599,600,601,720,724           
+ YOB_CORR                   Local  212      R(8)            8     1     3                         580,591,592,593,710,714           
+ Z_EVENT                    Local  227      R(8)            8     1     4                         793,796,797,799,1139,1140,1141,114
+                                                                                                  2                                 
+ Z_QM_KNT_TOT               Local  294      I(4)            4           scalar                    385,1441,1446,1450                
+
+Page 33          Source Listing                  OUTPUT_ACQC_NOPROF
+2017-04-18 11:09 Subprograms/Common Blocks       output_acqc_noprof.f
+
+
+
+SUBPROGRAMS/COMMON BLOCKS
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ OUTPUT_ACQC_NOPROF         Subr   123                                                                                              
+
+COMPILER OPTIONS BEING USED
+
+       -align noall                          -align nonone
+       -align nocommons                      -align nodcommons
+       -align noqcommons                     -align nozcommons
+       -align records                        -align nosequence
+       -align norec1byte                     -align norec2byte
+       -align norec4byte                     -align norec8byte
+       -align norec16byte                    -align norec32byte
+       -align norec64byte                    -align noarray8byte
+       -align noarray16byte                  -align noarray32byte
+       -align noarray64byte                  -align noarray128byte
+       -align noarray256byte                 -altparam
+       -assume accuracy_sensitive            -assume nobscc
+       -assume nobuffered_io                 -assume nobuffered_stdout
+       -assume nobyterecl                    -assume nocc_omp
+       -assume nocstring                     -assume nodummy_aliases
+       -assume nofpe_summary                 -assume noieee_fpe_flags
+       -assume nominus0                      -assume noold_boz
+       -assume old_complex_align             -assume old_unit_star
+       -assume noold_ldout_format            -assume noold_logical_ldio
+       -assume old_maxminloc                 -assume old_xor
+       -assume noprotect_allocates           -assume protect_constants
+       -assume noprotect_parens              -assume split_common
+       -assume source_include                -assume nostd_intent_in
+       -assume std_minus0_rounding           -assume nostd_mod_proc_name
+       -assume std_value                     -assume norealloc_lhs
+       -assume underscore                    -assume no2underscores
+  no   -auto                                 -auto_scalar
+  no   -bintext                              -ccdefault default
+       -check noargs                         -check noarg_temp_created
+       -check noassume                       -check nobounds
+       -check noformat                       -check nooutput_conversion
+       -check nooverflow                     -check nopointers
+       -check power                          -check noshape
+       -check nostack                        -check nounderflow
+       -check nouninitialized                -coarray-num-procs 0
+  no   -coarray-config-file                  -convert big_endian
+       -cross_reference                      -D __INTEL_COMPILER=1600
+       -D __INTEL_COMPILER_UPDATE=3          -D __unix__
+       -D __unix                             -D __linux__
+       -D __linux                            -D __gnu_linux__
+       -D unix                               -D linux
+       -D __ELF__                            -D __x86_64
+       -D __x86_64__                         -D __amd64
+       -D __amd64__                          -D __INTEL_COMPILER_BUILD_DATE=20160415
+       -D __INTEL_OFFLOAD                    -D __i686
+       -D __i686__                           -D __pentiumpro
+       -D __pentiumpro__                     -D __pentium4
+
+Page 34          Source Listing                  OUTPUT_ACQC_NOPROF
+2017-04-18 11:09                                 output_acqc_noprof.f
+
+       -D __pentium4__                       -D __tune_pentium4__
+       -D __SSE2__                           -D __SSE2_MATH__
+       -D __SSE__                            -D __SSE_MATH__
+       -D __MMX__                            -double_size 64
+  no   -d_lines                         no   -Qdyncom
+       -error_limit 30                  no   -f66
+  no   -f77rtl                          no   -fast
+       -fpscomp nofilesfromcmd               -fpscomp nogeneral
+       -fpscomp noioformat                   -fpscomp noldio_spacing
+       -fpscomp nologicals                   -fixed
+  no   -fpconstant                           -fpe3
+       -fprm nearest                    no   -ftz
+       -fp_model noprecise                   -fp_model fast
+       -fp_model nostrict                    -fp_model nosource
+       -fp_model nodouble                    -fp_model noextended
+       -fp_model novery_fast                 -fp_model noexcept
+       -fp_model nono_except                 -heap_arrays 0
+  no   -threadprivate_compat                 -g2
+       -iface nomixed_str_len_arg            -iface nono_mixed_str_len_arg
+       -init noarrays                        -init noinf
+       -init nonan                           -init nosnan
+       -init nozero                     no   -intconstant
+       -integer_size 32                 no   -mixed_str_len_arg
+  no   -module                               -names lowercase
+  no   -noinclude                            -offload-build=host
+       -O2                              no   -pad_source
+       -real_size 32                    no   -recursive
+       -reentrancy none                 no   -sharable_localsaves
+       -vec=simd                             -show noinclude
+       -show map                             -show options
+  no   -syntax_only                     no   -threadcom
+  no   -U                               no   -vms
+       -w noall                              -w nonone
+       -w alignments                         -w noargument_checking
+       -w nodeclarations                     -w general
+       -w noignore_bounds                    -w noignore_loc
+       -w nointerfaces                       -w notruncated_source
+       -w uncalled                           -w uninitialized
+       -w nounused                           -w usage
+  no   -wrap-margins
+
+       -includepath : /usrx/local/intel/2016SP3/daal/include/,/usr/include/,.FOR,./.FOR,/usrx/local/intel/2016SP3/ipp/include/.FOR,
+           /usrx/local/intel/2016SP3/mkl/include/.FOR,/usrx/local/intel/2016SP3/tbb/include/.FOR,/usrx/local/intel/2016SP3/daal/include/.FOR,
+           /gpfs/tp1/usrx/local/intel/2016SP3/compilers_and_libraries_2016.3.210/linux/compiler/include/intel64/.FOR,
+           /gpfs/tp1/usrx/local/intel/2016SP3/compilers_and_libraries_2016.3.210/linux/compiler/include/.FOR,/usr/local/include/.FOR,
+           /usr/lib/gcc/x86_64-redhat-linux/4.4.7/include/.FOR,/usr/include/.FOR,/usr/include/.FOR,/usr/include/.FOR
+       -list filename : output_acqc_noprof.lst
+       -o    filename : none
+
+COMPILER: Intel(R) Fortran 16.0-1633

@@ -1,0 +1,2646 @@
+Page 1           Source Listing                  SSWPVV
+2017-04-18 11:09                                 pmat.f90
+
+      1 !
+      2 !                                **********************************************
+      3 !                                *             MODULE pmat                    *
+      4 !                                *  R. J. Purser, NOAA/NCEP/EMC       1993    *
+      5 !                                *  and Tsukasa Fujita, visiting scientist    *
+      6 !                                *  from JMA.                                 *
+      7 !                                *  Major modifications: 2002, 2009, 2012     *
+      8 !                                *  jim.purser@noaa.gov                       *
+      9 !                                *                                            *
+     10 !                                **********************************************
+     11 !
+     12 ! Utility routines for various linear inversions and Cholesky.
+     13 ! Dependency: modules pkind, pietc
+     14 ! Originally, these routines were copies of the purely "inversion" members
+     15 ! of pmat1.f90 (a most extensive collection of matrix routines -- not just
+     16 ! inversions). As well as having both single and double precision versions
+     17 ! of each routine, these versions also make provision for a more graceful
+     18 ! termination in cases where the system matrix is detected to be 
+     19 ! essentially singular (and therefore noninvertible). This provision takes
+     20 ! the form of an optional "failure flag", FF, which is normally returned
+     21 ! as .FALSE., but is returned as .TRUE. when inversion fails.
+     22 ! In Sep 2012, these routines were collected together into pmat.f90 so
+     23 ! that all the main matrix routines could be in the same library, pmat.a.
+     24 ! 
+     25 ! Last modified:
+     26 !  Keyser (2014-12-12) - print written to unit 41 rather than stdout (for use in
+     27 !                        prepobs_prepacqc program - limits amount of stdout)
+     28 !
+     29 ! DIRECT DEPENDENCIES:
+     30 ! Modules: pietc, pkind
+     31 !
+     32 !=============================================================================
+     33 module pmat
+     34 !=============================================================================
+     35 use pkind, only: sp,dp,spc,dpc
+     36 use pietc, only: t,f
+     37 implicit none
+     38 private
+     39 public:: ldum,udlmm,inv,L1Lm,LdLm,invl,invu
+     40 interface swpvv;  module procedure sswpvv,dswpvv,cswpvv;        end interface
+     41 interface ldum
+     42    module procedure sldum,dldum,cldum,sldumf,dldumf,cldumf;     end interface
+     43 interface udlmm
+     44    module procedure sudlmm,dudlmm,cudlmm,sudlmv,dudlmv,cudlmv;  end interface
+     45 interface inv
+     46    module procedure                                                           &
+     47 sinvmt, dinvmt, cinvmt, slinmmt, dlinmmt, clinmmt, slinmvt, dlinmvt, clinmvt, &
+     48 sinvmtf,dinvmtf,cinvmtf,slinmmtf,dlinmmtf,clinmmtf,slinmvtf,dlinmvtf,clinmvtf,&
+     49 iinvf
+     50                                                                end interface
+     51 interface L1Lm;   module procedure sL1Lm,dL1Lm,sL1Lmf,dL1Lmf;  end interface
+     52 interface LdLm;   module procedure sLdLm,dLdLm,sLdLmf,dLdLmf;  end interface
+     53 interface invl;   module procedure sinvl,dinvl,slinlv,dlinlv;  end interface
+     54 interface invu;   module procedure sinvu,dinvu,slinuv,dlinuv;  end interface
+     55 
+     56 contains
+     57 
+
+Page 2           Source Listing                  SSWPVV
+2017-04-18 11:09                                 pmat.f90
+
+     58 !=============================================================================
+     59 subroutine sswpvv(d,e)!                                                [swpvv]
+     60 !=============================================================================
+     61 ! Swap vectors
+     62 !-------------
+     63 real(sp),    intent(inout) :: d(:), e(:)
+     64 real(sp)                   :: tv(size(d))
+     65 !=============================================================================
+     66 tv = d; d = e; e = tv
+     67 end subroutine sswpvv
+
+
+ENTRY POINTS
+
+  Name                       
+                             
+ pmat_mp_sswpvv_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ D                          Dummy  59       R(4)            4     1     1        ARG,INOUT        64,66                             
+ E                          Dummy  59       R(4)            4     1     1        ARG,INOUT        66                                
+ SIZE                       Func   64                                   scalar                    64                                
+ SP                         Param  63       I(4)            4           scalar                    35,63,64,88,114,117,229,253,257,31
+                                                                                                  4,315,341,342,345,421,422,461,462,
+                                                                                                  466,655,656,658,743,744,746,817,81
+                                                                                                  8,842,843,847,906,907,908,931,932,
+                                                                                                  933,937,1013                      
+ SSWPVV                     Subr   59                                            PRIV             147,500                           
+ TV                         Local  64       R(4)            4     1     0                         66                                
+
+Page 3           Source Listing                  SSWPVV
+2017-04-18 11:09                                 pmat.f90
+
+     68 !=============================================================================
+     69 subroutine dswpvv(d,e)!                                                [swpvv]
+     70 !=============================================================================
+     71 real(dp), intent(inout) :: d(:), e(:)
+     72 real(dp)                :: tv(size(d))
+     73 !=============================================================================
+     74 tv = d; d = e; e = tv
+     75 end subroutine dswpvv
+
+
+ENTRY POINTS
+
+  Name                       
+                             
+ pmat_mp_dswpvv_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ D                          Dummy  69       R(8)            8     1     1        ARG,INOUT        72,74                             
+ DP                         Param  71       I(4)            4           scalar                    35,71,72,96,152,155,237,273,277,32
+                                                                                                  3,324,359,360,363,402,403,431,432,
+                                                                                                  521,522,526,588,589,681,682,684,76
+                                                                                                  7,768,770,829,830,872,873,877,917,
+                                                                                                  918,919,965,966,967,971,1005,1027,
+                                                                                                  1054,1055,1077,1078               
+ DSWPVV                     Subr   69                                            PRIV             185,560                           
+ E                          Dummy  69       R(8)            8     1     1        ARG,INOUT        74                                
+ SIZE                       Func   72                                   scalar                    72                                
+ TV                         Local  72       R(8)            8     1     0                         74                                
+
+Page 4           Source Listing                  DSWPVV
+2017-04-18 11:09                                 pmat.f90
+
+     76 !=============================================================================
+     77 subroutine cswpvv(d,e)!                                                [swpvv]
+     78 !=============================================================================
+     79 complex(dpc),intent(inout) :: d(:), e(:)
+     80 complex(dpc)               :: tv(size(d))
+     81 !=============================================================================
+     82 tv = d; d = e; e = tv
+     83 end subroutine cswpvv
+
+
+ENTRY POINTS
+
+  Name                       
+                             
+ pmat_mp_cswpvv_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ CSWPVV                     Subr   77                                            PRIV             223,623                           
+ D                          Dummy  77       C(16)           16    1     1        ARG,INOUT        80,82                             
+ DPC                        Param  79       I(4)            4           scalar                    35,79,80,104,190,193,245,293,297,3
+                                                                                                  32,333,377,378,381,441,442,582,583
+                                                                                                  ,587,707,708,710,791,792,794      
+ E                          Dummy  77       C(16)           16    1     1        ARG,INOUT        82                                
+ SIZE                       Func   80                                   scalar                    80                                
+ TV                         Local  80       C(16)           16    1     0                         82                                
+
+Page 5           Source Listing                  CSWPVV
+2017-04-18 11:09                                 pmat.f90
+
+     84 
+     85 !=============================================================================
+     86 subroutine sinvmt(a)!                                                    [inv]
+     87 !=============================================================================
+     88 real(sp),dimension(:,:),intent(INOUT):: a
+     89 logical                              :: ff
+     90 call sinvmtf(a,ff)
+     91 if(ff)stop 'In sinvmt; Unable to invert matrix'
+     92 end subroutine sinvmt
+
+
+ENTRY POINTS
+
+  Name                       
+                             
+ pmat_mp_sinvmt_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  86       R(4)            4     2     1        ARG,INOUT        90                                
+ FF                         Local  89       L(4)            4           scalar                    90,91                             
+ SINVMT                     Subr   86                                            PRIV                                               
+
+Page 6           Source Listing                  SINVMT
+2017-04-18 11:09                                 pmat.f90
+
+     93 !=============================================================================
+     94 subroutine dinvmt(a)!                                                    [inv]
+     95 !=============================================================================
+     96 real(dp),dimension(:,:),intent(inout):: a
+     97 logical                              :: ff
+     98 call dinvmtf(a,ff)
+     99 if(ff)stop 'In dinvmt; Unable to invert matrix'
+    100 end subroutine dinvmt
+
+
+ENTRY POINTS
+
+  Name                       
+                             
+ pmat_mp_dinvmt_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  94       R(8)            8     2     1        ARG,INOUT        98                                
+ DINVMT                     Subr   94                                            PRIV                                               
+ FF                         Local  97       L(4)            4           scalar                    98,99                             
+
+Page 7           Source Listing                  DINVMT
+2017-04-18 11:09                                 pmat.f90
+
+    101 !=============================================================================
+    102 subroutine cinvmt(a)!                                                    [inv]
+    103 !=============================================================================
+    104 complex(dpc),dimension(:,:),intent(inout):: a
+    105 logical                                  :: ff
+    106 call cinvmtf(a,ff)
+    107 if(ff)stop 'In cinvmt; Unable to invert matrix'
+    108 end subroutine cinvmt
+
+
+ENTRY POINTS
+
+  Name                       
+                             
+ pmat_mp_cinvmt_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  102      C(16)           16    2     1        ARG,INOUT        106                               
+ CINVMT                     Subr   102                                           PRIV                                               
+ FF                         Local  105      L(4)            4           scalar                    106,107                           
+
+Page 8           Source Listing                  CINVMT
+2017-04-18 11:09                                 pmat.f90
+
+    109 !=============================================================================
+    110 subroutine sinvmtf(a,ff)!                                                [inv]
+    111 !=============================================================================
+    112 ! Invert matrix (or flag if can't)
+    113 !----------------
+    114 real(sp),dimension(:,:),intent(inout):: a
+    115 logical,                intent(  out):: ff 
+    116 integer                              :: m,i,j,jp,l
+    117 real(sp)                             :: d
+    118 integer,dimension(size(a,1))         :: ipiv
+    119 !=============================================================================
+    120 m=size(a,1)
+    121 if(m /= size(a,2))stop 'In sinvmtf; matrix passed to sinvmtf is not square'
+    122 ! Perform a pivoted L-D-U decomposition on matrix a:
+    123 call sldumf(a,ipiv,d,ff)
+    124 if(ff)then
+    125    write(41,'(" In sinvmtf; failed call to sldumf")')
+    126    return
+    127 endif
+    128 
+    129 ! Invert upper triangular portion U in place:
+    130 do i=1,m; a(i,i)=1./a(i,i); enddo
+    131 do i=1,m-1
+    132    do j=i+1,m; a(i,j)=-a(j,j)*dot_product(a(i:j-1,j),a(i,i:j-1)); enddo
+    133 enddo
+    134 
+    135 ! Invert lower triangular portion L in place:
+    136 do j=1,m-1; jp=j+1
+    137    do i=jp,m; a(i,j)=-a(i,j)-dot_product(a(jp:i-1,j),a(i,jp:i-1)); enddo
+    138 enddo
+    139 
+    140 !  Form the product of U**-1 and L**-1 in place
+    141 do j=1,m-1; jp=j+1
+    142    do i=1,j; a(i,j)=a(i,j)+dot_product(a(jp:m,j),a(i,jp:m)); enddo
+    143    do i=jp,m; a(i,j)=dot_product(a(i:m,j),a(i,i:m));         enddo
+    144 enddo
+    145 
+    146 !  Permute columns according to ipiv
+    147 do j=m-1,1,-1; l=ipiv(j); call sswpvv(a(:,j),a(:,l)); enddo
+    148 end subroutine sinvmtf
+
+Page 9           Source Listing                  SINVMTF
+2017-04-18 11:09 Entry Points                    pmat.f90
+
+
+
+ENTRY POINTS
+
+  Name                        
+                              
+ pmat_mp_sinvmtf_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  110      R(4)            4     2     1        ARG,INOUT        118,120,121,123,130,132,137,142,14
+                                                                                                  3,147                             
+ D                          Local  117      R(4)            4           scalar                    123                               
+ DOT_PRODUCT                Func   132                                  scalar                    132,137,142,143                   
+ FF                         Dummy  110      L(4)            4           scalar   ARG,OUT          123,124                           
+ I                          Local  116      I(4)            4           scalar                    130,131,132,137,142,143           
+ IPIV                       Local  118      I(4)            4     1     0        TGT              123,147                           
+ J                          Local  116      I(4)            4           scalar                    132,136,137,141,142,143,147       
+ JP                         Local  116      I(4)            4           scalar                    136,137,141,142,143               
+ L                          Local  116      I(4)            4           scalar                    147                               
+ M                          Local  116      I(4)            4           scalar                    120,121,130,131,132,136,137,141,14
+                                                                                                  2,143,147                         
+ SINVMTF                    Subr   110                                           PRIV             90                                
+ SIZE                       Func   118                                  scalar                    118,120,121                       
+
+Page 10          Source Listing                  SINVMTF
+2017-04-18 11:09                                 pmat.f90
+
+    149 !=============================================================================
+    150 subroutine dinvmtf(a,ff)!                                                [inv]
+    151 !=============================================================================
+    152 real(DP),dimension(:,:),intent(INOUT):: a
+    153 logical,                intent(  OUT):: ff
+    154 integer                              :: m,i,j,jp,l
+    155 real(DP)                             :: d
+    156 integer, dimension(size(a,1))        :: ipiv
+    157 !=============================================================================
+    158 m=size(a,1)
+    159 if(m /= size(a,2))stop 'In inv; matrix passed to dinvmtf is not square'
+    160 ! Perform a pivoted L-D-U decomposition on matrix a:
+    161 call dldumf(a,ipiv,d,ff)
+    162 if(ff)then
+    163    write(41,'(" In dinvmtf; failed call to dldumf")')
+    164    return
+    165 endif
+    166 
+    167 ! Invert upper triangular portion U in place:
+    168 do i=1,m; a(i,i)=1/a(i,i); enddo
+    169 do i=1,m-1
+    170    do j=i+1,m; a(i,j)=-a(j,j)*dot_product(a(i:j-1,j),a(i,i:j-1)); enddo
+    171 enddo
+    172 
+    173 ! Invert lower triangular portion L in place:
+    174 do j=1,m-1; jp=j+1
+    175    do i=jp,m; a(i,j)=-a(i,j)-dot_product(a(jp:i-1,j),a(i,jp:i-1)); enddo
+    176 enddo
+    177 
+    178 !  Form the product of U**-1 and L**-1 in place
+    179 do j=1,m-1; jp=j+1
+    180    do i=1,j; a(i,j)=a(i,j)+dot_product(a(jp:m,j),a(i,jp:m)); enddo
+    181    do i=jp,m; a(i,j)=dot_product(a(i:m,j),a(i,i:m));         enddo
+    182 enddo
+    183 
+    184 !  Permute columns according to ipiv
+    185 do j=m-1,1,-1; l=ipiv(j); call dswpvv(a(:,j),a(:,l)); enddo
+    186 end subroutine dinvmtf
+
+Page 11          Source Listing                  DINVMTF
+2017-04-18 11:09 Entry Points                    pmat.f90
+
+
+
+ENTRY POINTS
+
+  Name                        
+                              
+ pmat_mp_dinvmtf_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  150      R(8)            8     2     1        ARG,INOUT        156,158,159,161,168,170,175,180,18
+                                                                                                  1,185                             
+ D                          Local  155      R(8)            8           scalar                    161                               
+ DINVMTF                    Subr   150                                           PRIV             98,408                            
+ DOT_PRODUCT                Func   170                                  scalar                    170,175,180,181                   
+ FF                         Dummy  150      L(4)            4           scalar   ARG,OUT          161,162                           
+ I                          Local  154      I(4)            4           scalar                    168,169,170,175,180,181           
+ IPIV                       Local  156      I(4)            4     1     0        TGT              161,185                           
+ J                          Local  154      I(4)            4           scalar                    170,174,175,179,180,181,185       
+ JP                         Local  154      I(4)            4           scalar                    174,175,179,180,181               
+ L                          Local  154      I(4)            4           scalar                    185                               
+ M                          Local  154      I(4)            4           scalar                    158,159,168,169,170,174,175,179,18
+                                                                                                  0,181,185                         
+ SIZE                       Func   156                                  scalar                    156,158,159                       
+
+Page 12          Source Listing                  DINVMTF
+2017-04-18 11:09                                 pmat.f90
+
+    187 !=============================================================================
+    188 subroutine cinvmtf(a,ff)!                                                [inv]
+    189 !=============================================================================
+    190 complex(dpc),dimension(:,:),intent(INOUT):: a
+    191 logical,                    intent(  OUT):: ff
+    192 integer                                  :: m,i,j,jp,l
+    193 complex(dpc)                             :: d
+    194 integer, dimension(size(a,1))            :: ipiv
+    195 !=============================================================================
+    196 m=size(a,1)
+    197 if(m /= size(a,2))stop 'In inv; matrix passed to cinvmtf is not square'
+    198 ! Perform a pivoted L-D-U decomposition on matrix a:
+    199 call cldumf(a,ipiv,d,ff)
+    200 if(ff)then
+    201    write(41,'(" In cinvmtf; failed call to cldumf")')
+    202    return
+    203 endif
+    204 
+    205 ! Invert upper triangular portion U in place:
+    206 do i=1,m; a(i,i)=1/a(i,i); enddo
+    207 do i=1,m-1
+    208    do j=i+1,m; a(i,j)=-a(j,j)*sum(a(i:j-1,j)*a(i,i:j-1)); enddo
+    209 enddo
+    210 
+    211 ! Invert lower triangular portion L in place:
+    212 do j=1,m-1; jp=j+1
+    213    do i=jp,m; a(i,j)=-a(i,j)-sum(a(jp:i-1,j)*a(i,jp:i-1)); enddo
+    214 enddo
+    215 
+    216 !  Form the product of U**-1 and L**-1 in place
+    217 do j=1,m-1; jp=j+1
+    218    do i=1,j; a(i,j)=a(i,j)+sum(a(jp:m,j)*a(i,jp:m)); enddo
+    219    do i=jp,m; a(i,j)=sum(a(i:m,j)*a(i,i:m));         enddo
+    220 enddo
+    221 
+    222 !  Permute columns according to ipiv
+    223 do j=m-1,1,-1; l=ipiv(j); call cswpvv(a(:,j),a(:,l)); enddo
+    224 end subroutine cinvmtf
+
+Page 13          Source Listing                  CINVMTF
+2017-04-18 11:09 Entry Points                    pmat.f90
+
+
+
+ENTRY POINTS
+
+  Name                        
+                              
+ pmat_mp_cinvmtf_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  188      C(16)           16    2     1        ARG,INOUT        194,196,197,199,206,208,213,218,21
+                                                                                                  9,223                             
+ CINVMTF                    Subr   188                                           PRIV             106                               
+ D                          Local  193      C(16)           16          scalar                    199                               
+ FF                         Dummy  188      L(4)            4           scalar   ARG,OUT          199,200                           
+ I                          Local  192      I(4)            4           scalar                    206,207,208,213,218,219           
+ IPIV                       Local  194      I(4)            4     1     0        TGT              199,223                           
+ J                          Local  192      I(4)            4           scalar                    208,212,213,217,218,219,223       
+ JP                         Local  192      I(4)            4           scalar                    212,213,217,218,219               
+ L                          Local  192      I(4)            4           scalar                    223                               
+ M                          Local  192      I(4)            4           scalar                    196,197,206,207,208,212,213,217,21
+                                                                                                  8,219,223                         
+ SIZE                       Func   194                                  scalar                    194,196,197                       
+ SUM                        Func   208                                  scalar                    208,213,218,219                   
+
+Page 14          Source Listing                  CINVMTF
+2017-04-18 11:09                                 pmat.f90
+
+    225 
+    226 !=============================================================================
+    227 subroutine slinmmt(a,b)!                                                 [inv]
+    228 !=============================================================================
+    229 real(sp),dimension(:,:),intent(inout):: a,b
+    230 logical                              :: ff
+    231 call slinmmtf(a,b,ff)
+    232 if(ff)stop 'In slinmmt; unable to invert linear system'
+    233 end subroutine slinmmt
+
+
+ENTRY POINTS
+
+  Name                        
+                              
+ pmat_mp_slinmmt_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  227      R(4)            4     2     1        ARG,INOUT        231                               
+ B                          Dummy  227      R(4)            4     2     1        ARG,INOUT        231                               
+ FF                         Local  230      L(4)            4           scalar                    231,232                           
+ SLINMMT                    Subr   227                                           PRIV                                               
+
+Page 15          Source Listing                  SLINMMT
+2017-04-18 11:09                                 pmat.f90
+
+    234 !=============================================================================
+    235 subroutine dlinmmt(a,b)!                                                 [inv]
+    236 !=============================================================================
+    237 real(dp),dimension(:,:),intent(inout):: a,b
+    238 logical                              :: ff
+    239 call dlinmmtf(a,b,ff)
+    240 if(ff)stop 'In dlinmmt; unable to invert linear system'
+    241 end subroutine dlinmmt
+
+
+ENTRY POINTS
+
+  Name                        
+                              
+ pmat_mp_dlinmmt_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  235      R(8)            8     2     1        ARG,INOUT        239                               
+ B                          Dummy  235      R(8)            8     2     1        ARG,INOUT        239                               
+ DLINMMT                    Subr   235                                           PRIV                                               
+ FF                         Local  238      L(4)            4           scalar                    239,240                           
+
+Page 16          Source Listing                  DLINMMT
+2017-04-18 11:09                                 pmat.f90
+
+    242 !=============================================================================
+    243 subroutine clinmmt(a,b)!                                                 [inv]
+    244 !=============================================================================
+    245 complex(dpc),dimension(:,:),intent(inout):: a,b
+    246 logical                                  :: ff
+    247 call clinmmtf(a,b,ff)
+    248 if(ff)stop 'In clinmmt; unable to invert linear system'
+    249 end subroutine clinmmt
+
+
+ENTRY POINTS
+
+  Name                        
+                              
+ pmat_mp_clinmmt_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  243      C(16)           16    2     1        ARG,INOUT        247                               
+ B                          Dummy  243      C(16)           16    2     1        ARG,INOUT        247                               
+ CLINMMT                    Subr   243                                           PRIV                                               
+ FF                         Local  246      L(4)            4           scalar                    247,248                           
+
+Page 17          Source Listing                  CLINMMT
+2017-04-18 11:09                                 pmat.f90
+
+    250 !=============================================================================
+    251 subroutine slinmmtf(a,b,ff)!                                             [inv]
+    252 !=============================================================================
+    253 real(SP),   dimension(:,:),intent(INOUT):: a,b
+    254 logical,                   intent(  OUT):: ff
+    255 integer,dimension(size(a,1))            :: ipiv
+    256 integer                                 :: m
+    257 real(sp)                                :: d
+    258 !=============================================================================
+    259 m=size(a,1)
+    260 if(m /= size(a,2))stop 'In inv; matrix passed to slinmmtf is not square'
+    261 if(m /= size(b,1))&
+    262      stop 'In inv; matrix and vectors in slinmmtf have unmatched sizes'
+    263 call sldumf(a,ipiv,d,ff)
+    264 if(ff)then
+    265    write(41,'("In slinmmtf; failed call to sldumf")')
+    266    return
+    267 endif
+    268 call sudlmm(a,b,ipiv)
+    269 end subroutine slinmmtf
+
+
+ENTRY POINTS
+
+  Name                         
+                               
+ pmat_mp_slinmmtf_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  251      R(4)            4     2     1        ARG,INOUT        255,259,260,263,268               
+ B                          Dummy  251      R(4)            4     2     1        ARG,INOUT        261,268                           
+ D                          Local  257      R(4)            4           scalar                    263                               
+ FF                         Dummy  251      L(4)            4           scalar   ARG,OUT          263,264                           
+ IPIV                       Local  255      I(4)            4     1     0        TGT              263,268                           
+ M                          Local  256      I(4)            4           scalar                    259,260,261                       
+ SIZE                       Func   255                                  scalar                    255,259,260,261                   
+ SLINMMTF                   Subr   251                                           PRIV             231                               
+
+Page 18          Source Listing                  SLINMMTF
+2017-04-18 11:09                                 pmat.f90
+
+    270 !=============================================================================
+    271 subroutine dlinmmtf(a,b,ff)!                                             [inv]
+    272 !=============================================================================
+    273 real(dp),dimension(:,:),   intent(inout):: a,b
+    274 logical,                   intent(  out):: ff
+    275 integer, dimension(size(a,1))           :: ipiv
+    276 integer                                 :: m 
+    277 real(dp)                                :: d
+    278 !=============================================================================
+    279 m=size(a,1)
+    280 if(m /= size(a,2))stop 'In inv; matrix passed to dlinmmtf is not square'
+    281 if(m /= size(b,1))&
+    282      stop 'In inv; matrix and vectors in dlinmmtf have unmatched sizes'
+    283 call dldumf(a,ipiv,d,ff)
+    284 if(ff)then
+    285    write(41,'("In dlinmmtf; failed call to dldumf")')
+    286    return
+    287 endif
+    288 call dudlmm(a,b,ipiv)
+    289 end subroutine dlinmmtf
+
+
+ENTRY POINTS
+
+  Name                         
+                               
+ pmat_mp_dlinmmtf_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  271      R(8)            8     2     1        ARG,INOUT        275,279,280,283,288               
+ B                          Dummy  271      R(8)            8     2     1        ARG,INOUT        281,288                           
+ D                          Local  277      R(8)            8           scalar                    283                               
+ DLINMMTF                   Subr   271                                           PRIV             239                               
+ FF                         Dummy  271      L(4)            4           scalar   ARG,OUT          283,284                           
+ IPIV                       Local  275      I(4)            4     1     0        TGT              283,288                           
+ M                          Local  276      I(4)            4           scalar                    279,280,281                       
+ SIZE                       Func   275                                  scalar                    275,279,280,281                   
+
+Page 19          Source Listing                  DLINMMTF
+2017-04-18 11:09                                 pmat.f90
+
+    290 !=============================================================================
+    291 subroutine clinmmtf(a,b,ff)!                                             [inv]
+    292 !=============================================================================
+    293 complex(dpc),dimension(:,:),intent(INOUT):: a,b
+    294 logical,                    intent(  OUT):: ff
+    295 integer, dimension(size(a,1))            :: ipiv
+    296 integer                                  :: m 
+    297 complex(dpc)                             :: d
+    298 !=============================================================================
+    299 m=size(a,1)
+    300 if(m /= size(a,2))stop 'In inv; matrix passed to dlinmmtf is not square'
+    301 if(m /= size(b,1))&
+    302      stop 'In inv; matrix and vectors in dlinmmtf have unmatched sizes'
+    303 call cldumf(a,ipiv,d,ff)
+    304 if(ff)then
+    305    write(41,'("In clinmmtf; failed call to cldumf")')
+    306    return
+    307 endif
+    308 call cudlmm(a,b,ipiv)
+    309 end subroutine clinmmtf
+
+
+ENTRY POINTS
+
+  Name                         
+                               
+ pmat_mp_clinmmtf_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  291      C(16)           16    2     1        ARG,INOUT        295,299,300,303,308               
+ B                          Dummy  291      C(16)           16    2     1        ARG,INOUT        301,308                           
+ CLINMMTF                   Subr   291                                           PRIV             247                               
+ D                          Local  297      C(16)           16          scalar                    303                               
+ FF                         Dummy  291      L(4)            4           scalar   ARG,OUT          303,304                           
+ IPIV                       Local  295      I(4)            4     1     0        TGT              303,308                           
+ M                          Local  296      I(4)            4           scalar                    299,300,301                       
+ SIZE                       Func   295                                  scalar                    295,299,300,301                   
+
+Page 20          Source Listing                  CLINMMTF
+2017-04-18 11:09                                 pmat.f90
+
+    310 
+    311 !=============================================================================
+    312 subroutine slinmvt(a,b)!                                                 [inv]
+    313 !=============================================================================
+    314 real(sp),   dimension(:,:),intent(inout):: a
+    315 real(sp),   dimension(:),  intent(inout):: b
+    316 logical                                 :: ff
+    317 call slinmvtf(a,b,ff)
+    318 if(ff)stop 'In slinmvt; matrix singular, unable to continue'
+    319 end subroutine slinmvt
+
+
+ENTRY POINTS
+
+  Name                        
+                              
+ pmat_mp_slinmvt_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  312      R(4)            4     2     1        ARG,INOUT        317                               
+ B                          Dummy  312      R(4)            4     1     1        ARG,INOUT        317                               
+ FF                         Local  316      L(4)            4           scalar                    317,318                           
+ SLINMVT                    Subr   312                                           PRIV                                               
+
+Page 21          Source Listing                  SLINMVT
+2017-04-18 11:09                                 pmat.f90
+
+    320 !=============================================================================
+    321 subroutine dlinmvt(a,b)!                                                 [inv]
+    322 !=============================================================================
+    323 real(dp),   dimension(:,:),intent(inout):: a
+    324 real(dp),   dimension(:),  intent(inout):: b
+    325 logical                                 :: ff
+    326 call dlinmvtf(a,b,ff)
+    327 if(ff)stop 'In dlinmvt; matrix singular, unable to continue'
+    328 end subroutine dlinmvt
+
+
+ENTRY POINTS
+
+  Name                        
+                              
+ pmat_mp_dlinmvt_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  321      R(8)            8     2     1        ARG,INOUT        326                               
+ B                          Dummy  321      R(8)            8     1     1        ARG,INOUT        326                               
+ DLINMVT                    Subr   321                                           PRIV                                               
+ FF                         Local  325      L(4)            4           scalar                    326,327                           
+
+Page 22          Source Listing                  DLINMVT
+2017-04-18 11:09                                 pmat.f90
+
+    329 !=============================================================================
+    330 subroutine clinmvt(a,b)!                                                 [inv]
+    331 !=============================================================================
+    332 complex(dpc),   dimension(:,:),intent(inout):: a
+    333 complex(dpc),   dimension(:),  intent(inout):: b
+    334 logical                                     :: ff
+    335 call clinmvtf(a,b,ff)
+    336 if(ff)stop 'In clinmvt; matrix singular, unable to continue'
+    337 end subroutine clinmvt
+
+
+ENTRY POINTS
+
+  Name                        
+                              
+ pmat_mp_clinmvt_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  330      C(16)           16    2     1        ARG,INOUT        335                               
+ B                          Dummy  330      C(16)           16    1     1        ARG,INOUT        335                               
+ CLINMVT                    Subr   330                                           PRIV                                               
+ FF                         Local  334      L(4)            4           scalar                    335,336                           
+
+Page 23          Source Listing                  CLINMVT
+2017-04-18 11:09                                 pmat.f90
+
+    338 !=============================================================================
+    339 subroutine slinmvtf(a,b,ff)!                                             [inv]
+    340 !=============================================================================
+    341 real(sp),dimension(:,:),intent(inout):: a
+    342 real(sp),dimension(:),  intent(inout):: b
+    343 logical,                intent(  out):: ff
+    344 integer,dimension(size(a,1))         :: ipiv
+    345 real(sp)                             :: d
+    346 !=============================================================================
+    347 if(size(a,1) /= size(a,2).or. size(a,1) /= size(b))&
+    348      stop 'In inv; In slinmvtf; incompatible array dimensions'
+    349 call sldumf(a,ipiv,d,ff)
+    350 if(ff)then
+    351    write(41,'("In slinmvtf; failed call to sldumf")')
+    352    return
+    353 endif
+    354 call sudlmv(a,b,ipiv) 
+    355 end subroutine slinmvtf
+
+
+ENTRY POINTS
+
+  Name                         
+                               
+ pmat_mp_slinmvtf_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  339      R(4)            4     2     1        ARG,INOUT        344,347,349,354                   
+ B                          Dummy  339      R(4)            4     1     1        ARG,INOUT        347,354                           
+ D                          Local  345      R(4)            4           scalar                    349                               
+ FF                         Dummy  339      L(4)            4           scalar   ARG,OUT          349,350                           
+ IPIV                       Local  344      I(4)            4     1     0        TGT              349,354                           
+ SIZE                       Func   344                                  scalar                    344,347                           
+ SLINMVTF                   Subr   339                                           PRIV             317                               
+
+Page 24          Source Listing                  SLINMVTF
+2017-04-18 11:09                                 pmat.f90
+
+    356 !=============================================================================
+    357 subroutine dlinmvtf(a,b,ff)!                                             [inv]
+    358 !=============================================================================
+    359 real(dp),dimension(:,:),intent(inout):: a
+    360 real(dp),dimension(:),  intent(inout):: b
+    361 logical,                intent(  out):: ff
+    362 integer, dimension(size(a,1))        :: ipiv
+    363 real(dp)                             :: d
+    364 !=============================================================================
+    365 if(size(a,1) /= size(a,2).or. size(a,1) /= size(b))&
+    366      stop 'In inv; incompatible array dimensions passed to dlinmvtf'
+    367 call dldumf(a,ipiv,d,ff)
+    368 if(ff)then
+    369    write(41,'("In dlinmvtf; failed call to dldumf")')
+    370    return
+    371 endif
+    372 call dudlmv(a,b,ipiv)
+    373 end subroutine dlinmvtf
+
+
+ENTRY POINTS
+
+  Name                         
+                               
+ pmat_mp_dlinmvtf_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  357      R(8)            8     2     1        ARG,INOUT        362,365,367,372                   
+ B                          Dummy  357      R(8)            8     1     1        ARG,INOUT        365,372                           
+ D                          Local  363      R(8)            8           scalar                    367                               
+ DLINMVTF                   Subr   357                                           PRIV             326                               
+ FF                         Dummy  357      L(4)            4           scalar   ARG,OUT          367,368                           
+ IPIV                       Local  362      I(4)            4     1     0        TGT              367,372                           
+ SIZE                       Func   362                                  scalar                    362,365                           
+
+Page 25          Source Listing                  DLINMVTF
+2017-04-18 11:09                                 pmat.f90
+
+    374 !=============================================================================
+    375 subroutine clinmvtf(a,b,ff)!                                             [inv]
+    376 !=============================================================================
+    377 complex(dpc),dimension(:,:),intent(inout):: a
+    378 complex(dpc),dimension(:),  intent(inout):: b
+    379 logical,                    intent(  out):: ff
+    380 integer, dimension(size(a,1))            :: ipiv
+    381 complex(dpc)                             :: d
+    382 !=============================================================================
+    383 if(size(a,1) /= size(a,2).or. size(a,1) /= size(b))&
+    384      stop 'In inv; incompatible array dimensions passed to clinmvtf'
+    385 call cldumf(a,ipiv,d,ff)
+    386 if(ff)then
+    387    write(41,'("In clinmvtf; failed call to cldumf")')
+    388    return
+    389 endif
+    390 call cudlmv(a,b,ipiv)
+    391 end subroutine clinmvtf
+
+
+ENTRY POINTS
+
+  Name                         
+                               
+ pmat_mp_clinmvtf_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  375      C(16)           16    2     1        ARG,INOUT        380,383,385,390                   
+ B                          Dummy  375      C(16)           16    1     1        ARG,INOUT        383,390                           
+ CLINMVTF                   Subr   375                                           PRIV             335                               
+ D                          Local  381      C(16)           16          scalar                    385                               
+ FF                         Dummy  375      L(4)            4           scalar   ARG,OUT          385,386                           
+ IPIV                       Local  380      I(4)            4     1     0        TGT              385,390                           
+ SIZE                       Func   380                                  scalar                    380,383                           
+
+Page 26          Source Listing                  CLINMVTF
+2017-04-18 11:09                                 pmat.f90
+
+    392 
+    393 !=============================================================================
+    394 subroutine iinvf(imat,ff)!                                               [inv]
+    395 !=============================================================================
+    396 ! Invert integer square array, imat, if possible, but flag ff=.true.
+    397 ! if not possible. (Determinant of imat must be +1 or -1
+    398 !=============================================================================
+    399 integer,dimension(:,:),intent(INOUT):: imat
+    400 logical,               intent(  OUT):: ff
+    401 !-----------------------------------------------------------------------------
+    402 real(dp),parameter                           :: eps=1.e-1_dp
+    403 real(dp),dimension(size(imat,1),size(imat,1)):: dmat
+    404 integer                                      :: m,i,j
+    405 !=============================================================================
+    406 m=size(imat,1)
+    407 if(m /= size(imat,2))stop 'In inv; matrix passed to iinvf is not square'
+    408 dmat=imat; call inv(dmat,ff)
+    409 if(.not.ff)then
+    410    do j=1,m
+    411       do i=1,m
+    412          imat(i,j)=nint(dmat(i,j)); if(abs(dmat(i,j)-imat(i,j))>eps)ff=t
+    413       enddo
+    414    enddo
+    415 endif
+    416 end subroutine iinvf
+
+
+ENTRY POINTS
+
+  Name                      
+                            
+ pmat_mp_iinvf_             
+
+Page 27          Source Listing                  IINVF
+2017-04-18 11:09 Symbol Table                    pmat.f90
+
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ ABS                        Func   412                                  scalar                    412                               
+ DMAT                       Local  403      R(8)            8     2     0        TGT              408,412                           
+ EPS                        Param  402      R(8)            8           scalar                    412                               
+ FF                         Dummy  394      L(4)            4           scalar   ARG,OUT          408,409,412                       
+ I                          Local  404      I(4)            4           scalar                    411,412                           
+ IINVF                      Subr   394                                           PRIV                                               
+ IMAT                       Dummy  394      I(4)            4     2     1        ARG,INOUT        403,406,407,408,412               
+ INV                        Local  408                                  scalar                    39,408                            
+ J                          Local  404      I(4)            4           scalar                    410,412                           
+ M                          Local  404      I(4)            4           scalar                    406,407,410,411                   
+ NINT                       Func   412                                  scalar                    412                               
+ SIZE                       Func   403                                  scalar                    403,406,407                       
+ T                          Param  412      L(4)            4           scalar                    36,412,478,507,538,567,601,630    
+
+Page 28          Source Listing                  IINVF
+2017-04-18 11:09                                 pmat.f90
+
+    417 
+    418 !=============================================================================
+    419 subroutine sldum(a,ipiv,d)!                                             [ldum]
+    420 !=============================================================================
+    421 real(sp),intent(inout) :: a(:,:) 
+    422 real(sp),intent(out  ) :: d
+    423 integer, intent(out  ) :: ipiv(:)
+    424 logical:: ff
+    425 call sldumf(a,ipiv,d,ff)
+    426 if(ff)stop 'In sldum; matrix singular, unable to continue'
+    427 end subroutine sldum
+
+
+ENTRY POINTS
+
+  Name                      
+                            
+ pmat_mp_sldum_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  419      R(4)            4     2     1        ARG,INOUT        425                               
+ D                          Dummy  419      R(4)            4           scalar   ARG,OUT          425                               
+ FF                         Local  424      L(4)            4           scalar                    425,426                           
+ IPIV                       Dummy  419      I(4)            4     1     1        ARG,OUT          425                               
+ SLDUM                      Subr   419                                           PRIV                                               
+
+Page 29          Source Listing                  SLDUM
+2017-04-18 11:09                                 pmat.f90
+
+    428 !=============================================================================
+    429 subroutine dldum(a,ipiv,d)!                                             [ldum]
+    430 !=============================================================================
+    431 real(dp),intent(inout) :: a(:,:) 
+    432 real(dp),intent(out  ) :: d
+    433 integer, intent(out  ) :: ipiv(:)
+    434 logical:: ff
+    435 call dldumf(a,ipiv,d,ff)
+    436 if(ff)stop 'In dldum; matrix singular, unable to continue'
+    437 end subroutine dldum
+
+
+ENTRY POINTS
+
+  Name                      
+                            
+ pmat_mp_dldum_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  429      R(8)            8     2     1        ARG,INOUT        435                               
+ D                          Dummy  429      R(8)            8           scalar   ARG,OUT          435                               
+ DLDUM                      Subr   429                                           PRIV                                               
+ FF                         Local  434      L(4)            4           scalar                    435,436                           
+ IPIV                       Dummy  429      I(4)            4     1     1        ARG,OUT          435                               
+
+Page 30          Source Listing                  DLDUM
+2017-04-18 11:09                                 pmat.f90
+
+    438 !=============================================================================
+    439 subroutine cldum(a,ipiv,d)!                                             [ldum]
+    440 !=============================================================================
+    441 complex(dpc),intent(inout) :: a(:,:) 
+    442 complex(dpc),intent(out  ) :: d
+    443 integer,     intent(out  ) :: ipiv(:)
+    444 logical:: ff
+    445 call cldumf(a,ipiv,d,ff)
+    446 if(ff)stop 'In cldum; matrix singular, unable to continue'
+    447 end subroutine cldum
+
+
+ENTRY POINTS
+
+  Name                      
+                            
+ pmat_mp_cldum_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  439      C(16)           16    2     1        ARG,INOUT        445                               
+ CLDUM                      Subr   439                                           PRIV                                               
+ D                          Dummy  439      C(16)           16          scalar   ARG,OUT          445                               
+ FF                         Local  444      L(4)            4           scalar                    445,446                           
+ IPIV                       Dummy  439      I(4)            4     1     1        ARG,OUT          445                               
+
+Page 31          Source Listing                  CLDUM
+2017-04-18 11:09                                 pmat.f90
+
+    448 !=============================================================================
+    449 subroutine sldumf(a,ipiv,d,ff)!                                         [ldum]
+    450 !=============================================================================
+    451 !   R.J.Purser, NCEP, Washington D.C.	1996
+    452 !		    SUBROUTINE	LDUM
+    453 !  perform l-d-u decomposition of square matrix a in place with
+    454 !  pivoting.
+    455 !
+    456 !  <-> a    square matrix to be factorized
+    457 !  <-- ipiv array encoding the pivoting sequence
+    458 !  <-- d    indicator for possible sign change of determinant
+    459 !  <-- ff:  failure flag, set to .true. when determinant of a vanishes.
+    460 !=============================================================================
+    461 real(SP),intent(INOUT) :: a(:,:) 
+    462 real(SP),intent(OUT  ) :: d
+    463 integer, intent(OUT  ) :: ipiv(:)
+    464 logical, intent(OUT  ) :: ff
+    465 integer                :: m,i, j, jp, ibig, jm
+    466 real(SP)               :: s(size(a,1)),  aam, aa, abig,  ajj, ajji, aij
+    467 !=============================================================================
+    468 ff=f
+    469 m=size(a,1)
+    470 do i=1,m
+    471   aam=0
+    472   do j=1,m
+    473     aa=abs(a(i,j))
+    474     if(aa > aam)aam=aa
+    475   enddo
+    476   if(aam == 0)then
+    477     write(41,'("In sldumf; row ",i6," of matrix vanishes")'),i
+    478     ff=t
+    479     return
+    480   endif
+    481   s(i)=1/aam
+    482 enddo
+    483 d=1.
+    484 ipiv(m)=m
+    485 do j=1,m-1
+    486   jp=j+1
+    487   abig=s(j)*abs(a(j,j))
+    488   ibig=j
+    489   do i=jp,m
+    490     aa=s(i)*abs(a(i,j))
+    491     if(aa > abig)then
+    492       ibig=i
+    493       abig=aa
+    494     endif
+    495   enddo
+    496 !  swap rows, recording changed sign of determinant
+    497   ipiv(j)=ibig
+    498   if(ibig /= j)then
+    499     d=-d
+    500     call sswpvv(a(j,:),a(ibig,:))
+    501     s(ibig)=s(j)
+    502   endif
+    503   ajj=a(j,j)
+    504   if(ajj == 0)then
+
+Page 32          Source Listing                  SLDUMF
+2017-04-18 11:09                                 pmat.f90
+
+    505     jm=j-1
+    506     write(41,'(" failure in sldumf:"/" matrix singular, rank=",i3)'),jm
+    507     ff=t
+    508     return
+    509   endif
+    510   ajji=1/ajj
+    511   do i=jp,m
+    512     aij=ajji*a(i,j)
+    513     a(i,j)=aij
+    514     a(i,jp:m) = a(i,jp:m) - aij*a(j,jp:m)
+    515   enddo
+    516 enddo
+    517 end subroutine sldumf
+
+
+ENTRY POINTS
+
+  Name                       
+                             
+ pmat_mp_sldumf_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  449      R(4)            4     2     1        ARG,INOUT        466,469,473,487,490,500,503,512,51
+                                                                                                  3,514                             
+ AA                         Local  466      R(4)            4           scalar                    473,474,490,491,493               
+ AAM                        Local  466      R(4)            4           scalar                    471,474,476,481                   
+ ABIG                       Local  466      R(4)            4           scalar                    487,491,493                       
+ ABS                        Func   473                                  scalar                    473,487,490                       
+ AIJ                        Local  466      R(4)            4           scalar                    512,513,514                       
+ AJJ                        Local  466      R(4)            4           scalar                    503,504,510                       
+ AJJI                       Local  466      R(4)            4           scalar                    510,512                           
+ D                          Dummy  449      R(4)            4           scalar   ARG,OUT          483,499                           
+ F                          Param  468      L(4)            4           scalar                    36,468,528,591,850,880,940,974    
+ FF                         Dummy  449      L(4)            4           scalar   ARG,OUT          468,478,507                       
+ I                          Local  465      I(4)            4           scalar                    470,473,477,481,489,490,492,511,51
+                                                                                                  2,513,514                         
+ IBIG                       Local  465      I(4)            4           scalar                    488,492,497,498,500,501           
+ IPIV                       Dummy  449      I(4)            4     1     1        ARG,OUT          484,497                           
+ J                          Local  465      I(4)            4           scalar                    472,473,485,486,487,488,490,497,49
+                                                                                                  8,500,501,503,505,512,513,514     
+ JM                         Local  465      I(4)            4           scalar                    505,506                           
+ JP                         Local  465      I(4)            4           scalar                    486,489,511,514                   
+ M                          Local  465      I(4)            4           scalar                    469,470,472,484,485,489,511,514   
+ S                          Local  466      R(4)            4     1     0                         481,487,490,501                   
+ SIZE                       Func   466                                  scalar                    466,469                           
+ SLDUMF                     Subr   449                                           PRIV             123,263,349,425                   
+
+Page 33          Source Listing                  SLDUMF
+2017-04-18 11:09                                 pmat.f90
+
+    518 !=============================================================================
+    519 subroutine DLDUMf(A,IPIV,D,ff)!                                         [ldum]
+    520 !=============================================================================
+    521 real(DP), intent(INOUT) :: a(:,:) 
+    522 real(DP), intent(OUT  ) :: d
+    523 integer,  intent(OUT  ) :: ipiv(:)
+    524 logical,  intent(OUT  ) :: ff
+    525 integer                 :: m,i, j, jp, ibig, jm
+    526 real(DP)                :: s(size(a,1)),  aam, aa, abig,  ajj, ajji, aij
+    527 !=============================================================================
+    528 ff=f
+    529 m=size(a,1)
+    530 do i=1,m
+    531   aam=0
+    532   do j=1,m
+    533     aa=abs(a(i,j))
+    534     if(aa > aam)aam=aa
+    535   enddo
+    536   if(aam == 0)then
+    537     write(41,'("In dldumf;  row ",i6," of matrix vanishes")'),i
+    538     ff=t
+    539     return
+    540   endif
+    541   s(i)=1/aam
+    542 enddo
+    543 d=1.
+    544 ipiv(m)=m
+    545 do j=1,m-1
+    546   jp=j+1
+    547   abig=s(j)*abs(a(j,j))
+    548   ibig=j
+    549   do i=jp,m
+    550     aa=s(i)*abs(a(i,j))
+    551     if(aa > abig)then
+    552       ibig=i
+    553       abig=aa
+    554     endif
+    555   enddo
+    556 !  swap rows, recording changed sign of determinant
+    557   ipiv(j)=ibig
+    558   if(ibig /= j)then
+    559     d=-d
+    560     call dswpvv(a(j,:),a(ibig,:))
+    561     s(ibig)=s(j)
+    562   endif
+    563   ajj=a(j,j)
+    564   if(ajj == 0)then
+    565     jm=j-1
+    566     write(41,'(" Failure in dldumf:"/" matrix singular, rank=",i3)'),jm
+    567     ff=t
+    568     return
+    569   endif
+    570   ajji=1/ajj
+    571   do i=jp,m
+    572     aij=ajji*a(i,j)
+    573     a(i,j)=aij
+    574     a(i,jp:m) = a(i,jp:m) - aij*a(j,jp:m)
+
+Page 34          Source Listing                  DLDUMF
+2017-04-18 11:09                                 pmat.f90
+
+    575   enddo
+    576 enddo
+    577 end subroutine DLDUMf
+
+
+ENTRY POINTS
+
+  Name                       
+                             
+ pmat_mp_dldumf_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  519      R(8)            8     2     1        ARG,INOUT        526,529,533,547,550,560,563,572,57
+                                                                                                  3,574                             
+ AA                         Local  526      R(8)            8           scalar                    533,534,550,551,553               
+ AAM                        Local  526      R(8)            8           scalar                    531,534,536,541                   
+ ABIG                       Local  526      R(8)            8           scalar                    547,551,553                       
+ ABS                        Func   533                                  scalar                    533,547,550                       
+ AIJ                        Local  526      R(8)            8           scalar                    572,573,574                       
+ AJJ                        Local  526      R(8)            8           scalar                    563,564,570                       
+ AJJI                       Local  526      R(8)            8           scalar                    570,572                           
+ D                          Dummy  519      R(8)            8           scalar   ARG,OUT          543,559                           
+ DLDUMF                     Subr   519                                           PRIV             161,283,367,435                   
+ FF                         Dummy  519      L(4)            4           scalar   ARG,OUT          528,538,567                       
+ I                          Local  525      I(4)            4           scalar                    530,533,537,541,549,550,552,571,57
+                                                                                                  2,573,574                         
+ IBIG                       Local  525      I(4)            4           scalar                    548,552,557,558,560,561           
+ IPIV                       Dummy  519      I(4)            4     1     1        ARG,OUT          544,557                           
+ J                          Local  525      I(4)            4           scalar                    532,533,545,546,547,548,550,557,55
+                                                                                                  8,560,561,563,565,572,573,574     
+ JM                         Local  525      I(4)            4           scalar                    565,566                           
+ JP                         Local  525      I(4)            4           scalar                    546,549,571,574                   
+ M                          Local  525      I(4)            4           scalar                    529,530,532,544,545,549,571,574   
+ S                          Local  526      R(8)            8     1     0                         541,547,550,561                   
+ SIZE                       Func   526                                  scalar                    526,529                           
+
+Page 35          Source Listing                  DLDUMF
+2017-04-18 11:09                                 pmat.f90
+
+    578 !=============================================================================
+    579 subroutine cldumf(a,ipiv,d,ff)!                                         [ldum]
+    580 !=============================================================================
+    581 use pietc, only: c0
+    582 complex(dpc), intent(INOUT) :: a(:,:) 
+    583 complex(dpc), intent(OUT  ) :: d
+    584 integer,      intent(OUT  ) :: ipiv(:)
+    585 logical,      intent(OUT  ) :: ff
+    586 integer                     :: m,i, j, jp, ibig, jm
+    587 complex(dpc)                :: ajj, ajji, aij
+    588 real(dp)                    :: aam,aa,abig
+    589 real(dp),dimension(size(a,1)):: s
+    590 !=============================================================================
+    591 ff=f
+    592 m=size(a,1)
+    593 do i=1,m
+    594   aam=0
+    595   do j=1,m
+    596     aa=abs(a(i,j))
+    597     if(aa > aam)aam=aa
+    598   enddo
+    599   if(aam == 0)then
+    600     write(41,'("In cldumf;  row ",i6," of matrix vanishes")'),i
+    601     ff=t
+    602     return
+    603   endif
+    604   s(i)=1/aam
+    605 enddo
+    606 d=1.
+    607 ipiv(m)=m
+    608 do j=1,m-1
+    609   jp=j+1
+    610   abig=s(j)*abs(a(j,j))
+    611   ibig=j
+    612   do i=jp,m
+    613     aa=s(i)*abs(a(i,j))
+    614     if(aa > abig)then
+    615       ibig=i
+    616       abig=aa
+    617     endif
+    618   enddo
+    619 !  swap rows, recording changed sign of determinant
+    620   ipiv(j)=ibig
+    621   if(ibig /= j)then
+    622     d=-d
+    623     call cswpvv(a(j,:),a(ibig,:))
+    624     s(ibig)=s(j)
+    625   endif
+    626   ajj=a(j,j)
+    627   if(ajj == c0)then
+    628     jm=j-1
+    629     write(41,'(" Failure in cldumf:"/" matrix singular, rank=",i3)'),jm
+    630     ff=t
+    631     return
+    632   endif
+    633   ajji=1/ajj
+    634   do i=jp,m
+
+Page 36          Source Listing                  CLDUMF
+2017-04-18 11:09                                 pmat.f90
+
+    635     aij=ajji*a(i,j)
+    636     a(i,j)=aij
+    637     a(i,jp:m) = a(i,jp:m) - aij*a(j,jp:m)
+    638   enddo
+    639 enddo
+    640 end subroutine cldumf
+
+
+ENTRY POINTS
+
+  Name                       
+                             
+ pmat_mp_cldumf_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  579      C(16)           16    2     1        ARG,INOUT        589,592,596,610,613,623,626,635,63
+                                                                                                  6,637                             
+ AA                         Local  588      R(8)            8           scalar                    596,597,613,614,616               
+ AAM                        Local  588      R(8)            8           scalar                    594,597,599,604                   
+ ABIG                       Local  588      R(8)            8           scalar                    610,614,616                       
+ ABS                        Func   596                                  scalar                    596,610,613                       
+ AIJ                        Local  587      C(16)           16          scalar                    635,636,637                       
+ AJJ                        Local  587      C(16)           16          scalar                    626,627,633                       
+ AJJI                       Local  587      C(16)           16          scalar                    633,635                           
+ C0                         Param  581      C(16)           16          scalar                    581,627                           
+ CLDUMF                     Subr   579                                           PRIV             199,303,385,445                   
+ D                          Dummy  579      C(16)           16          scalar   ARG,OUT          606,622                           
+ FF                         Dummy  579      L(4)            4           scalar   ARG,OUT          591,601,630                       
+ I                          Local  586      I(4)            4           scalar                    593,596,600,604,612,613,615,634,63
+                                                                                                  5,636,637                         
+ IBIG                       Local  586      I(4)            4           scalar                    611,615,620,621,623,624           
+ IPIV                       Dummy  579      I(4)            4     1     1        ARG,OUT          607,620                           
+ J                          Local  586      I(4)            4           scalar                    595,596,608,609,610,611,613,620,62
+                                                                                                  1,623,624,626,628,635,636,637     
+ JM                         Local  586      I(4)            4           scalar                    628,629                           
+ JP                         Local  586      I(4)            4           scalar                    609,612,634,637                   
+ M                          Local  586      I(4)            4           scalar                    592,593,595,607,608,612,634,637   
+ PIETC                      Module 581                                                            581                               
+ S                          Local  589      R(8)            8     1     0                         604,610,613,624                   
+ SIZE                       Func   589                                  scalar                    589,592                           
+
+Page 37          Source Listing                  CLDUMF
+2017-04-18 11:09                                 pmat.f90
+
+    641 
+    642 !=============================================================================
+    643 subroutine sudlmm(a,b,ipiv)!                                           [udlmm]
+    644 !=============================================================================
+    645 !   R.J.Purser, National Meteorological Center, Washington D.C.  1993
+    646 !		    SUBROUTINE UDLMM
+    647 !  use l-u factors in A to back-substitute for several rhs in B, using ipiv to
+    648 !  define the pivoting permutation used in the l-u decomposition.
+    649 !
+    650 !  --> A    L-D-U factorization of linear system matrux
+    651 !  <-> B    rt-hand-sides vectors on input, corresponding solutions on return
+    652 !  --> IPIV array encoding the pivoting sequence
+    653 !=============================================================================
+    654 integer, dimension(:),  intent(in)    :: ipiv 
+    655 real(sp),dimension(:,:),intent(in)    :: a 
+    656 real(sp),dimension(:,:),intent(inout) :: b 
+    657 integer                               :: m,i, k, l
+    658 real(sp)                              :: s,aiii
+    659 !=============================================================================
+    660 m=size(a,1)
+    661 do k=1,size(b,2) !loop over columns of b
+    662   do i=1,m
+    663     l=ipiv(i)
+    664     s=b(l,k)
+    665     b(l,k)=b(i,k)
+    666     s = s - sum(b(1:i-1,k)*a(i,1:i-1))
+    667     b(i,k)=s
+    668   enddo
+    669   b(m,k)=b(m,k)/a(m,m)
+    670   do i=m-1,1,-1
+    671     aiii=1/a(i,i)
+    672     b(i,k) = b(i,k) - sum(b(i+1:m,k)*a(i,i+1:m))
+    673     b(i,k)=b(i,k)*aiii
+    674   enddo
+    675 enddo
+    676 end subroutine sudlmm
+
+Page 38          Source Listing                  SUDLMM
+2017-04-18 11:09 Entry Points                    pmat.f90
+
+
+
+ENTRY POINTS
+
+  Name                       
+                             
+ pmat_mp_sudlmm_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  643      R(4)            4     2     1        ARG,IN           660,666,669,671,672               
+ AIII                       Local  658      R(4)            4           scalar                    671,673                           
+ B                          Dummy  643      R(4)            4     2     1        ARG,INOUT        661,664,665,666,667,669,672,673   
+ I                          Local  657      I(4)            4           scalar                    662,663,665,666,667,670,671,672,67
+                                                                                                  3                                 
+ IPIV                       Dummy  643      I(4)            4     1     1        ARG,IN           663                               
+ K                          Local  657      I(4)            4           scalar                    661,664,665,666,667,669,672,673   
+ L                          Local  657      I(4)            4           scalar                    663,664,665                       
+ M                          Local  657      I(4)            4           scalar                    660,662,669,670,672               
+ S                          Local  658      R(4)            4           scalar                    664,666,667                       
+ SIZE                       Func   660                                  scalar                    660,661                           
+ SUDLMM                     Subr   643                                           PRIV             268                               
+ SUM                        Func   666                                  scalar                    666,672                           
+
+Page 39          Source Listing                  SUDLMM
+2017-04-18 11:09                                 pmat.f90
+
+    677 !=============================================================================
+    678 subroutine dudlmm(a,b,ipiv)!                                           [udlmm]
+    679 !=============================================================================
+    680 integer,  dimension(:),  intent(in   ) :: ipiv 
+    681 real(dp), dimension(:,:),intent(in   ) :: a 
+    682 real(dp), dimension(:,:),intent(inout) :: b 
+    683 integer                                :: m,i, k, l
+    684 real(dp)                               :: s,aiii
+    685 !=============================================================================
+    686 m=size(a,1)
+    687 do k=1, size(b,2)!loop over columns of b
+    688   do i=1,m
+    689     l=ipiv(i)
+    690     s=b(l,k)
+    691     b(l,k)=b(i,k)
+    692     s = s - sum(b(1:i-1,k)*a(i,1:i-1))
+    693     b(i,k)=s
+    694   enddo
+    695   b(m,k)=b(m,k)/a(m,m)
+    696   do i=m-1,1,-1
+    697     aiii=1/a(i,i)
+    698     b(i,k) = b(i,k) - sum(b(i+1:m,k)*a(i,i+1:m))
+    699     b(i,k)=b(i,k)*aiii
+    700   enddo
+    701 enddo
+    702 end subroutine dudlmm
+
+
+ENTRY POINTS
+
+  Name                       
+                             
+ pmat_mp_dudlmm_             
+
+Page 40          Source Listing                  DUDLMM
+2017-04-18 11:09 Symbol Table                    pmat.f90
+
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  678      R(8)            8     2     1        ARG,IN           686,692,695,697,698               
+ AIII                       Local  684      R(8)            8           scalar                    697,699                           
+ B                          Dummy  678      R(8)            8     2     1        ARG,INOUT        687,690,691,692,693,695,698,699   
+ DUDLMM                     Subr   678                                           PRIV             288                               
+ I                          Local  683      I(4)            4           scalar                    688,689,691,692,693,696,697,698,69
+                                                                                                  9                                 
+ IPIV                       Dummy  678      I(4)            4     1     1        ARG,IN           689                               
+ K                          Local  683      I(4)            4           scalar                    687,690,691,692,693,695,698,699   
+ L                          Local  683      I(4)            4           scalar                    689,690,691                       
+ M                          Local  683      I(4)            4           scalar                    686,688,695,696,698               
+ S                          Local  684      R(8)            8           scalar                    690,692,693                       
+ SIZE                       Func   686                                  scalar                    686,687                           
+ SUM                        Func   692                                  scalar                    692,698                           
+
+Page 41          Source Listing                  DUDLMM
+2017-04-18 11:09                                 pmat.f90
+
+    703 !=============================================================================
+    704 subroutine cudlmm(a,b,ipiv)!                                           [udlmm]
+    705 !=============================================================================
+    706 integer,     dimension(:),  intent(in   ) :: ipiv 
+    707 complex(dpc),dimension(:,:),intent(in   ) :: a 
+    708 complex(dpc),dimension(:,:),intent(inout) :: b 
+    709 integer                                   :: m,i, k, l
+    710 complex(dpc)                              :: s,aiii
+    711 !=============================================================================
+    712 m=size(a,1)
+    713 do k=1, size(b,2)!loop over columns of b
+    714   do i=1,m
+    715     l=ipiv(i)
+    716     s=b(l,k)
+    717     b(l,k)=b(i,k)
+    718     s = s - sum(b(1:i-1,k)*a(i,1:i-1))
+    719     b(i,k)=s
+    720   enddo
+    721   b(m,k)=b(m,k)/a(m,m)
+    722   do i=m-1,1,-1
+    723     aiii=1/a(i,i)
+    724     b(i,k) = b(i,k) - sum(b(i+1:m,k)*a(i,i+1:m))
+    725     b(i,k)=b(i,k)*aiii
+    726   enddo
+    727 enddo
+    728 end subroutine cudlmm
+
+
+ENTRY POINTS
+
+  Name                       
+                             
+ pmat_mp_cudlmm_             
+
+Page 42          Source Listing                  CUDLMM
+2017-04-18 11:09 Symbol Table                    pmat.f90
+
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  704      C(16)           16    2     1        ARG,IN           712,718,721,723,724               
+ AIII                       Local  710      C(16)           16          scalar                    723,725                           
+ B                          Dummy  704      C(16)           16    2     1        ARG,INOUT        713,716,717,718,719,721,724,725   
+ CUDLMM                     Subr   704                                           PRIV             308                               
+ I                          Local  709      I(4)            4           scalar                    714,715,717,718,719,722,723,724,72
+                                                                                                  5                                 
+ IPIV                       Dummy  704      I(4)            4     1     1        ARG,IN           715                               
+ K                          Local  709      I(4)            4           scalar                    713,716,717,718,719,721,724,725   
+ L                          Local  709      I(4)            4           scalar                    715,716,717                       
+ M                          Local  709      I(4)            4           scalar                    712,714,721,722,724               
+ S                          Local  710      C(16)           16          scalar                    716,718,719                       
+ SIZE                       Func   712                                  scalar                    712,713                           
+ SUM                        Func   718                                  scalar                    718,724                           
+
+Page 43          Source Listing                  CUDLMM
+2017-04-18 11:09                                 pmat.f90
+
+    729 
+    730 !=============================================================================
+    731 subroutine sudlmv(a,b,ipiv)!                                           [udlmv]
+    732 !=============================================================================
+    733 !   R.J.Purser, National Meteorological Center, Washington D.C.  1993
+    734 !		    SUBROUTINE UDLMV
+    735 !  use l-u factors in A to back-substitute for 1 rhs in B, using ipiv to
+    736 !  define the pivoting permutation used in the l-u decomposition.
+    737 !
+    738 !  --> A    L-D-U factorization of linear system matrix
+    739 !  <-> B    right-hand-side vector on input, corresponding solution on return
+    740 !  --> IPIV array encoding the pivoting sequence
+    741 !=============================================================================
+    742 integer, dimension(:),  intent(in)    :: ipiv 
+    743 real(sp),dimension(:,:),intent(in)    :: a 
+    744 real(sp),dimension(:),  intent(inout) :: b 
+    745 integer                               :: m,i, l
+    746 real(sp)                              :: s,aiii
+    747 !=============================================================================
+    748 m=size(a,1)
+    749 do i=1,m
+    750    l=ipiv(i)
+    751    s=b(l)
+    752    b(l)=b(i)
+    753    s = s - sum(b(1:i-1)*a(i,1:i-1))
+    754    b(i)=s
+    755 enddo
+    756 b(m)=b(m)/a(m,m)
+    757 do i=m-1,1,-1
+    758    aiii=1/a(i,i)
+    759    b(i) = b(i) - sum(b(i+1:m)*a(i,i+1:m))
+    760    b(i)=b(i)*aiii
+    761 enddo
+    762 end subroutine sudlmv
+
+Page 44          Source Listing                  SUDLMV
+2017-04-18 11:09 Entry Points                    pmat.f90
+
+
+
+ENTRY POINTS
+
+  Name                       
+                             
+ pmat_mp_sudlmv_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  731      R(4)            4     2     1        ARG,IN           748,753,756,758,759               
+ AIII                       Local  746      R(4)            4           scalar                    758,760                           
+ B                          Dummy  731      R(4)            4     1     1        ARG,INOUT        751,752,753,754,756,759,760       
+ I                          Local  745      I(4)            4           scalar                    749,750,752,753,754,757,758,759,76
+                                                                                                  0                                 
+ IPIV                       Dummy  731      I(4)            4     1     1        ARG,IN           750                               
+ L                          Local  745      I(4)            4           scalar                    750,751,752                       
+ M                          Local  745      I(4)            4           scalar                    748,749,756,757,759               
+ S                          Local  746      R(4)            4           scalar                    751,753,754                       
+ SIZE                       Func   748                                  scalar                    748                               
+ SUDLMV                     Subr   731                                           PRIV             354                               
+ SUM                        Func   753                                  scalar                    753,759                           
+
+Page 45          Source Listing                  SUDLMV
+2017-04-18 11:09                                 pmat.f90
+
+    763 !=============================================================================
+    764 subroutine dudlmv(a,b,ipiv)!                                           [udlmv]
+    765 !=============================================================================
+    766 integer,   dimension(:),  intent(in   ) :: ipiv(:) 
+    767 real(dp),  dimension(:,:),intent(in   ) :: a(:,:) 
+    768 real(dp),  dimension(:),  intent(inout) :: b(:) 
+    769 integer                                 :: m,i, l
+    770 real(dp)                                :: s,aiii
+    771 !=============================================================================
+    772 m=size(a,1)
+    773 do i=1,m
+    774    l=ipiv(i)
+    775    s=b(l)
+    776    b(l)=b(i)
+    777    s = s - sum(b(1:i-1)*a(i,1:i-1))
+    778    b(i)=s
+    779 enddo
+    780 b(m)=b(m)/a(m,m)
+    781 do i=m-1,1,-1
+    782    aiii=1/a(i,i)
+    783    b(i) = b(i) - sum(b(i+1:m)*a(i,i+1:m))
+    784    b(i)=b(i)*aiii
+    785 enddo
+    786 end subroutine dudlmv
+
+
+ENTRY POINTS
+
+  Name                       
+                             
+ pmat_mp_dudlmv_             
+
+Page 46          Source Listing                  DUDLMV
+2017-04-18 11:09 Symbol Table                    pmat.f90
+
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  764      R(8)            8     2     1        ARG,IN           772,777,780,782,783               
+ AIII                       Local  770      R(8)            8           scalar                    782,784                           
+ B                          Dummy  764      R(8)            8     1     1        ARG,INOUT        775,776,777,778,780,783,784       
+ DUDLMV                     Subr   764                                           PRIV             372                               
+ I                          Local  769      I(4)            4           scalar                    773,774,776,777,778,781,782,783,78
+                                                                                                  4                                 
+ IPIV                       Dummy  764      I(4)            4     1     1        ARG,IN           774                               
+ L                          Local  769      I(4)            4           scalar                    774,775,776                       
+ M                          Local  769      I(4)            4           scalar                    772,773,780,781,783               
+ S                          Local  770      R(8)            8           scalar                    775,777,778                       
+ SIZE                       Func   772                                  scalar                    772                               
+ SUM                        Func   777                                  scalar                    777,783                           
+
+Page 47          Source Listing                  DUDLMV
+2017-04-18 11:09                                 pmat.f90
+
+    787 !=============================================================================
+    788 subroutine cudlmv(a,b,ipiv)!                                           [udlmv]
+    789 !=============================================================================
+    790 integer,     dimension(:),  intent(in   ) :: ipiv(:) 
+    791 complex(dpc),dimension(:,:),intent(in   ) :: a(:,:) 
+    792 complex(dpc),dimension(:),  intent(inout) :: b(:) 
+    793 integer                                   :: m,i, l
+    794 complex(dpc)                              :: s,aiii
+    795 !=============================================================================
+    796 m=size(a,1)
+    797 do i=1,m
+    798    l=ipiv(i)
+    799    s=b(l)
+    800    b(l)=b(i)
+    801    s = s - sum(b(1:i-1)*a(i,1:i-1))
+    802    b(i)=s
+    803 enddo
+    804 b(m)=b(m)/a(m,m)
+    805 do i=m-1,1,-1
+    806    aiii=1/a(i,i)
+    807    b(i) = b(i) - sum(b(i+1:m)*a(i,i+1:m))
+    808    b(i)=b(i)*aiii
+    809 enddo
+    810 end subroutine cudlmv
+
+
+ENTRY POINTS
+
+  Name                       
+                             
+ pmat_mp_cudlmv_             
+
+Page 48          Source Listing                  CUDLMV
+2017-04-18 11:09 Symbol Table                    pmat.f90
+
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  788      C(16)           16    2     1        ARG,IN           796,801,804,806,807               
+ AIII                       Local  794      C(16)           16          scalar                    806,808                           
+ B                          Dummy  788      C(16)           16    1     1        ARG,INOUT        799,800,801,802,804,807,808       
+ CUDLMV                     Subr   788                                           PRIV             390                               
+ I                          Local  793      I(4)            4           scalar                    797,798,800,801,802,805,806,807,80
+                                                                                                  8                                 
+ IPIV                       Dummy  788      I(4)            4     1     1        ARG,IN           798                               
+ L                          Local  793      I(4)            4           scalar                    798,799,800                       
+ M                          Local  793      I(4)            4           scalar                    796,797,804,805,807               
+ S                          Local  794      C(16)           16          scalar                    799,801,802                       
+ SIZE                       Func   796                                  scalar                    796                               
+ SUM                        Func   801                                  scalar                    801,807                           
+
+Page 49          Source Listing                  CUDLMV
+2017-04-18 11:09                                 pmat.f90
+
+    811 
+    812 !=============================================================================
+    813 subroutine sl1lm(a,b) !                                                 [l1lm]
+    814 !=============================================================================
+    815 !  Cholesky, M -> L*U, U(i,j)=L(j,i)
+    816 !=============================================================================
+    817 real(sp), intent(in   ) :: a(:,:)
+    818 real(sp), intent(inout) :: b(:,:)
+    819 !-----------------------------------------------------------------------------
+    820 logical:: ff
+    821 call sl1lmf(a,b,ff)
+    822 if(ff)stop 'In sl1lm; matrix singular, unable to continue'
+    823 end subroutine sl1lm
+
+
+ENTRY POINTS
+
+  Name                      
+                            
+ pmat_mp_sl1lm_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  813      R(4)            4     2     1        ARG,IN           821                               
+ B                          Dummy  813      R(4)            4     2     1        ARG,INOUT        821                               
+ FF                         Local  820      L(4)            4           scalar                    821,822                           
+ SL1LM                      Subr   813                                           PRIV                                               
+
+Page 50          Source Listing                  SL1LM
+2017-04-18 11:09                                 pmat.f90
+
+    824 !=============================================================================
+    825 subroutine dl1lm(a,b) !                                                 [l1lm]
+    826 !=============================================================================
+    827 !  Cholesky, M -> L*U, U(i,j)=L(j,i)
+    828 !=============================================================================
+    829 real(dp), intent(in   ) :: a(:,:)
+    830 real(dp), intent(inout) :: b(:,:)
+    831 !-----------------------------------------------------------------------------
+    832 logical:: ff
+    833 call dl1lmf(a,b,ff)
+    834 if(ff)stop 'In dl1lm; matrix singular, unable to continue'
+    835 end subroutine dl1lm
+
+
+ENTRY POINTS
+
+  Name                      
+                            
+ pmat_mp_dl1lm_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  825      R(8)            8     2     1        ARG,IN           833                               
+ B                          Dummy  825      R(8)            8     2     1        ARG,INOUT        833                               
+ DL1LM                      Subr   825                                           PRIV                                               
+ FF                         Local  832      L(4)            4           scalar                    833,834                           
+
+Page 51          Source Listing                  DL1LM
+2017-04-18 11:09                                 pmat.f90
+
+    836 
+    837 !=============================================================================
+    838 subroutine sl1lmf(a,b,ff)!                                              [L1Lm] 
+    839 !=============================================================================
+    840 ! Cholesky, M -> L*U, U(i,j)=L(j,i)
+    841 !=============================================================================
+    842 real(sp), intent(IN   ) :: a(:,:)
+    843 real(sp), intent(INOUT) :: b(:,:)
+    844 logical                 :: ff
+    845 !-----------------------------------------------------------------------------
+    846 integer                 :: m,j, jm, jp, i
+    847 real(sp)                :: s, bjji
+    848 !=============================================================================
+    849 m=size(a,1)
+    850 ff=f
+    851 do j=1,m
+    852   jm=j-1
+    853   jp=j+1
+    854   s = a(j,j) - sum(b(j,1:jm)*b(j,1:jm))
+    855   ff=(S <= 0)
+    856   if(ff)then
+    857      write(41,'("sL1Lmf detects nonpositive a, rank=",i6)'),jm
+    858      return
+    859   endif
+    860   b(j,j)=sqrt(s)
+    861   bjji=1/b(j,j)
+    862   do i=jp,m
+    863     s = a(i,j) - sum(b(i,1:jm)*b(j,1:jm))
+    864     b(i,j)=s*bjji
+    865   enddo
+    866   b(1:jm,j) = 0
+    867 enddo
+    868 end subroutine sl1lmf
+
+Page 52          Source Listing                  SL1LMF
+2017-04-18 11:09 Entry Points                    pmat.f90
+
+
+
+ENTRY POINTS
+
+  Name                       
+                             
+ pmat_mp_sl1lmf_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  838      R(4)            4     2     1        ARG,IN           849,854,863                       
+ B                          Dummy  838      R(4)            4     2     1        ARG,INOUT        854,860,861,863,864,866           
+ BJJI                       Local  847      R(4)            4           scalar                    861,864                           
+ FF                         Dummy  838      L(4)            4           scalar   ARG,INOUT        850,855,856                       
+ I                          Local  846      I(4)            4           scalar                    862,863,864                       
+ J                          Local  846      I(4)            4           scalar                    851,852,853,854,860,861,863,864,86
+                                                                                                  6                                 
+ JM                         Local  846      I(4)            4           scalar                    852,854,857,863,866               
+ JP                         Local  846      I(4)            4           scalar                    853,862                           
+ M                          Local  846      I(4)            4           scalar                    849,851,862                       
+ S                          Local  847      R(4)            4           scalar                    854,855,860,863,864               
+ SIZE                       Func   849                                  scalar                    849                               
+ SL1LMF                     Subr   838                                           PRIV             821                               
+ SQRT                       Func   860                                  scalar                    860                               
+ SUM                        Func   854                                  scalar                    854,863                           
+
+Page 53          Source Listing                  SL1LMF
+2017-04-18 11:09                                 pmat.f90
+
+    869 !=============================================================================
+    870 subroutine dl1lmf(a,b,ff) !                                             [L1Lm]
+    871 !=============================================================================
+    872 real(dp), intent(IN   ) :: a(:,:) 
+    873 real(dp), intent(INOUT) :: b(:,:) 
+    874 logical                 :: ff
+    875 !-----------------------------------------------------------------------------
+    876 integer                 :: m,j, jm, jp, i
+    877 real(dp)                :: s, bjji
+    878 !=============================================================================
+    879 m=size(a,1)
+    880 ff=f
+    881 do j=1,m
+    882   jm=j-1
+    883   jp=j+1
+    884   s = a(j,j) - sum(b(j,1:jm)*b(j,1:jm))
+    885   ff=(s <= 0)
+    886   if(ff)then
+    887      write(41,'("dL1LMF detects nonpositive A, rank=",i6)'),jm
+    888      return
+    889   endif
+    890   b(j,j)=sqrt(s)
+    891   bjji=1/b(j,j)
+    892   do i=jp,m
+    893     s = a(i,j) - sum(b(i,1:jm)*b(j,1:jm))
+    894     b(i,j)=s*bjji
+    895   enddo
+    896   b(1:jm,j) = 0
+    897 enddo
+    898 return
+    899 end subroutine dl1lmf
+
+Page 54          Source Listing                  DL1LMF
+2017-04-18 11:09 Entry Points                    pmat.f90
+
+
+
+ENTRY POINTS
+
+  Name                       
+                             
+ pmat_mp_dl1lmf_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  870      R(8)            8     2     1        ARG,IN           879,884,893                       
+ B                          Dummy  870      R(8)            8     2     1        ARG,INOUT        884,890,891,893,894,896           
+ BJJI                       Local  877      R(8)            8           scalar                    891,894                           
+ DL1LMF                     Subr   870                                           PRIV             833                               
+ FF                         Dummy  870      L(4)            4           scalar   ARG,INOUT        880,885,886                       
+ I                          Local  876      I(4)            4           scalar                    892,893,894                       
+ J                          Local  876      I(4)            4           scalar                    881,882,883,884,890,891,893,894,89
+                                                                                                  6                                 
+ JM                         Local  876      I(4)            4           scalar                    882,884,887,893,896               
+ JP                         Local  876      I(4)            4           scalar                    883,892                           
+ M                          Local  876      I(4)            4           scalar                    879,881,892                       
+ S                          Local  877      R(8)            8           scalar                    884,885,890,893,894               
+ SIZE                       Func   879                                  scalar                    879                               
+ SQRT                       Func   890                                  scalar                    890                               
+ SUM                        Func   884                                  scalar                    884,893                           
+
+Page 55          Source Listing                  DL1LMF
+2017-04-18 11:09                                 pmat.f90
+
+    900 
+    901 !=============================================================================
+    902 subroutine sldlm(a,b,d)!                                                [LdLm]
+    903 !=============================================================================
+    904 ! Modified Cholesky decompose Q --> L*D*U, U(i,j)=L(j,i)
+    905 !=============================================================================
+    906 real(sp), intent(IN   ):: a(:,:)
+    907 real(sp), intent(INOUT):: b(:,:)
+    908 real(sp), intent(  OUT):: d(:)
+    909 !-----------------------------------------------------------------------------
+    910 logical:: ff
+    911 call sldlmf(a,b,d,ff)
+    912 if(ff)stop 'In sldlm; matrix singular, unable to continue'
+    913 end subroutine sldlm
+
+
+ENTRY POINTS
+
+  Name                      
+                            
+ pmat_mp_sldlm_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  902      R(4)            4     2     1        ARG,IN           911                               
+ B                          Dummy  902      R(4)            4     2     1        ARG,INOUT        911                               
+ D                          Dummy  902      R(4)            4     1     1        ARG,OUT          911                               
+ FF                         Local  910      L(4)            4           scalar                    911,912                           
+ SLDLM                      Subr   902                                           PRIV                                               
+
+Page 56          Source Listing                  SLDLM
+2017-04-18 11:09                                 pmat.f90
+
+    914 !=============================================================================
+    915 subroutine dldlm(a,b,d)!                                                [LdLm]
+    916 !=============================================================================
+    917 real(dp), intent(IN   ):: a(:,:)
+    918 real(dp), intent(INOUT):: b(:,:)
+    919 real(dp), intent(  OUT):: d(:)
+    920 !-----------------------------------------------------------------------------
+    921 logical:: ff
+    922 call dldlmf(a,b,d,ff)
+    923 if(ff)stop 'In dldlm; matrix singular, unable to continue'
+    924 end subroutine dldlm
+
+
+ENTRY POINTS
+
+  Name                      
+                            
+ pmat_mp_dldlm_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  915      R(8)            8     2     1        ARG,IN           922                               
+ B                          Dummy  915      R(8)            8     2     1        ARG,INOUT        922                               
+ D                          Dummy  915      R(8)            8     1     1        ARG,OUT          922                               
+ DLDLM                      Subr   915                                           PRIV                                               
+ FF                         Local  921      L(4)            4           scalar                    922,923                           
+
+Page 57          Source Listing                  DLDLM
+2017-04-18 11:09                                 pmat.f90
+
+    925 
+    926 !=============================================================================
+    927 subroutine sldlmf(a,b,d,ff) !                                           [LDLM]
+    928 !=============================================================================
+    929 ! Modified Cholesky decompose Q --> L*D*U
+    930 !=============================================================================
+    931 real(sp), intent(IN   ):: a(:,:)
+    932 real(sp), intent(INOUT):: b(:,:)
+    933 real(sp), intent(  OUT):: d(:)
+    934 logical,  intent(  OUT):: ff
+    935 !-----------------------------------------------------------------------------
+    936 integer                :: m,j, jm, jp, i
+    937 real(sp)               :: bjji
+    938 !=============================================================================
+    939 m=size(a,1)
+    940 ff=f
+    941 do j=1,m
+    942   jm=j-1
+    943   jp=j+1
+    944   d(j)=a(j,j) - sum(b(1:jm,j)*b(j,1:jm))
+    945   b(j,j) = 1
+    946   ff=(d(j) == 0)
+    947   if(ff)then
+    948      write(41,'("In sldlmf; singularity of matrix detected")')
+    949      write(41,'("Rank of matrix: ",i6)'),jm
+    950      return
+    951   endif
+    952   bjji=1/d(j)
+    953   do i=jp,m
+    954      b(j,i)=a(i,j) - dot_product(b(1:jm,j),b(i,1:jm))
+    955      b(i,j)=b(j,i)*bjji
+    956   enddo
+    957   b(1:jm,j)=0
+    958 enddo
+    959 end subroutine sldlmf
+
+Page 58          Source Listing                  SLDLMF
+2017-04-18 11:09 Entry Points                    pmat.f90
+
+
+
+ENTRY POINTS
+
+  Name                       
+                             
+ pmat_mp_sldlmf_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  927      R(4)            4     2     1        ARG,IN           939,944,954                       
+ B                          Dummy  927      R(4)            4     2     1        ARG,INOUT        944,945,954,955,957               
+ BJJI                       Local  937      R(4)            4           scalar                    952,955                           
+ D                          Dummy  927      R(4)            4     1     1        ARG,OUT          944,946,952                       
+ DOT_PRODUCT                Func   954                                  scalar                    954                               
+ FF                         Dummy  927      L(4)            4           scalar   ARG,OUT          940,946,947                       
+ I                          Local  936      I(4)            4           scalar                    953,954,955                       
+ J                          Local  936      I(4)            4           scalar                    941,942,943,944,945,946,952,954,95
+                                                                                                  5,957                             
+ JM                         Local  936      I(4)            4           scalar                    942,944,949,954,957               
+ JP                         Local  936      I(4)            4           scalar                    943,953                           
+ M                          Local  936      I(4)            4           scalar                    939,941,953                       
+ SIZE                       Func   939                                  scalar                    939                               
+ SLDLMF                     Subr   927                                           PRIV             911                               
+ SUM                        Func   944                                  scalar                    944                               
+
+Page 59          Source Listing                  SLDLMF
+2017-04-18 11:09                                 pmat.f90
+
+    960 !=============================================================================
+    961 subroutine dldlmf(a,b,d,ff) !                                           [LDLM]
+    962 !=============================================================================
+    963 ! Modified Cholesky  Q --> L*D*U, U(i,j)=L(j,i)
+    964 !=============================================================================
+    965 real(dp), intent(IN   ) :: a(:,:)
+    966 real(dp), intent(INOUT) :: b(:,:)
+    967 real(dp), intent(  OUT) :: d(:)
+    968 logical,  intent(  OUT) :: ff
+    969 !-----------------------------------------------------------------------------
+    970 integer                 :: m,j, jm, jp, i
+    971 real(dp)                :: bjji
+    972 !=============================================================================
+    973 m=size(a,1)
+    974 ff=f
+    975 do j=1,m; jm=j-1; jp=j+1
+    976   d(j)=a(j,j) - sum(b(1:jm,j)*b(j,1:jm))
+    977   b(j,j) = 1
+    978   ff=(d(j) == 0)
+    979   if(ff)then
+    980      write(41,'("In dldlmf; singularity of matrix detected")')
+    981      write(41,'("Rank of matrix: ",i6)'),jm
+    982      return
+    983   endif
+    984   bjji=1/d(j)
+    985   do i=jp,m
+    986      b(j,i)=a(i,j) - dot_product(b(1:jm,j),b(i,1:jm))
+    987      b(i,j)=b(j,i)*bjji
+    988   enddo
+    989   b(1:jm,j)=0
+    990 enddo
+    991 end subroutine dldlmf
+
+Page 60          Source Listing                  DLDLMF
+2017-04-18 11:09 Entry Points                    pmat.f90
+
+
+
+ENTRY POINTS
+
+  Name                       
+                             
+ pmat_mp_dldlmf_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  961      R(8)            8     2     1        ARG,IN           973,976,986                       
+ B                          Dummy  961      R(8)            8     2     1        ARG,INOUT        976,977,986,987,989               
+ BJJI                       Local  971      R(8)            8           scalar                    984,987                           
+ D                          Dummy  961      R(8)            8     1     1        ARG,OUT          976,978,984                       
+ DLDLMF                     Subr   961                                           PRIV             922                               
+ DOT_PRODUCT                Func   986                                  scalar                    986                               
+ FF                         Dummy  961      L(4)            4           scalar   ARG,OUT          974,978,979                       
+ I                          Local  970      I(4)            4           scalar                    985,986,987                       
+ J                          Local  970      I(4)            4           scalar                    975,976,977,978,984,986,987,989   
+ JM                         Local  970      I(4)            4           scalar                    975,976,981,986,989               
+ JP                         Local  970      I(4)            4           scalar                    975,985                           
+ M                          Local  970      I(4)            4           scalar                    973,975,985                       
+ SIZE                       Func   973                                  scalar                    973                               
+ SUM                        Func   976                                  scalar                    976                               
+
+Page 61          Source Listing                  DLDLMF
+2017-04-18 11:09                                 pmat.f90
+
+    992 
+    993 !==============================================================================
+    994 subroutine sinvu(a)!                                                     [invu]
+    995 !==============================================================================
+    996 ! Invert the upper triangular matrix in place by transposing, calling
+    997 ! invl, and transposing again.
+    998 !==============================================================================
+    999 real,dimension(:,:),intent(inout):: a
+   1000 a=transpose(a); call sinvl(a); a=transpose(a)
+   1001 end subroutine sinvu
+
+
+ENTRY POINTS
+
+  Name                      
+                            
+ pmat_mp_sinvu_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  994      R(4)            4     2     1        ARG,INOUT        1000                              
+ SINVU                      Subr   994                                           PRIV                                               
+ TRANSPOSE                  Func   1000                                 scalar                    1000                              
+
+Page 62          Source Listing                  SINVU
+2017-04-18 11:09                                 pmat.f90
+
+   1002 !==============================================================================
+   1003 subroutine dinvu(a)!                                                     [invu]
+   1004 !==============================================================================
+   1005 real(dp),dimension(:,:),intent(inout):: a
+   1006 a=transpose(a); call dinvl(a); a=transpose(a)
+   1007 end subroutine dinvu
+
+
+ENTRY POINTS
+
+  Name                      
+                            
+ pmat_mp_dinvu_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  1003     R(8)            8     2     1        ARG,INOUT        1006                              
+ DINVU                      Subr   1003                                          PRIV                                               
+ TRANSPOSE                  Func   1006                                 scalar                    1006                              
+
+Page 63          Source Listing                  DINVU
+2017-04-18 11:09                                 pmat.f90
+
+   1008 !==============================================================================
+   1009 subroutine sinvl(a)!                                                     [invl]
+   1010 !==============================================================================
+   1011 !     Invert lower triangular matrix in place
+   1012 !==============================================================================
+   1013 real(sp), intent(inout) :: a(:,:) 
+   1014 integer                 :: m,j, i
+   1015 m=size(a,1)
+   1016 do j=m,1,-1
+   1017   a(1:j-1,j) = 0.0
+   1018   a(j,j)=1./a(j,j)
+   1019   do i=j+1,m
+   1020     a(i,j)=-a(i,i)*sum(a(j:i-1,j)*a(i,j:i-1))
+   1021   enddo
+   1022 enddo
+   1023 end subroutine sinvl
+
+
+ENTRY POINTS
+
+  Name                      
+                            
+ pmat_mp_sinvl_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  1009     R(4)            4     2     1        ARG,INOUT        1015,1017,1018,1020               
+ I                          Local  1014     I(4)            4           scalar                    1019,1020                         
+ J                          Local  1014     I(4)            4           scalar                    1016,1017,1018,1019,1020          
+ M                          Local  1014     I(4)            4           scalar                    1015,1016,1019                    
+ SINVL                      Subr   1009                                          PRIV             1000                              
+ SIZE                       Func   1015                                 scalar                    1015                              
+ SUM                        Func   1020                                 scalar                    1020                              
+
+Page 64          Source Listing                  SINVL
+2017-04-18 11:09                                 pmat.f90
+
+   1024 !==============================================================================
+   1025 subroutine dinvl(a)!                                                     [invl]
+   1026 !==============================================================================
+   1027 real(dp), intent(inout) :: a(:,:) 
+   1028 integer                 :: m,j, i
+   1029 m=size(a,1)
+   1030 do j=m,1,-1
+   1031   a(1:j-1,j) = 0.0
+   1032   a(j,j)=1./a(j,j)
+   1033   do i=j+1,m
+   1034     a(i,j)=-a(i,i)*sum(a(j:i-1,j)*a(i,j:i-1))
+   1035   enddo
+   1036 enddo
+   1037 end subroutine dinvl
+
+
+ENTRY POINTS
+
+  Name                      
+                            
+ pmat_mp_dinvl_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  1025     R(8)            8     2     1        ARG,INOUT        1029,1031,1032,1034               
+ DINVL                      Subr   1025                                          PRIV             1006                              
+ I                          Local  1028     I(4)            4           scalar                    1033,1034                         
+ J                          Local  1028     I(4)            4           scalar                    1030,1031,1032,1033,1034          
+ M                          Local  1028     I(4)            4           scalar                    1029,1030,1033                    
+ SIZE                       Func   1029                                 scalar                    1029                              
+ SUM                        Func   1034                                 scalar                    1034                              
+
+Page 65          Source Listing                  DINVL
+2017-04-18 11:09                                 pmat.f90
+
+   1038 
+   1039 !==============================================================================
+   1040 subroutine slinlv(a,u)!                                                  [invl]
+   1041 !==============================================================================
+   1042 !     Solve linear system involving lower triangular system matrix.
+   1043 !==============================================================================
+   1044 real,     intent(in   ) :: a(:,:)
+   1045 real,     intent(inout) :: u(:)
+   1046 integer                 :: i
+   1047 if(size(a,1) /= size(a,2) .or. size(a,1) /= size(u))&
+   1048      stop 'In slinlv; incompatible array dimensions'
+   1049 do i=1,size(u); u(i)=(u(i) - sum(u(:i-1)*a(i,:i-1)))/a(i,i); enddo
+   1050 end subroutine slinlv
+
+
+ENTRY POINTS
+
+  Name                       
+                             
+ pmat_mp_slinlv_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  1040     R(4)            4     2     1        ARG,IN           1047,1049                         
+ I                          Local  1046     I(4)            4           scalar                    1049                              
+ SIZE                       Func   1047                                 scalar                    1047,1049                         
+ SLINLV                     Subr   1040                                          PRIV                                               
+ SUM                        Func   1049                                 scalar                    1049                              
+ U                          Dummy  1040     R(4)            4     1     1        ARG,INOUT        1047,1049                         
+
+Page 66          Source Listing                  SLINLV
+2017-04-18 11:09                                 pmat.f90
+
+   1051 !==============================================================================
+   1052 subroutine dlinlv(a,u)!                                                  [invl]
+   1053 !==============================================================================
+   1054 real(dp), intent(in   ) :: a(:,:)
+   1055 real(dp), intent(inout) :: u(:)
+   1056 integer                 :: i
+   1057 if(size(a,1) /= size(a,2) .or. size(a,1) /= size(u))&
+   1058      stop 'In dlinlv; incompatible array dimensions'
+   1059 do i=1,size(u); u(i)=(u(i) - sum(u(:i-1)*a(i,:i-1)))/a(i,i); enddo
+   1060 end subroutine dlinlv
+
+
+ENTRY POINTS
+
+  Name                       
+                             
+ pmat_mp_dlinlv_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  1052     R(8)            8     2     1        ARG,IN           1057,1059                         
+ DLINLV                     Subr   1052                                          PRIV                                               
+ I                          Local  1056     I(4)            4           scalar                    1059                              
+ SIZE                       Func   1057                                 scalar                    1057,1059                         
+ SUM                        Func   1059                                 scalar                    1059                              
+ U                          Dummy  1052     R(8)            8     1     1        ARG,INOUT        1057,1059                         
+
+Page 67          Source Listing                  DLINLV
+2017-04-18 11:09                                 pmat.f90
+
+   1061 
+   1062 !==============================================================================
+   1063 subroutine slinuv(a,u)!                                                  [invu]
+   1064 !==============================================================================
+   1065 !     Solve linear system involving upper triangular system matrix.
+   1066 !==============================================================================
+   1067 real,    intent(in   ) :: a(:,:)
+   1068 real,    intent(inout) :: u(:)
+   1069 integer             :: i
+   1070 if(size(a,1) /= size(a,2) .or. size(a,1) /= size(u))&
+   1071      stop 'In linuv; incompatible array dimensions'
+   1072 do i=size(u),1,-1; u(i)=(u(i) - sum(a(i+1:,i)*u(i+1:)))/a(i,i); enddo
+   1073 end subroutine slinuv
+
+
+ENTRY POINTS
+
+  Name                       
+                             
+ pmat_mp_slinuv_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  1063     R(4)            4     2     1        ARG,IN           1070,1072                         
+ I                          Local  1069     I(4)            4           scalar                    1072                              
+ SIZE                       Func   1070                                 scalar                    1070,1072                         
+ SLINUV                     Subr   1063                                          PRIV                                               
+ SUM                        Func   1072                                 scalar                    1072                              
+ U                          Dummy  1063     R(4)            4     1     1        ARG,INOUT        1070,1072                         
+
+Page 68          Source Listing                  SLINUV
+2017-04-18 11:09                                 pmat.f90
+
+   1074 !==============================================================================
+   1075 subroutine dlinuv(a,u)!                                                  [invu]
+   1076 !==============================================================================
+   1077 real(dp), intent(in   ) :: a(:,:)
+   1078 real(dp), intent(inout) :: u(:)
+   1079 integer                 :: i
+   1080 if(size(a,1) /= size(a,2) .or. size(a,1) /= size(u))&
+   1081      stop 'In dlinuv; incompatible array dimensions'
+   1082 do i=size(u),1,-1; u(i)=(u(i) - sum(a(i+1:,i)*u(i+1:)))/a(i,i); enddo
+   1083 end subroutine dlinuv
+
+
+ENTRY POINTS
+
+  Name                       
+                             
+ pmat_mp_dlinuv_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  1075     R(8)            8     2     1        ARG,IN           1080,1082                         
+ DLINUV                     Subr   1075                                          PRIV                                               
+ I                          Local  1079     I(4)            4           scalar                    1082                              
+ SIZE                       Func   1080                                 scalar                    1080,1082                         
+ SUM                        Func   1082                                 scalar                    1082                              
+ U                          Dummy  1075     R(8)            8     1     1        ARG,INOUT        1080,1082                         
+
+Page 69          Source Listing                  DLINUV
+2017-04-18 11:09 Symbol Table                    pmat.f90
+
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ INVL                       Local  53                                   scalar                    39                                
+ INVU                       Local  54                                   scalar                    39                                
+ L1LM                       Local  51                                   scalar                    39                                
+ LDLM                       Local  52                                   scalar                    39                                
+ LDUM                       Local  41                                   scalar                    39                                
+ PIETC                      Module 36                                                             36                                
+ PKIND                      Module 35                                                             35                                
+ PMAT                       Module 33                                                                                               
+ SPC                        Param  35       I(4)            4           scalar                    35                                
+ SWPVV                      Local  40                                   scalar                                                      
+ UDLMM                      Local  43                                   scalar                    39                                
+
+Page 70          Source Listing                  DLINUV
+2017-04-18 11:09                                 pmat.f90
+
+   1084 
+   1085 end module pmat
+   1086 
+
+Page 71          Source Listing                  DLINUV
+2017-04-18 11:09 Subprograms/Common Blocks       pmat.f90
+
+
+
+SUBPROGRAMS/COMMON BLOCKS
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ CINVMT                     Subr   102                                           PRIV                                               
+ CINVMTF                    Subr   188                                           PRIV             106                               
+ CLDUM                      Subr   439                                           PRIV                                               
+ CLDUMF                     Subr   579                                           PRIV             199,303,385,445                   
+ CLINMMT                    Subr   243                                           PRIV                                               
+ CLINMMTF                   Subr   291                                           PRIV             247                               
+ CLINMVT                    Subr   330                                           PRIV                                               
+ CLINMVTF                   Subr   375                                           PRIV             335                               
+ CSWPVV                     Subr   77                                            PRIV             223,623                           
+ CUDLMM                     Subr   704                                           PRIV             308                               
+ CUDLMV                     Subr   788                                           PRIV             390                               
+ DINVL                      Subr   1025                                          PRIV             1006                              
+ DINVMT                     Subr   94                                            PRIV                                               
+ DINVMTF                    Subr   150                                           PRIV             98,408                            
+ DINVU                      Subr   1003                                          PRIV                                               
+ DL1LM                      Subr   825                                           PRIV                                               
+ DL1LMF                     Subr   870                                           PRIV             833                               
+ DLDLM                      Subr   915                                           PRIV                                               
+ DLDLMF                     Subr   961                                           PRIV             922                               
+ DLDUM                      Subr   429                                           PRIV                                               
+ DLDUMF                     Subr   519                                           PRIV             161,283,367,435                   
+ DLINLV                     Subr   1052                                          PRIV                                               
+ DLINMMT                    Subr   235                                           PRIV                                               
+ DLINMMTF                   Subr   271                                           PRIV             239                               
+ DLINMVT                    Subr   321                                           PRIV                                               
+ DLINMVTF                   Subr   357                                           PRIV             326                               
+ DLINUV                     Subr   1075                                          PRIV                                               
+ DSWPVV                     Subr   69                                            PRIV             185,560                           
+ DUDLMM                     Subr   678                                           PRIV             288                               
+ DUDLMV                     Subr   764                                           PRIV             372                               
+ IINVF                      Subr   394                                           PRIV                                               
+ PMAT                       Module 33                                                                                               
+ SINVL                      Subr   1009                                          PRIV             1000                              
+ SINVMT                     Subr   86                                            PRIV                                               
+ SINVMTF                    Subr   110                                           PRIV             90                                
+ SINVU                      Subr   994                                           PRIV                                               
+ SL1LM                      Subr   813                                           PRIV                                               
+ SL1LMF                     Subr   838                                           PRIV             821                               
+ SLDLM                      Subr   902                                           PRIV                                               
+ SLDLMF                     Subr   927                                           PRIV             911                               
+ SLDUM                      Subr   419                                           PRIV                                               
+ SLDUMF                     Subr   449                                           PRIV             123,263,349,425                   
+ SLINLV                     Subr   1040                                          PRIV                                               
+ SLINMMT                    Subr   227                                           PRIV                                               
+ SLINMMTF                   Subr   251                                           PRIV             231                               
+ SLINMVT                    Subr   312                                           PRIV                                               
+ SLINMVTF                   Subr   339                                           PRIV             317                               
+ SLINUV                     Subr   1063                                          PRIV                                               
+ SSWPVV                     Subr   59                                            PRIV             147,500                           
+ SUDLMM                     Subr   643                                           PRIV             268                               
+ SUDLMV                     Subr   731                                           PRIV             354                               
+
+Page 72          Source Listing                  DLINUV
+2017-04-18 11:09                                 pmat.f90
+
+
+COMPILER OPTIONS BEING USED
+
+       -align noall                          -align nonone
+       -align nocommons                      -align nodcommons
+       -align noqcommons                     -align nozcommons
+       -align records                        -align nosequence
+       -align norec1byte                     -align norec2byte
+       -align norec4byte                     -align norec8byte
+       -align norec16byte                    -align norec32byte
+       -align norec64byte                    -align noarray8byte
+       -align noarray16byte                  -align noarray32byte
+       -align noarray64byte                  -align noarray128byte
+       -align noarray256byte                 -altparam
+       -assume accuracy_sensitive            -assume nobscc
+       -assume nobuffered_io                 -assume nobuffered_stdout
+       -assume nobyterecl                    -assume nocc_omp
+       -assume nocstring                     -assume nodummy_aliases
+       -assume nofpe_summary                 -assume noieee_fpe_flags
+       -assume nominus0                      -assume noold_boz
+       -assume old_complex_align             -assume old_unit_star
+       -assume noold_ldout_format            -assume noold_logical_ldio
+       -assume old_maxminloc                 -assume old_xor
+       -assume noprotect_allocates           -assume protect_constants
+       -assume noprotect_parens              -assume split_common
+       -assume source_include                -assume nostd_intent_in
+       -assume std_minus0_rounding           -assume nostd_mod_proc_name
+       -assume std_value                     -assume norealloc_lhs
+       -assume underscore                    -assume no2underscores
+  no   -auto                                 -auto_scalar
+  no   -bintext                              -ccdefault default
+       -check noargs                         -check noarg_temp_created
+       -check noassume                       -check nobounds
+       -check noformat                       -check nooutput_conversion
+       -check nooverflow                     -check nopointers
+       -check power                          -check noshape
+       -check nostack                        -check nounderflow
+       -check nouninitialized                -coarray-num-procs 0
+  no   -coarray-config-file                  -convert big_endian
+       -cross_reference                      -D __INTEL_COMPILER=1600
+       -D __INTEL_COMPILER_UPDATE=3          -D __unix__
+       -D __unix                             -D __linux__
+       -D __linux                            -D __gnu_linux__
+       -D unix                               -D linux
+       -D __ELF__                            -D __x86_64
+       -D __x86_64__                         -D __amd64
+       -D __amd64__                          -D __INTEL_COMPILER_BUILD_DATE=20160415
+       -D __INTEL_OFFLOAD                    -D __i686
+       -D __i686__                           -D __pentiumpro
+       -D __pentiumpro__                     -D __pentium4
+       -D __pentium4__                       -D __tune_pentium4__
+       -D __SSE2__                           -D __SSE2_MATH__
+       -D __SSE__                            -D __SSE_MATH__
+       -D __MMX__                            -double_size 64
+  no   -d_lines                         no   -Qdyncom
+       -error_limit 30                  no   -f66
+  no   -f77rtl                          no   -fast
+
+Page 73          Source Listing                  DLINUV
+2017-04-18 11:09                                 pmat.f90
+
+       -fpscomp nofilesfromcmd               -fpscomp nogeneral
+       -fpscomp noioformat                   -fpscomp noldio_spacing
+       -fpscomp nologicals              no   -fpconstant
+       -fpe3                                 -fprm nearest
+  no   -ftz                                  -fp_model noprecise
+       -fp_model fast                        -fp_model nostrict
+       -fp_model nosource                    -fp_model nodouble
+       -fp_model noextended                  -fp_model novery_fast
+       -fp_model noexcept                    -fp_model nono_except
+       -heap_arrays 0                   no   -threadprivate_compat
+       -free                                 -g2
+       -iface nomixed_str_len_arg            -iface nono_mixed_str_len_arg
+       -init noarrays                        -init noinf
+       -init nonan                           -init nosnan
+       -init nozero                     no   -intconstant
+       -integer_size 32                 no   -mixed_str_len_arg
+  no   -module                               -names lowercase
+  no   -noinclude                            -offload-build=host
+       -O2                              no   -pad_source
+       -real_size 32                    no   -recursive
+       -reentrancy none                 no   -sharable_localsaves
+       -vec=simd                             -show noinclude
+       -show map                             -show options
+  no   -syntax_only                     no   -threadcom
+  no   -U                               no   -vms
+       -w noall                              -w nonone
+       -w alignments                         -w noargument_checking
+       -w nodeclarations                     -w general
+       -w noignore_bounds                    -w noignore_loc
+       -w nointerfaces                       -w notruncated_source
+       -w uncalled                           -w uninitialized
+       -w nounused                           -w usage
+  no   -wrap-margins
+
+       -includepath : /usrx/local/intel/2016SP3/daal/include/,/usr/include/,.FOR,./.FOR,/usrx/local/intel/2016SP3/ipp/include/.FOR,
+           /usrx/local/intel/2016SP3/mkl/include/.FOR,/usrx/local/intel/2016SP3/tbb/include/.FOR,/usrx/local/intel/2016SP3/daal/include/.FOR,
+           /gpfs/tp1/usrx/local/intel/2016SP3/compilers_and_libraries_2016.3.210/linux/compiler/include/intel64/.FOR,
+           /gpfs/tp1/usrx/local/intel/2016SP3/compilers_and_libraries_2016.3.210/linux/compiler/include/.FOR,/usr/local/include/.FOR,
+           /usr/lib/gcc/x86_64-redhat-linux/4.4.7/include/.FOR,/usr/include/.FOR,/usr/include/.FOR,/usr/include/.FOR
+       -list filename : pmat.lst
+       -o    filename : none
+
+COMPILER: Intel(R) Fortran 16.0-1633

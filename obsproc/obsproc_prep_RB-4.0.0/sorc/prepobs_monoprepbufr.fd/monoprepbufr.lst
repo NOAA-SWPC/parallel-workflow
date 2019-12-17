@@ -1,0 +1,343 @@
+Page 1           Source Listing                  PREPOBS_MONOPREPBUFR
+2017-04-18 11:07                                 monoprepbufr.f90
+
+      1               PROGRAM PREPOBS_MONOPREPBUFR
+      2 !$$$  MAIN PROGRAM DOCUMENTATION BLOCK
+      3 !
+      4 ! MAIN PROGRAM: PREPOBS_MONOPREPBUFR
+      5 !   PRGMMR: KEYSER           ORG: NP22        DATE: 2013-03-06
+      6 !
+      7 ! ABSTRACT: MERGES MULTIPLE PARTIAL PREPBUFR FILES INTO A MONOLITHIC
+      8 !   PREPBUFR FILE THAT CONTAINS ALL DATA.  GROUPS LIKE-NAMED TABLE A
+      9 !   MESSAGES TOGETHER IN THE EXPECTED ORDER.
+     10 !
+     11 ! PROGRAM HISTORY LOG:
+     12 ! 1999-07-29  KISTLER -- ORIGINAL AUTHOR
+     13 ! 2013-03-06  KEYSER  -- CHANGES TO RUN ON WCOSS
+     14 !
+     15 ! USAGE:
+     16 !   INPUT FILES:
+     17 !     PARM     - NAMELIST /NAMIN/ (
+     18 !              - VARIABLE "NFILES"   - THE NUMBER OF INPUT BUFR FILES
+     19 !                                      TO MERGE;
+     20 !              - VARIABLE "NHEADERS" - THE NUMBER OF UNIQUE TABLE A
+     21 !                                      ENTRIES FOR BUFR MESSAGES WITHIN
+     22 !                                      ALL INPUT PREPBUFR FILES;
+     23 !              - VARIABLE "CHEADERS" - LIST OF UNIQUE CHARACTER*8 TABLE
+     24 !                                      A ENTRIES FOR BUFR MESSAGES
+     25 !                                      WITHIN ALL INPUT PREPBUFR FILES;
+     26 !              - VARIABLE "MSGS"     - THE NUMBER OF BUFR MESSAGES FOR
+     27 !                                      A PARTICULAR TABLE A ENTRY IN A
+     28 !                                      PARTICULAR INPUT PREPBUFR FILE
+     29 !     UNIT 11  - PREPBUFR FILE 1
+     30 !     UNIT 12  - PREPBUFR FILE 2
+     31 !       ...              ...
+     32 !       ...              ...
+     33 !     UNIT XX  - (WHERE "XX" = 10+"NFILES"), PREPBUFR FILE "NFILES"
+     34 !
+     35 !   OUTPUT FILES:
+     36 !     UNIT 06  - STANDARD PRINTFILE
+     37 !     UNIT 51  - MONOLITHIC PREPBUFR FILE
+     38 !
+     39 !   SUBPROGRAMS CALLED:
+     40 !     LIBRARY:
+     41 !       W3NCO    - W3TAGB   W3TAGE
+     42 !       BUFRLIB  - DATELEN  OPENBF   IREADMG  COPYMG   CLOSMG
+     43 !                  CLOSBF
+     44 !
+     45 !   EXIT STATES:
+     46 !     COND =   0 - SUCCESSFUL RUN
+     47 !
+     48 ! REMARKS: NONE.
+     49 !
+     50 ! ATTRIBUTES:
+     51 !   LANGUAGE: FORTRAN 90
+     52 !   MACHINE:  NCEP WCOSS
+     53 !
+     54 !$$$
+     55 
+     56 ! program PREPOBS_MONOPREPBUFR
+     57 
+
+Page 2           Source Listing                  PREPOBS_MONOPREPBUFR
+2017-04-18 11:07                                 monoprepbufr.f90
+
+     58 implicit none
+     59 
+     60 character*8  subset,sid
+     61 
+     62 integer      maxfiles,maxmsgs
+     63 parameter(maxfiles=31,maxmsgs=50)
+     64 
+     65 character*80 filenames(maxfiles)
+     66 character*25 file
+     67 character*8  cheaders(maxmsgs),cheader
+     68 integer      m,i,nfiles ,ier,j,idate,ireadmg
+     69 integer      msg,msgs(maxfiles,maxmsgs),nheaders,ksum(maxmsgs)
+     70 integer      kend(maxfiles),lunin(maxfiles),lunot,msum(maxmsgs)
+     71 
+     72 namelist /namin/ nfiles,nheaders,cheaders,msgs
+     73 
+     74       CALL W3TAGB('PREPOBS_MONOPREPBUFR',2013,0065,0085,'NP22')
+     75 
+     76 print'(1X)'
+     77 print'(" Welcome to PREPOBS_MONOPREPBUFR - Version 03-07-2013")'
+     78 print'(1X)'
+     79 
+     80 filenames=''
+     81 cheaders=''
+     82 msgs=0
+     83 read (5,namin)
+     84 write(6,namin)
+     85 
+     86 print'(1X)'
+     87 print'(1X)'
+     88 print'(1X)'
+     89 print'(3x,<nheaders>(a8))',(cheaders(i),i=1,nheaders)
+     90 msum=0
+     91 do j=1,nfiles
+     92     print'(i2,1x,<nheaders>(i6,2x))',j,(msgs(i,j),i=1,nheaders)
+
+Page 3           Source Listing                  PREPOBS_MONOPREPBUFR
+2017-04-18 11:07 Entry Points                    monoprepbufr.f90
+
+
+
+ENTRY POINTS
+
+  Name              
+                    
+ MAIN__             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ CHEADER                    Local  67       CHAR            8           scalar                                                      
+ CHEADERS                   Local  67       CHAR            8     1     50                        72,81,89,121,126,127,145          
+ CLOSBF                     Subr   148                                                            148,151                           
+ CLOSMG                     Subr   135                                                            135                               
+ COPYMG                     Subr   136                                                            136                               
+ DATELEN                    Subr   102                                                            102                               
+ FILE                       Local  66       CHAR            25          scalar                                                      
+ FILENAMES                  Local  65       CHAR            80    1     31                        80                                
+ I                          Local  68       I(4)            4           scalar                    89,92,93,94,116,121,122,124,126,12
+                                                                                                  7,137,139,145                     
+ IDATE                      Local  68       I(4)            4           scalar                    123,128                           
+ IER                        Local  68       I(4)            4           scalar                                                      
+ IREADMG                    Func   68       I(4)            4           scalar                    123,128                           
+ J                          Local  68       I(4)            4           scalar                    91,92,94,104,105,106,118,121,122,1
+                                                                                                  23,124,128,129,136,139,150,151    
+ KEND                       Local  70       I(4)            4     1     31                                                          
+ KSUM                       Local  69       I(4)            4     1     50                        117,137,145                       
+ LA                         Label  89                                                                                               
+ LB                         Label  92                                                                                               
+ LUNIN                      Local  70       I(4)            4     1     31                        105,106,115,123,128,136,151       
+ LUNOT                      Local  70       I(4)            4           scalar                    108,115,121,135,136,148           
+ M                          Local  68       I(4)            4           scalar                    119,124,125,139                   
+ MAXFILES                   Param  62       I(4)            4           scalar                    65,69,70                          
+ MAXMSGS                    Param  62       I(4)            4           scalar                    67,69,70                          
+ MSG                        Local  69       I(4)            4           scalar                                                      
+ MSGS                       Local  69       I(4)            4     2     1550                      72,82,92,94,121,122,124,139       
+ MSUM                       Local  70       I(4)            4     1     50                        90,94,145                         
+ NAMIN                      Local  72                                   scalar                    83,84                             
+ NFILES                     Local  68       I(4)            4           scalar                    72,91,104,118,150                 
+ NHEADERS                   Local  69       I(4)            4           scalar                    72,89,92,93,116                   
+ OPENBF                     Subr   106                                                            106,115                           
+ PREPOBS_MONOPREPBUFR       Prog   1                                                                                                
+ SID                        Local  60       CHAR            8           scalar                                                      
+ SUBSET                     Local  60       CHAR            8           scalar                    123,126,127,128                   
+ W3TAGB                     Subr   74                                                             74                                
+ W3TAGE                     Subr   157                                                            157                               
+
+Page 4           Source Listing                  PREPOBS_MONOPREPBUFR
+2017-04-18 11:07                                 monoprepbufr.f90
+
+     93     do i=1,nheaders
+     94         msum(i)=msum(i)+msgs(i,j)
+     95     enddo
+     96 enddo
+     97 
+     98 
+     99 !  open the input and output files
+    100 !  -------------------------------
+    101 
+    102 call datelen(10)
+    103 
+    104 do j=1,nfiles
+    105     lunin(j)=10+j
+    106     call openbf(lunin(j),'IN',lunin(1))
+    107 enddo
+    108 lunot=51
+    109 
+    110 !
+    111 ! merge the input file messages
+    112 ! 
+    113 !----------------------------------------------------------
+    114 
+    115 call openbf(lunot,'OUT',lunin(1))
+    116 do i=1,nheaders
+    117    ksum=0 ! msg count for each type of header
+    118    do j=1,nfiles
+    119       m=0
+    120       print'(" writing",I4," messages of ",A," to unit",I3," for file",I3)', &
+    121        msgs(i,j),cheaders(i),lunot,j
+    122       if(msgs(i,j).gt.0) then
+    123          do while(ireadmg(lunin(j),subset,idate).eq.0)
+    124             if(m.le.msgs(i,j)) then
+    125                m=m+1
+    126                do while ( subset.ne.cheaders(i))
+    127                   print'(" mismatch ",A," .ne. ",A)', subset,cheaders(i)
+    128                   if(ireadmg(lunin(j),subset,idate).ne.0) then
+    129                      print'(" terminating file",I3)', j
+    130                      exit
+    131                   endif
+    132                enddo
+    133 !!!!!!!!!!!!!!!print'(" copy file ",I0," ",A,1X,I," of total ",I0)', &
+    134 !!!!!!!!!!!!!!! j,subset,m,msgs(i,j)
+    135                call closmg(lunot)
+    136                call copymg(lunin(j),lunot)
+    137                ksum(i)=ksum(i)+1
+    138             endif
+    139             if(m.eq.msgs(i,j)) exit
+    140          enddo
+    141       endif
+    142 !!!!!!print'(1X,A," finished with file ",I0)', cheaders(i),j
+    143    enddo
+    144    print'(1X,A," wrote a total of ",I4," messages - expecting to write",I4,&
+    145     " messages")', cheaders(i),ksum(i),msum(i)
+    146    print'(1X)'
+    147 enddo
+    148 call closbf(lunot)
+    149 
+
+Page 5           Source Listing                  PREPOBS_MONOPREPBUFR
+2017-04-18 11:07                                 monoprepbufr.f90
+
+    150 do j=1,nfiles
+    151    call closbf(lunin(j))
+    152 enddo
+    153 
+    154       print'(1X)'
+    155       print'(" All done.")'
+    156       print'(1X)'
+    157       CALL W3TAGE('PREPOBS_MONOPREPBUFR')
+    158 
+    159 stop
+    160 end
+
+Page 6           Source Listing                  PREPOBS_MONOPREPBUFR
+2017-04-18 11:07 Subprograms/Common Blocks       monoprepbufr.f90
+
+
+
+SUBPROGRAMS/COMMON BLOCKS
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ PREPOBS_MONOPREPBUFR       Prog   1                                                                                                
+
+COMPILER OPTIONS BEING USED
+
+       -align noall                          -align nonone
+       -align nocommons                      -align nodcommons
+       -align noqcommons                     -align nozcommons
+       -align records                        -align nosequence
+       -align norec1byte                     -align norec2byte
+       -align norec4byte                     -align norec8byte
+       -align norec16byte                    -align norec32byte
+       -align norec64byte                    -align noarray8byte
+       -align noarray16byte                  -align noarray32byte
+       -align noarray64byte                  -align noarray128byte
+       -align noarray256byte                 -altparam
+       -assume accuracy_sensitive            -assume nobscc
+       -assume nobuffered_io                 -assume nobuffered_stdout
+       -assume nobyterecl                    -assume nocc_omp
+       -assume nocstring                     -assume nodummy_aliases
+       -assume nofpe_summary                 -assume noieee_fpe_flags
+       -assume nominus0                      -assume noold_boz
+       -assume old_complex_align             -assume old_unit_star
+       -assume noold_ldout_format            -assume noold_logical_ldio
+       -assume old_maxminloc                 -assume old_xor
+       -assume noprotect_allocates           -assume protect_constants
+       -assume noprotect_parens              -assume split_common
+       -assume source_include                -assume nostd_intent_in
+       -assume std_minus0_rounding           -assume nostd_mod_proc_name
+       -assume std_value                     -assume norealloc_lhs
+       -assume underscore                    -assume no2underscores
+  no   -auto                                 -auto_scalar
+  no   -bintext                              -ccdefault default
+       -check noargs                         -check noarg_temp_created
+       -check noassume                       -check nobounds
+       -check noformat                       -check nooutput_conversion
+       -check nooverflow                     -check nopointers
+       -check power                          -check noshape
+       -check nostack                        -check nounderflow
+       -check nouninitialized                -coarray-num-procs 0
+  no   -coarray-config-file                  -convert big_endian
+       -cross_reference                      -D __INTEL_COMPILER=1600
+       -D __INTEL_COMPILER_UPDATE=3          -D __unix__
+       -D __unix                             -D __linux__
+       -D __linux                            -D __gnu_linux__
+       -D unix                               -D linux
+       -D __ELF__                            -D __x86_64
+       -D __x86_64__                         -D __amd64
+       -D __amd64__                          -D __INTEL_COMPILER_BUILD_DATE=20160415
+       -D __INTEL_OFFLOAD                    -D __i686
+       -D __i686__                           -D __pentiumpro
+       -D __pentiumpro__                     -D __pentium4
+
+Page 7           Source Listing                  PREPOBS_MONOPREPBUFR
+2017-04-18 11:07                                 monoprepbufr.f90
+
+       -D __pentium4__                       -D __tune_pentium4__
+       -D __SSE2__                           -D __SSE2_MATH__
+       -D __SSE__                            -D __SSE_MATH__
+       -D __MMX__                            -double_size 64
+  no   -d_lines                         no   -Qdyncom
+       -error_limit 30                  no   -f66
+  no   -f77rtl                          no   -fast
+       -fpscomp nofilesfromcmd               -fpscomp nogeneral
+       -fpscomp noioformat                   -fpscomp noldio_spacing
+       -fpscomp nologicals              no   -fpconstant
+       -fpe3                                 -fprm nearest
+  no   -ftz                                  -fp_model noprecise
+       -fp_model fast                        -fp_model nostrict
+       -fp_model nosource                    -fp_model nodouble
+       -fp_model noextended                  -fp_model novery_fast
+       -fp_model noexcept                    -fp_model nono_except
+       -heap_arrays 0                   no   -threadprivate_compat
+       -free                                 -g2
+       -iface nomixed_str_len_arg            -iface nono_mixed_str_len_arg
+       -init noarrays                        -init noinf
+       -init nonan                           -init nosnan
+       -init nozero                     no   -intconstant
+       -integer_size 32                 no   -mixed_str_len_arg
+  no   -module                               -names lowercase
+  no   -noinclude                            -offload-build=host
+       -O2                              no   -pad_source
+       -real_size 32                    no   -recursive
+       -reentrancy none                 no   -sharable_localsaves
+       -vec=simd                             -show noinclude
+       -show map                             -show options
+  no   -syntax_only                     no   -threadcom
+  no   -U                               no   -vms
+       -w noall                              -w nonone
+       -w alignments                         -w noargument_checking
+       -w nodeclarations                     -w general
+       -w noignore_bounds                    -w noignore_loc
+       -w nointerfaces                       -w notruncated_source
+       -w uncalled                           -w uninitialized
+       -w nounused                           -w usage
+  no   -wrap-margins
+
+       -includepath : /usrx/local/intel/2016SP3/daal/include/,/usr/include/,.FOR,./.FOR,/usrx/local/intel/2016SP3/ipp/include/.FOR,
+           /usrx/local/intel/2016SP3/mkl/include/.FOR,/usrx/local/intel/2016SP3/tbb/include/.FOR,/usrx/local/intel/2016SP3/daal/include/.FOR,
+           /gpfs/tp1/usrx/local/intel/2016SP3/compilers_and_libraries_2016.3.210/linux/compiler/include/intel64/.FOR,
+           /gpfs/tp1/usrx/local/intel/2016SP3/compilers_and_libraries_2016.3.210/linux/compiler/include/.FOR,/usr/local/include/.FOR,
+           /usr/lib/gcc/x86_64-redhat-linux/4.4.7/include/.FOR,/usr/include/.FOR,/usr/include/.FOR,/usr/include/.FOR
+       -list filename : monoprepbufr.lst
+       -o    filename : none
+
+COMPILER: Intel(R) Fortran 16.0-1633

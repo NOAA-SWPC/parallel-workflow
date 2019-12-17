@@ -1,0 +1,340 @@
+Page 1           Source Listing                  PREPOBS_MPCOPYBUFR
+2017-04-18 11:07                                 mpcopybufr.f90
+
+      1               PROGRAM PREPOBS_MPCOPYBUFR
+      2 !$$$  MAIN PROGRAM DOCUMENTATION BLOCK
+      3 !
+      4 ! MAIN PROGRAM: PREPOBS_MPCOPYBUFR
+      5 !   PRGMMR: KEYSER           ORG: NP22        DATE: 2013-03-06
+      6 !
+      7 ! ABSTRACT: READS THROUGH USER-SPECIFIED NUMBER OF INPUT BUFR (DATA
+      8 !   DUMP) FILES AND COPIES SELECTED MESSAGES FROM EACH INTO UNIQUE
+      9 !   OUTPUT BUFR (DATA DUMP SUBSET) FILES (1-1 INPUT/OUTPUT).
+     10 !   THIS PROGRAM IS EXECUTED WITHIN A SCRIPT WHICH RUNS IN A PARALLEL
+     11 !   ENVIRONMENT (EITHER UNDER POE/MPI) OR IN BACKGROUND THREADS). THE
+     12 !   NUMBER OF MESSAGES SELECTED IS BASED ON THE NUMBER OF PARTS INTO
+     13 !   WHICH THE INPUT BUFR (DATA DUMP) FILES ARE TO BE DIVIDED - THIS WAY
+     14 !   ALL FILES WILL BE EVENLY DIVIDED.  THE LOCATION OF THE SELECTED
+     15 !   MESSAGES IS BASED ON THE TASK NUMBER (FOR POE/MPI) OR ON THE
+     16 !   BACKGROUND THREAD NUMBER FOR THIS RUN OF THE SCRIPT. THE RESULT OF
+     17 !   RUNNING THIS PROGRAM IN A PARALLEL SCRIPTS IS TO SPLIT EACH SET OF
+     18 !   INPUT BUFR FILES INTO UNIQUE (TO EACH SCRIPT EXECUTED) SUBSETS
+     19 !   WHICH ARE THEN PASSED INTO PREPDATA (ALLOWS FOR LOAD BALANCING).
+     20 !
+     21 ! PROGRAM HISTORY LOG:
+     22 ! 1999-06-29  KISTLER -- ORIGINAL AUTHOR
+     23 ! 2013-03-06  KEYSER  -- CHANGES TO RUN ON WCOSS
+     24 !
+     25 ! USAGE:
+     26 !   INPUT FILES:
+     27 !     PARM     - NAMELIST /NAMIN/ (VARIABLE "NFILES" - THE NUMBER
+     28 !              - OF INPUT BUFR FILES); NAMELIST MP (VARIABLE
+     29 !              - "MP_PROCESS" - THE TASK NUMBER (MPI/POE) OR BACKGROUND
+     30 !                THREAD NUMBER FOR THIS RUN; VARIABLE "NPROCS" - THE
+     31 !                NUMBER OF PARTS INTO WHICH THE INPUT BUFR FILES ARE TO
+     32 !                BE DIVIDED)
+     33 !     UNIT 11  - COMPLETE BUFR FILE 1
+     34 !     UNIT 12  - COMPLETE BUFR FILE 2
+     35 !       ...              ...
+     36 !       ...              ...
+     37 !     UNIT XX  - (WHERE "XX" = 10+"NFILES"), COMPLETE BUFR FILE
+     38 !              - "NFILES"
+     39 !
+     40 !   OUTPUT FILES:
+     41 !     UNIT 06  - STANDARD PRINTFILE
+     42 !     UNIT 51  - SELECTED MESSAGES FROM INPUT BUFR FILE 1
+     43 !     UNIT 52  - SELECTED MESSAGES FROM INPUT BUFR FILE 2
+     44 !       ...              ...
+     45 !       ...              ...
+     46 !     UNIT XX  - (WHERE "XX" = 50+"NFILES"), SELECTED MESSAGES FROM
+     47 !              - INPUT BUFR FILE "NFILES"
+     48 !
+     49 !   SUBPROGRAMS CALLED:
+     50 !     LIBRARY:
+     51 !       UNIQUE   - MP_IREADMG
+     52 !       W3NCO    - W3TAGB   W3TAGE
+     53 !       BUFRLIB  - DATELEN  OPENBF   IREADMG  CLOSMG   COPYMG
+     54 !                  READMG   CLOSBF
+     55 !
+     56 !   EXIT STATES:
+     57 !     COND =   0 - SUCCESSFUL RUN
+
+Page 2           Source Listing                  PREPOBS_MPCOPYBUFR
+2017-04-18 11:07                                 mpcopybufr.f90
+
+     58 !
+     59 ! REMARKS: NONE.
+     60 !
+     61 ! ATTRIBUTES:
+     62 !   LANGUAGE: FORTRAN 90
+     63 !   MACHINE:  NCEP WCOSS
+     64 !
+     65 !$$$
+     66 
+     67 ! PROGRAM PREPOBS_MPCOPYBUFR
+     68 
+     69 CHARACTER*8 SUBSET
+     70 
+     71 namelist /namin/nfiles
+     72 
+     73 
+     74 DATA LUNIN /11    /
+     75 DATA LUNOT /51    /
+     76 
+     77       CALL W3TAGB('PREPOBS_MPCOPYBUFR',2013,0065,0085,'NP22')
+     78 
+     79 read(5,namin)
+     80 write(6,namin)
+     81 
+     82 CALL DATELEN(10)
+     83 
+     84 do i=1,nfiles
+     85 
+     86     CALL OPENBF(LUNIN,'IN ',LUNIN)
+     87     CALL OPENBF(LUNOT,'OUT',LUNIN)
+     88 
+     89         ! copy first two messages (center and dump time) to all files
+     90         ! -----------------------------------------------------------
+     91 
+     92         do k=1,2
+     93                 if(IREADMG(LUNIN,SUBSET,IDATE).EQ.0) then
+     94                         CALL CLOSMG(LUNOT)
+     95                         CALL COPYMG(LUNIN,LUNOT)
+     96                 endif
+     97         enddo
+     98 
+     99     DO WHILE(MP_IREADMG(LUNIN,SUBSET,IDATE).EQ.0)
+    100        CALL COPYMG(LUNIN,LUNOT)
+    101     ENDDO
+    102 
+    103     CALL CLOSBF(LUNIN)
+    104     CALL CLOSBF(LUNOT)
+    105 
+    106     LUNIN=LUNIN+1
+    107     LUNOT=LUNOT+1
+    108 
+    109 ENDDO
+    110 
+    111       CALL W3TAGE('PREPOBS_MPCOPYBUFR')
+    112 
+    113 STOP
+    114 END
+
+Page 3           Source Listing                  PREPOBS_MPCOPYBUFR
+2017-04-18 11:07 Entry Points                    mpcopybufr.f90
+
+
+
+ENTRY POINTS
+
+  Name              
+                    
+ MAIN__             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ CLOSBF                     Subr   103                                                            103,104                           
+ CLOSMG                     Subr   94                                                             94                                
+ COPYMG                     Subr   95                                                             95,100                            
+ DATELEN                    Subr   82                                                             82                                
+ I                          Local  84       I(4)            4           scalar                    84                                
+ IDATE                      Local  93       I(4)            4           scalar                    93,99                             
+ IREADMG                    Func   93       I(4)            4           scalar                    93                                
+ K                          Local  92       I(4)            4           scalar                    92                                
+ LUNIN                      Local  74       I(4)            4           scalar                    74,86,87,93,95,99,100,103,106     
+ LUNOT                      Local  75       I(4)            4           scalar                    75,87,94,95,100,104,107           
+ MP_IREADMG                 Func   99       I(4)            4           scalar                    99                                
+ NAMIN                      Local  71                                   scalar                    79,80                             
+ NFILES                     Local  71       I(4)            4           scalar                    71,84                             
+ OPENBF                     Subr   86                                                             86,87                             
+ PREPOBS_MPCOPYBUFR         Prog   1                                                                                                
+ SUBSET                     Local  69       CHAR            8           scalar                    93,99                             
+ W3TAGB                     Subr   77                                                             77                                
+ W3TAGE                     Subr   111                                                            111                               
+
+Page 4           Source Listing                  PREPOBS_MPCOPYBUFR
+2017-04-18 11:07                                 mpcopybufr.f90
+
+    115 
+    116 function mp_ireadmg(lunin,subset,idate)
+    117 implicit none
+    118 integer mp_ireadmg
+    119 integer lunin,idate,iret,ierr,mp_process,ifirst,n,nprocs,kount
+    120 character*8 subset
+    121 namelist /mp/mp_process,nprocs
+    122 data ifirst/0/,kount/0/
+    123 save ifirst,mp_process,nprocs
+    124 
+    125 if (ifirst.eq.0) then
+    126     read(5,mp)
+    127     write(6,mp)
+    128     ifirst=1
+    129 endif
+    130 
+    131 do
+    132     call readmg(lunin,subset,idate,iret)
+    133     if (iret .ne. 0 ) then
+    134 !print*,subset,' iret,kount = ',subset,' ',iret,kount
+    135         exit
+    136     else
+    137         kount=kount+1
+    138         if (mod(kount,nprocs).eq.mp_process) then
+    139 !print*,subset,' mod(',kount,',',nprocs,') = ',mod(kount,nprocs),mp_process
+    140             exit
+    141         endif
+    142     endif
+    143 enddo
+    144 mp_ireadmg=iret
+    145 return
+    146 end
+
+Page 5           Source Listing                  MP_IREADMG
+2017-04-18 11:07 Entry Points                    mpcopybufr.f90
+
+
+
+ENTRY POINTS
+
+  Name                   
+                         
+ mp_ireadmg_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ IDATE                      Dummy  116      I(4)            4           scalar   ARG,INOUT        132                               
+ IERR                       Local  119      I(4)            4           scalar                                                      
+ IFIRST                     Local  119      I(4)            4           scalar   SAVE             122,125,128                       
+ IRET                       Local  119      I(4)            4           scalar                    132,133,144                       
+ KOUNT                      Local  119      I(4)            4           scalar                    122,137,138                       
+ LUNIN                      Dummy  116      I(4)            4           scalar   ARG,INOUT        132                               
+ MOD                        Func   138                                  scalar                    138                               
+ MP                         Local  121                                  scalar                    126,127                           
+ MP_IREADMG                 Func   116      I(4)            4           scalar                    144                               
+ MP_IREADMG@0               Local  116      I(4)            4           scalar                                                      
+ MP_PROCESS                 Local  119      I(4)            4           scalar   SAVE             121,138                           
+ N                          Local  119      I(4)            4           scalar                                                      
+ NPROCS                     Local  119      I(4)            4           scalar   SAVE             121,138                           
+ READMG                     Subr   132                                                            132                               
+ SUBSET                     Dummy  116      CHAR            8           scalar   ARG,INOUT        132                               
+
+Page 6           Source Listing                  MP_IREADMG
+2017-04-18 11:07 Subprograms/Common Blocks       mpcopybufr.f90
+
+
+
+SUBPROGRAMS/COMMON BLOCKS
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ MP_IREADMG                 Func   116      I(4)            4           scalar                    144                               
+ PREPOBS_MPCOPYBUFR         Prog   1                                                                                                
+
+COMPILER OPTIONS BEING USED
+
+       -align noall                          -align nonone
+       -align nocommons                      -align nodcommons
+       -align noqcommons                     -align nozcommons
+       -align records                        -align nosequence
+       -align norec1byte                     -align norec2byte
+       -align norec4byte                     -align norec8byte
+       -align norec16byte                    -align norec32byte
+       -align norec64byte                    -align noarray8byte
+       -align noarray16byte                  -align noarray32byte
+       -align noarray64byte                  -align noarray128byte
+       -align noarray256byte                 -altparam
+       -assume accuracy_sensitive            -assume nobscc
+       -assume nobuffered_io                 -assume nobuffered_stdout
+       -assume nobyterecl                    -assume nocc_omp
+       -assume nocstring                     -assume nodummy_aliases
+       -assume nofpe_summary                 -assume noieee_fpe_flags
+       -assume nominus0                      -assume noold_boz
+       -assume old_complex_align             -assume old_unit_star
+       -assume noold_ldout_format            -assume noold_logical_ldio
+       -assume old_maxminloc                 -assume old_xor
+       -assume noprotect_allocates           -assume protect_constants
+       -assume noprotect_parens              -assume split_common
+       -assume source_include                -assume nostd_intent_in
+       -assume std_minus0_rounding           -assume nostd_mod_proc_name
+       -assume std_value                     -assume norealloc_lhs
+       -assume underscore                    -assume no2underscores
+  no   -auto                                 -auto_scalar
+  no   -bintext                              -ccdefault default
+       -check noargs                         -check noarg_temp_created
+       -check noassume                       -check nobounds
+       -check noformat                       -check nooutput_conversion
+       -check nooverflow                     -check nopointers
+       -check power                          -check noshape
+       -check nostack                        -check nounderflow
+       -check nouninitialized                -coarray-num-procs 0
+  no   -coarray-config-file                  -convert big_endian
+       -cross_reference                      -D __INTEL_COMPILER=1600
+       -D __INTEL_COMPILER_UPDATE=3          -D __unix__
+       -D __unix                             -D __linux__
+       -D __linux                            -D __gnu_linux__
+       -D unix                               -D linux
+       -D __ELF__                            -D __x86_64
+       -D __x86_64__                         -D __amd64
+       -D __amd64__                          -D __INTEL_COMPILER_BUILD_DATE=20160415
+       -D __INTEL_OFFLOAD                    -D __i686
+       -D __i686__                           -D __pentiumpro
+
+Page 7           Source Listing                  MP_IREADMG
+2017-04-18 11:07                                 mpcopybufr.f90
+
+       -D __pentiumpro__                     -D __pentium4
+       -D __pentium4__                       -D __tune_pentium4__
+       -D __SSE2__                           -D __SSE2_MATH__
+       -D __SSE__                            -D __SSE_MATH__
+       -D __MMX__                            -double_size 64
+  no   -d_lines                         no   -Qdyncom
+       -error_limit 30                  no   -f66
+  no   -f77rtl                          no   -fast
+       -fpscomp nofilesfromcmd               -fpscomp nogeneral
+       -fpscomp noioformat                   -fpscomp noldio_spacing
+       -fpscomp nologicals              no   -fpconstant
+       -fpe3                                 -fprm nearest
+  no   -ftz                                  -fp_model noprecise
+       -fp_model fast                        -fp_model nostrict
+       -fp_model nosource                    -fp_model nodouble
+       -fp_model noextended                  -fp_model novery_fast
+       -fp_model noexcept                    -fp_model nono_except
+       -heap_arrays 0                   no   -threadprivate_compat
+       -free                                 -g2
+       -iface nomixed_str_len_arg            -iface nono_mixed_str_len_arg
+       -init noarrays                        -init noinf
+       -init nonan                           -init nosnan
+       -init nozero                     no   -intconstant
+       -integer_size 32                 no   -mixed_str_len_arg
+  no   -module                               -names lowercase
+  no   -noinclude                            -offload-build=host
+       -O2                              no   -pad_source
+       -real_size 32                    no   -recursive
+       -reentrancy none                 no   -sharable_localsaves
+       -vec=simd                             -show noinclude
+       -show map                             -show options
+  no   -syntax_only                     no   -threadcom
+  no   -U                               no   -vms
+       -w noall                              -w nonone
+       -w alignments                         -w noargument_checking
+       -w nodeclarations                     -w general
+       -w noignore_bounds                    -w noignore_loc
+       -w nointerfaces                       -w notruncated_source
+       -w uncalled                           -w uninitialized
+       -w nounused                           -w usage
+  no   -wrap-margins
+
+       -includepath : /usrx/local/intel/2016SP3/daal/include/,/usr/include/,.FOR,./.FOR,/usrx/local/intel/2016SP3/ipp/include/.FOR,
+           /usrx/local/intel/2016SP3/mkl/include/.FOR,/usrx/local/intel/2016SP3/tbb/include/.FOR,/usrx/local/intel/2016SP3/daal/include/.FOR,
+           /gpfs/tp1/usrx/local/intel/2016SP3/compilers_and_libraries_2016.3.210/linux/compiler/include/intel64/.FOR,
+           /gpfs/tp1/usrx/local/intel/2016SP3/compilers_and_libraries_2016.3.210/linux/compiler/include/.FOR,/usr/local/include/.FOR,
+           /usr/lib/gcc/x86_64-redhat-linux/4.4.7/include/.FOR,/usr/include/.FOR,/usr/include/.FOR,/usr/include/.FOR
+       -list filename : mpcopybufr.lst
+       -o    filename : none
+
+COMPILER: Intel(R) Fortran 16.0-1633

@@ -1,0 +1,759 @@
++ set -e
++ [[ TIDE =~ (theia|THEIA) ]]
++ module load prod_util
+++ /usrx/local/Modules/3.2.10/bin/modulecmd sh load prod_util
++ eval PYTHONPATH=/nwprod2/prod_util.v1.0.8/ush:/global/save/emc.glopara/svn/nceplibs/produtil/trunk/ush:/gpfs/td1/emc/global/save/emc.glopara/TUTORIAL/gfs_workflow.v3.0.0/para/util/ush ';export' 'PYTHONPATH;'
+++ PYTHONPATH=/nwprod2/prod_util.v1.0.8/ush:/global/save/emc.glopara/svn/nceplibs/produtil/trunk/ush:/gpfs/td1/emc/global/save/emc.glopara/TUTORIAL/gfs_workflow.v3.0.0/para/util/ush
+++ export PYTHONPATH
+++ getsystem.pl -tp
++ sys_tp=IBM-p1
++ echo IBM-p1
+IBM-p1
++ module purge
+++ /usrx/local/Modules/3.2.10/bin/modulecmd sh purge
++ eval LD_LIBRARY_PATH=/usrx/local/netcdf-3.6.3/lib:/nwprod/lib:/usrx/local/netcdf-3.6.3/lib:/usrx/local/intel/mkl/lib/intel64 ';export' 'LD_LIBRARY_PATH;MANPATH=/usr/share/man' ';export' 'MANPATH;PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/opt/ibutils/bin:/global/save/emc.glopara/bin:/nwprod/util/exec:/opt/bin/ssh:/sbin:/usr/sbin:/u/emc.glopara/bin:/global/save/Dana.Carlis/bin:/global/save/Mark.Iredell/home/bin:/u/emc.glopara/bin:.:/usrx/local/netcdf-3.6.3/lib:/usrx/local/intel/mkl/lib/intel64:/nwprod/util/exec:/global/save/emc.glopara/bin:/nwprod/util/exec' ';export' 'PATH;PYTHONPATH=/global/save/emc.glopara/svn/nceplibs/produtil/trunk/ush:/gpfs/td1/emc/global/save/emc.glopara/TUTORIAL/gfs_workflow.v3.0.0/para/util/ush' ';export' 'PYTHONPATH;unset' 'BACIO_LIB4;unset' 'BACIO_LIB8;unset' 'BACIO_SRC;unset' 'BACIO_VER;unset' 'BUFR_LIB4;unset' 'BUFR_LIB4_DA;unset' 'BUFR_LIB8;unset' 'BUFR_LIB8_DA;unset' 'BUFR_LIBd;unset' 'BUFR_LIBd_DA;unset' 'BUFR_LIBs;unset' 'BUFR_SRC;unset' 'BUFR_VER;unset' 'CLASSPATH;unset' 'COMDATEROOT;unset' 'COMP;unset' 'COMROOT;unset' 'COMROOThps;unset' 'COMROOTp1;unset' 'COMROOTp2;unset' 'CPATH;unset' 'CPRO_PATH;unset' 'DCOMROOT;unset' 'FPATH;unset' 'FSYNC;unset' 'GADDIR;unset' 'GESROOT;unset' 'GESROOThps;unset' 'GESROOTp1;unset' 'GESROOTp2;unset' 'GrADS_ROOT;unset' 'IDB_HOME;unset' 'INCLUDE;unset' 'INSTALL_DIR;unset' 'INTEL_LICENSE_FILE;unset' 'IPPROOT;unset' 'I_MPI_INC;unset' 'I_MPI_ROOT;unset' 'LANG;unset' 'LAUNCH;unset' 'LIBRARY_PATH;unset' 'LOADEDMODULES;unset' 'LSF_BINDIR;unset' 'LSF_ENVDIR;unset' 'LSF_LIBDIR;unset' 'LSF_SERVERDIR;unset' 'MDATE;unset' 'MKLROOT;unset' 'MKL_TARGET_ARCH;unset' 'MP_CLOCK_SOURCE;unset' 'MP_COMPILER;unset' 'MP_CONFIG;unset' 'MP_EUILIB;unset' 'MP_MPILIB;unset' 'NDATE;unset' 'NETCDF;unset' 'NETCDF_CFLAGS;unset' 'NETCDF_CXXFLAGS;unset' 'NETCDF_FFLAGS;unset' 'NETCDF_INCLUDE;unset' 'NETCDF_LDFLAGS;unset' 'NETCDF_LDFLAGS_C;unset' 'NETCDF_LDFLAGS_CXX;unset' 'NETCDF_LDFLAGS_F;unset' 'NHOUR;unset' 'NLSPATH;unset' 'NWROOT;unset' 'NWROOThps;unset' 'NWROOTp1;unset' 'NWROOTp2;unset' 'OMP_NUM_THREADS;unset' 'PCOMROOT;unset' 'PROD_DIR;unset' 'SITE;unset' 'TBBROOT;unset' 'UTILROOT;unset' 'VT_LIB_DIR;unset' 'VT_ROOT;unset' 'VT_SLIB_DIR;unset' 'W3NCO_LIB4;unset' 'W3NCO_LIB8;unset' 'W3NCO_LIBd;unset' 'W3NCO_SRC;unset' 'W3NCO_VER;unset' 'XLSF_UIDDIR;unset' '_LMFILES_;'
+++ LD_LIBRARY_PATH=/usrx/local/netcdf-3.6.3/lib:/nwprod/lib:/usrx/local/netcdf-3.6.3/lib:/usrx/local/intel/mkl/lib/intel64
+++ export LD_LIBRARY_PATH
+++ MANPATH=/usr/share/man
+++ export MANPATH
+++ PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/opt/ibutils/bin:/global/save/emc.glopara/bin:/nwprod/util/exec:/opt/bin/ssh:/sbin:/usr/sbin:/u/emc.glopara/bin:/global/save/Dana.Carlis/bin:/global/save/Mark.Iredell/home/bin:/u/emc.glopara/bin:.:/usrx/local/netcdf-3.6.3/lib:/usrx/local/intel/mkl/lib/intel64:/nwprod/util/exec:/global/save/emc.glopara/bin:/nwprod/util/exec
+++ export PATH
+++ PYTHONPATH=/global/save/emc.glopara/svn/nceplibs/produtil/trunk/ush:/gpfs/td1/emc/global/save/emc.glopara/TUTORIAL/gfs_workflow.v3.0.0/para/util/ush
+++ export PYTHONPATH
+++ unset BACIO_LIB4
+++ unset BACIO_LIB8
+++ unset BACIO_SRC
+++ unset BACIO_VER
+++ unset BUFR_LIB4
+++ unset BUFR_LIB4_DA
+++ unset BUFR_LIB8
+++ unset BUFR_LIB8_DA
+++ unset BUFR_LIBd
+++ unset BUFR_LIBd_DA
+++ unset BUFR_LIBs
+++ unset BUFR_SRC
+++ unset BUFR_VER
+++ unset CLASSPATH
+++ unset COMDATEROOT
+++ unset COMP
+++ unset COMROOT
+++ unset COMROOThps
+++ unset COMROOTp1
+++ unset COMROOTp2
+++ unset CPATH
+++ unset CPRO_PATH
+++ unset DCOMROOT
+++ unset FPATH
+++ unset FSYNC
+++ unset GADDIR
+++ unset GESROOT
+++ unset GESROOThps
+++ unset GESROOTp1
+++ unset GESROOTp2
+++ unset GrADS_ROOT
+++ unset IDB_HOME
+++ unset INCLUDE
+++ unset INSTALL_DIR
+++ unset INTEL_LICENSE_FILE
+++ unset IPPROOT
+++ unset I_MPI_INC
+++ unset I_MPI_ROOT
+++ unset LANG
+++ unset LAUNCH
+++ unset LIBRARY_PATH
+++ unset LOADEDMODULES
+++ unset LSF_BINDIR
+++ unset LSF_ENVDIR
+++ unset LSF_LIBDIR
+++ unset LSF_SERVERDIR
+++ unset MDATE
+++ unset MKLROOT
+++ unset MKL_TARGET_ARCH
+++ unset MP_CLOCK_SOURCE
+++ unset MP_COMPILER
+++ unset MP_CONFIG
+++ unset MP_EUILIB
+++ unset MP_MPILIB
+++ unset NDATE
+++ unset NETCDF
+++ unset NETCDF_CFLAGS
+++ unset NETCDF_CXXFLAGS
+++ unset NETCDF_FFLAGS
+++ unset NETCDF_INCLUDE
+++ unset NETCDF_LDFLAGS
+++ unset NETCDF_LDFLAGS_C
+++ unset NETCDF_LDFLAGS_CXX
+++ unset NETCDF_LDFLAGS_F
+++ unset NHOUR
+++ unset NLSPATH
+++ unset NWROOT
+++ unset NWROOThps
+++ unset NWROOTp1
+++ unset NWROOTp2
+++ unset OMP_NUM_THREADS
+++ unset PCOMROOT
+++ unset PROD_DIR
+++ unset SITE
+++ unset TBBROOT
+++ unset UTILROOT
+++ unset VT_LIB_DIR
+++ unset VT_ROOT
+++ unset VT_SLIB_DIR
+++ unset W3NCO_LIB4
+++ unset W3NCO_LIB8
+++ unset W3NCO_LIBd
+++ unset W3NCO_SRC
+++ unset W3NCO_VER
+++ unset XLSF_UIDDIR
+++ unset _LMFILES_
++ case $sys_tp in
++ module load ics/16.0.3
+++ /usrx/local/Modules/3.2.10/bin/modulecmd sh load ics/16.0.3
++ eval ADVISOR_XE_2016_DIR=/usrx/local/intel/2016SP3/advisor_xe_2016 ';export' 'ADVISOR_XE_2016_DIR;CLASSPATH=/usrx/local/intel/2016SP3/itac_latest/lib:/usrx/local/intel/2016SP3/daal/lib/daal.jar' ';export' 'CLASSPATH;CLCK_ROOT=/usrx/local/intel/2016SP3/clck_latest' ';export' 'CLCK_ROOT;CPATH=/usrx/local/intel/2016SP3/ipp/include:/usrx/local/intel/2016SP3/mkl/include:/usrx/local/intel/2016SP3/tbb/include:/usrx/local/intel/2016SP3/daal/include' ';export' 'CPATH;CPLUS_INCLUDE_PATH=/usrx/local/intel/2016SP3/clck_latest/include' ';export' 'CPLUS_INCLUDE_PATH;DAALROOT=/usrx/local/intel/2016SP3/daal' ';export' 'DAALROOT;GDBSERVER_MIC=/usrx/local/intel/2016SP3/debugger_2016/gdb/targets/mic/bin/gdbserver' ';export' 'GDBSERVER_MIC;GDB_CROSS=/usrx/local/intel/2016SP3/debugger_2016/gdb/intel64_mic/bin/gdb-mic' ';export' 'GDB_CROSS;INFOPATH=/usrx/local/intel/2016SP3/documentation_2016/en/debugger/gdb-ia/info:/usrx/local/intel/2016SP3/documentation_2016/en/debugger/gdb-mic/info:/usrx/local/intel/2016SP3/documentation_2016/en/debugger/gdb-igfx/info' ';export' 'INFOPATH;INSPECTOR_2016_DIR=/usrx/local/intel/2016SP3/inspector_xe_2016' ';export' 'INSPECTOR_2016_DIR;INTEL_LICENSE_FILE=/usrx/local/intel/licenses' ';export' 'INTEL_LICENSE_FILE;INTEL_PYTHONHOME=/usrx/local/intel/2016SP3/debugger_2016/python/intel64' ';export' 'INTEL_PYTHONHOME;IPPROOT=/usrx/local/intel/2016SP3/ipp' ';export' 'IPPROOT;I_MPI_HYDRA_IFACE=ib0' ';export' 'I_MPI_HYDRA_IFACE;I_MPI_ROOT=/usrx/local/intel/2016SP3/compilers_and_libraries/linux/mpi' ';export' 'I_MPI_ROOT;LD_LIBRARY_PATH=/usrx/local/intel/2016SP3/itac_latest/mic/slib:/usrx/local/intel/2016SP3/itac_latest/slib:/usrx/local/intel/2016SP3/compilers_and_libraries/linux/lib/intel64_lin:/usrx/local/intel/2016SP3/compilers_and_libraries/linux/mpi/lib64:/usrx/local/intel/2016SP3/compilers_and_libraries/linux/mpi/mic/lib:/usrx/local/intel/2016SP3/ipp/lib/intel64_lin:/usrx/local/intel/2016SP3/mkl/lib/intel64_lin:/usrx/local/intel/2016SP3/tbb/lib/intel64_lin/gcc4.4:/usrx/local/intel/2016SP3/debugger_2016/libipt/intel64/lib:/usrx/local/intel/2016SP3/daal/lib/intel64_lin:/usrx/local/netcdf-3.6.3/lib:/nwprod/lib:/usrx/local/netcdf-3.6.3/lib:/usrx/local/intel/mkl/lib/intel64' ';export' 'LD_LIBRARY_PATH;LIBRARY_PATH=/usrx/local/intel/2016SP3/clck_latest/lib/intel64:/usrx/local/intel/2016SP3/ipp/lib/intel64_lin:/usrx/local/intel/2016SP3/compilers_and_libraries/linux/lib/intel64_lin:/usrx/local/intel/2016SP3/mkl/lib/intel64_lin:/usrx/local/intel/2016SP3/tbb/lib/intel64_lin/gcc4.4:/usrx/local/intel/2016SP3/daal/lib/intel64_lin' ';export' 'LIBRARY_PATH;LOADEDMODULES=ics/16.0.3' ';export' 'LOADEDMODULES;MANPATH=/usrx/local/intel/2016SP3/itac_latest/man:/usrx/local/intel/2016SP3/compilers_and_libraries/linux/man/common:/usrx/local/intel/2016SP3/compilers_and_libraries/linux/mpi/man:/usrx/local/intel/2016SP3/documentation_2016/en/debugger/gdb-ia/man:/usrx/local/intel/2016SP3/documentation_2016/en/debugger/gdb-mic/man:/usrx/local/intel/2016SP3/documentation_2016/en/debugger/gdb-igfx/man:/usr/share/man:/usrx/local/intel/2016SP3/inspector_xe_2016/man:/usrx/local/intel/2016SP3/vtune_amplifier_xe_2016/man:/usrx/local/intel/2016SP3/advisor_xe_2016/man' ';export' 'MANPATH;MIC_LD_LIBRARY_PATH=/usrx/local/intel/2016SP3/compilers_and_libraries/linux/lib/mic:/usrx/local/intel/2016SP3/compilers_and_libraries/linux/mpi/mic/lib:/usrx/local/intel/2016SP3/mkl/lib/mic:/usrx/local/intel/2016SP3/tbb/lib/mic' ';export' 'MIC_LD_LIBRARY_PATH;MIC_LIBRARY_PATH=/usrx/local/intel/2016SP3/compilers_and_libraries/linux/lib/mic:/usrx/local/intel/2016SP3/compilers_and_libraries/linux/mpi/mic/lib:/usrx/local/intel/2016SP3/tbb/lib/mic' ';export' 'MIC_LIBRARY_PATH;MKLROOT=/usrx/local/intel/2016SP3/mkl' ';export' 'MKLROOT;MPM_LAUNCHER=/usrx/local/intel/2016SP3/debugger_2016/mpm/mic/bin/start_mpm.sh' ';export' 'MPM_LAUNCHER;MPS_FILE_POSTFIX=_%D-%T' ';export' 'MPS_FILE_POSTFIX;MPS_INTEL_LIBITTNOTIFY64=libmps_nopapi.so' ';export' 'MPS_INTEL_LIBITTNOTIFY64;MPS_I_MPI_STATS=20\"' ';export' 'MPS_I_MPI_STATS;MPS_I_MPI_STATS_FILE=stats.txt' ';export' 'MPS_I_MPI_STATS_FILE;MPS_KMP_FORKJOIN_FRAMES_MODE=3' ';export' 'MPS_KMP_FORKJOIN_FRAMES_MODE;MPS_LD_PRELOAD=libmps_nopapi.so' ';export' 'MPS_LD_PRELOAD;MPS_TOOL_ROOT=/usrx/local/intel-itac' ';export' 'MPS_TOOL_ROOT;NLSPATH=/usrx/local/intel/2016SP3/compilers_and_libraries/linux/lib/intel64_lin/locale/%l_%t/%N:/usrx/local/intel/2016SP3/ipp/lib/intel64_lin/locale/%l_%t/%N:/usrx/local/intel/2016SP3/mkl/lib/intel64_lin/locale/%l_%t/%N:/usrx/local/intel/2016SP3/debugger_2016/gdb/intel64_mic/share/locale/%l_%t/%N:/usrx/local/intel/2016SP3/debugger_2016/gdb/intel64/share/locale/%l_%t/%N' ';export' 'NLSPATH;PATH=/usrx/local/intel/2016SP3/advisor_xe_2016/bin64:/usrx/local/intel/2016SP3/vtune_amplifier_xe_2016/bin64:/usrx/local/intel/2016SP3/inspector_xe_2016/bin64:/usrx/local/intel/2016SP3/itac_latest/bin:/usrx/local/intel/2016SP3/clck_latest/bin/intel64:/usrx/local/intel/2016SP3/compilers_and_libraries/linux/bin/intel64:/usrx/local/intel/2016SP3/compilers_and_libraries/linux/mpi/bin64:/usrx/local/intel/2016SP3/debugger_2016/gdb/intel64_mic/bin:/usrx/local/intel/2016SP3/debugger_2016/gdb/intel64/bin:/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/opt/ibutils/bin:/global/save/emc.glopara/bin:/nwprod/util/exec:/opt/bin/ssh:/sbin:/usr/sbin:/u/emc.glopara/bin:/global/save/Dana.Carlis/bin:/global/save/Mark.Iredell/home/bin:/u/emc.glopara/bin:.:/usrx/local/netcdf-3.6.3/lib:/usrx/local/intel/mkl/lib/intel64:/nwprod/util/exec:/global/save/emc.glopara/bin:/nwprod/util/exec' ';export' 'PATH;TBBROOT=/usrx/local/intel/2016SP3/tbb' ';export' 'TBBROOT;VTUNE_AMPLIFIER_XE_2016_DIR=/usrx/local/intel/2016SP3/vtune_amplifier_xe_2016' ';export' 'VTUNE_AMPLIFIER_XE_2016_DIR;VT_ADD_LIBS=-ldwarf\' '-lelf\' '-lvtunwind\' '-lnsl\' '-lm\' '-ldl\' -lpthread ';export' 'VT_ADD_LIBS;VT_ARCH=intel64' ';export' 'VT_ARCH;VT_LIB_DIR=/usrx/local/intel/2016SP3/itac_latest/lib' ';export' 'VT_LIB_DIR;VT_MPI=impi4' ';export' 'VT_MPI;VT_ROOT=/usrx/local/intel/2016SP3/itac_latest' ';export' 'VT_ROOT;VT_SLIB_DIR=/usrx/local/intel/2016SP3/itac_latest/slib' ';export' 'VT_SLIB_DIR;_LMFILES_=/usrx/local/modulefiles/ics/16.0.3' ';export' '_LMFILES_;'
+++ ADVISOR_XE_2016_DIR=/usrx/local/intel/2016SP3/advisor_xe_2016
+++ export ADVISOR_XE_2016_DIR
+++ CLASSPATH=/usrx/local/intel/2016SP3/itac_latest/lib:/usrx/local/intel/2016SP3/daal/lib/daal.jar
+++ export CLASSPATH
+++ CLCK_ROOT=/usrx/local/intel/2016SP3/clck_latest
+++ export CLCK_ROOT
+++ CPATH=/usrx/local/intel/2016SP3/ipp/include:/usrx/local/intel/2016SP3/mkl/include:/usrx/local/intel/2016SP3/tbb/include:/usrx/local/intel/2016SP3/daal/include
+++ export CPATH
+++ CPLUS_INCLUDE_PATH=/usrx/local/intel/2016SP3/clck_latest/include
+++ export CPLUS_INCLUDE_PATH
+++ DAALROOT=/usrx/local/intel/2016SP3/daal
+++ export DAALROOT
+++ GDBSERVER_MIC=/usrx/local/intel/2016SP3/debugger_2016/gdb/targets/mic/bin/gdbserver
+++ export GDBSERVER_MIC
+++ GDB_CROSS=/usrx/local/intel/2016SP3/debugger_2016/gdb/intel64_mic/bin/gdb-mic
+++ export GDB_CROSS
+++ INFOPATH=/usrx/local/intel/2016SP3/documentation_2016/en/debugger/gdb-ia/info:/usrx/local/intel/2016SP3/documentation_2016/en/debugger/gdb-mic/info:/usrx/local/intel/2016SP3/documentation_2016/en/debugger/gdb-igfx/info
+++ export INFOPATH
+++ INSPECTOR_2016_DIR=/usrx/local/intel/2016SP3/inspector_xe_2016
+++ export INSPECTOR_2016_DIR
+++ INTEL_LICENSE_FILE=/usrx/local/intel/licenses
+++ export INTEL_LICENSE_FILE
+++ INTEL_PYTHONHOME=/usrx/local/intel/2016SP3/debugger_2016/python/intel64
+++ export INTEL_PYTHONHOME
+++ IPPROOT=/usrx/local/intel/2016SP3/ipp
+++ export IPPROOT
+++ I_MPI_HYDRA_IFACE=ib0
+++ export I_MPI_HYDRA_IFACE
+++ I_MPI_ROOT=/usrx/local/intel/2016SP3/compilers_and_libraries/linux/mpi
+++ export I_MPI_ROOT
+++ LD_LIBRARY_PATH=/usrx/local/intel/2016SP3/itac_latest/mic/slib:/usrx/local/intel/2016SP3/itac_latest/slib:/usrx/local/intel/2016SP3/compilers_and_libraries/linux/lib/intel64_lin:/usrx/local/intel/2016SP3/compilers_and_libraries/linux/mpi/lib64:/usrx/local/intel/2016SP3/compilers_and_libraries/linux/mpi/mic/lib:/usrx/local/intel/2016SP3/ipp/lib/intel64_lin:/usrx/local/intel/2016SP3/mkl/lib/intel64_lin:/usrx/local/intel/2016SP3/tbb/lib/intel64_lin/gcc4.4:/usrx/local/intel/2016SP3/debugger_2016/libipt/intel64/lib:/usrx/local/intel/2016SP3/daal/lib/intel64_lin:/usrx/local/netcdf-3.6.3/lib:/nwprod/lib:/usrx/local/netcdf-3.6.3/lib:/usrx/local/intel/mkl/lib/intel64
+++ export LD_LIBRARY_PATH
+++ LIBRARY_PATH=/usrx/local/intel/2016SP3/clck_latest/lib/intel64:/usrx/local/intel/2016SP3/ipp/lib/intel64_lin:/usrx/local/intel/2016SP3/compilers_and_libraries/linux/lib/intel64_lin:/usrx/local/intel/2016SP3/mkl/lib/intel64_lin:/usrx/local/intel/2016SP3/tbb/lib/intel64_lin/gcc4.4:/usrx/local/intel/2016SP3/daal/lib/intel64_lin
+++ export LIBRARY_PATH
+++ LOADEDMODULES=ics/16.0.3
+++ export LOADEDMODULES
+++ MANPATH=/usrx/local/intel/2016SP3/itac_latest/man:/usrx/local/intel/2016SP3/compilers_and_libraries/linux/man/common:/usrx/local/intel/2016SP3/compilers_and_libraries/linux/mpi/man:/usrx/local/intel/2016SP3/documentation_2016/en/debugger/gdb-ia/man:/usrx/local/intel/2016SP3/documentation_2016/en/debugger/gdb-mic/man:/usrx/local/intel/2016SP3/documentation_2016/en/debugger/gdb-igfx/man:/usr/share/man:/usrx/local/intel/2016SP3/inspector_xe_2016/man:/usrx/local/intel/2016SP3/vtune_amplifier_xe_2016/man:/usrx/local/intel/2016SP3/advisor_xe_2016/man
+++ export MANPATH
+++ MIC_LD_LIBRARY_PATH=/usrx/local/intel/2016SP3/compilers_and_libraries/linux/lib/mic:/usrx/local/intel/2016SP3/compilers_and_libraries/linux/mpi/mic/lib:/usrx/local/intel/2016SP3/mkl/lib/mic:/usrx/local/intel/2016SP3/tbb/lib/mic
+++ export MIC_LD_LIBRARY_PATH
+++ MIC_LIBRARY_PATH=/usrx/local/intel/2016SP3/compilers_and_libraries/linux/lib/mic:/usrx/local/intel/2016SP3/compilers_and_libraries/linux/mpi/mic/lib:/usrx/local/intel/2016SP3/tbb/lib/mic
+++ export MIC_LIBRARY_PATH
+++ MKLROOT=/usrx/local/intel/2016SP3/mkl
+++ export MKLROOT
+++ MPM_LAUNCHER=/usrx/local/intel/2016SP3/debugger_2016/mpm/mic/bin/start_mpm.sh
+++ export MPM_LAUNCHER
+++ MPS_FILE_POSTFIX=_%D-%T
+++ export MPS_FILE_POSTFIX
+++ MPS_INTEL_LIBITTNOTIFY64=libmps_nopapi.so
+++ export MPS_INTEL_LIBITTNOTIFY64
+++ MPS_I_MPI_STATS='20"'
+++ export MPS_I_MPI_STATS
+++ MPS_I_MPI_STATS_FILE=stats.txt
+++ export MPS_I_MPI_STATS_FILE
+++ MPS_KMP_FORKJOIN_FRAMES_MODE=3
+++ export MPS_KMP_FORKJOIN_FRAMES_MODE
+++ MPS_LD_PRELOAD=libmps_nopapi.so
+++ export MPS_LD_PRELOAD
+++ MPS_TOOL_ROOT=/usrx/local/intel-itac
+++ export MPS_TOOL_ROOT
+++ NLSPATH=/usrx/local/intel/2016SP3/compilers_and_libraries/linux/lib/intel64_lin/locale/%l_%t/%N:/usrx/local/intel/2016SP3/ipp/lib/intel64_lin/locale/%l_%t/%N:/usrx/local/intel/2016SP3/mkl/lib/intel64_lin/locale/%l_%t/%N:/usrx/local/intel/2016SP3/debugger_2016/gdb/intel64_mic/share/locale/%l_%t/%N:/usrx/local/intel/2016SP3/debugger_2016/gdb/intel64/share/locale/%l_%t/%N
+++ export NLSPATH
+++ PATH=/usrx/local/intel/2016SP3/advisor_xe_2016/bin64:/usrx/local/intel/2016SP3/vtune_amplifier_xe_2016/bin64:/usrx/local/intel/2016SP3/inspector_xe_2016/bin64:/usrx/local/intel/2016SP3/itac_latest/bin:/usrx/local/intel/2016SP3/clck_latest/bin/intel64:/usrx/local/intel/2016SP3/compilers_and_libraries/linux/bin/intel64:/usrx/local/intel/2016SP3/compilers_and_libraries/linux/mpi/bin64:/usrx/local/intel/2016SP3/debugger_2016/gdb/intel64_mic/bin:/usrx/local/intel/2016SP3/debugger_2016/gdb/intel64/bin:/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/opt/ibutils/bin:/global/save/emc.glopara/bin:/nwprod/util/exec:/opt/bin/ssh:/sbin:/usr/sbin:/u/emc.glopara/bin:/global/save/Dana.Carlis/bin:/global/save/Mark.Iredell/home/bin:/u/emc.glopara/bin:.:/usrx/local/netcdf-3.6.3/lib:/usrx/local/intel/mkl/lib/intel64:/nwprod/util/exec:/global/save/emc.glopara/bin:/nwprod/util/exec
+++ export PATH
+++ TBBROOT=/usrx/local/intel/2016SP3/tbb
+++ export TBBROOT
+++ VTUNE_AMPLIFIER_XE_2016_DIR=/usrx/local/intel/2016SP3/vtune_amplifier_xe_2016
+++ export VTUNE_AMPLIFIER_XE_2016_DIR
+++ VT_ADD_LIBS='-ldwarf -lelf -lvtunwind -lnsl -lm -ldl -lpthread'
+++ export VT_ADD_LIBS
+++ VT_ARCH=intel64
+++ export VT_ARCH
+++ VT_LIB_DIR=/usrx/local/intel/2016SP3/itac_latest/lib
+++ export VT_LIB_DIR
+++ VT_MPI=impi4
+++ export VT_MPI
+++ VT_ROOT=/usrx/local/intel/2016SP3/itac_latest
+++ export VT_ROOT
+++ VT_SLIB_DIR=/usrx/local/intel/2016SP3/itac_latest/slib
+++ export VT_SLIB_DIR
+++ _LMFILES_=/usrx/local/modulefiles/ics/16.0.3
+++ export _LMFILES_
++ module load ibmpe
+++ /usrx/local/Modules/3.2.10/bin/modulecmd sh load ibmpe
++ eval LANG=en_US ';export' 'LANG;LOADEDMODULES=ics/16.0.3:ibmpe/1.3.0.12' ';export' 'LOADEDMODULES;MANPATH=/opt/ibmhpc/pecurrent/ppe.man:/usrx/local/intel/2016SP3/itac_latest/man:/usrx/local/intel/2016SP3/compilers_and_libraries/linux/man/common:/usrx/local/intel/2016SP3/compilers_and_libraries/linux/mpi/man:/usrx/local/intel/2016SP3/documentation_2016/en/debugger/gdb-ia/man:/usrx/local/intel/2016SP3/documentation_2016/en/debugger/gdb-mic/man:/usrx/local/intel/2016SP3/documentation_2016/en/debugger/gdb-igfx/man:/usr/share/man:/usrx/local/intel/2016SP3/inspector_xe_2016/man:/usrx/local/intel/2016SP3/vtune_amplifier_xe_2016/man:/usrx/local/intel/2016SP3/advisor_xe_2016/man' ';export' 'MANPATH;MP_CLOCK_SOURCE=OS' ';export' 'MP_CLOCK_SOURCE;MP_COMPILER=intel' ';export' 'MP_COMPILER;MP_CONFIG=13012' ';export' 'MP_CONFIG;MP_EUILIB=us' ';export' 'MP_EUILIB;MP_MPILIB=mpich2' ';export' 'MP_MPILIB;NLSPATH=/opt/ibmhpc/pecurrent/base/msg/%L/%N:/usr/share/locale/%L/%N:/usrx/local/intel/2016SP3/compilers_and_libraries/linux/lib/intel64_lin/locale/%l_%t/%N:/usrx/local/intel/2016SP3/ipp/lib/intel64_lin/locale/%l_%t/%N:/usrx/local/intel/2016SP3/mkl/lib/intel64_lin/locale/%l_%t/%N:/usrx/local/intel/2016SP3/debugger_2016/gdb/intel64_mic/share/locale/%l_%t/%N:/usrx/local/intel/2016SP3/debugger_2016/gdb/intel64/share/locale/%l_%t/%N' ';export' 'NLSPATH;PATH=/opt/ibmhpc/pecurrent/base/bin:/usrx/local/intel/2016SP3/advisor_xe_2016/bin64:/usrx/local/intel/2016SP3/vtune_amplifier_xe_2016/bin64:/usrx/local/intel/2016SP3/inspector_xe_2016/bin64:/usrx/local/intel/2016SP3/itac_latest/bin:/usrx/local/intel/2016SP3/clck_latest/bin/intel64:/usrx/local/intel/2016SP3/compilers_and_libraries/linux/bin/intel64:/usrx/local/intel/2016SP3/compilers_and_libraries/linux/mpi/bin64:/usrx/local/intel/2016SP3/debugger_2016/gdb/intel64_mic/bin:/usrx/local/intel/2016SP3/debugger_2016/gdb/intel64/bin:/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/opt/ibutils/bin:/global/save/emc.glopara/bin:/nwprod/util/exec:/opt/bin/ssh:/sbin:/usr/sbin:/u/emc.glopara/bin:/global/save/Dana.Carlis/bin:/global/save/Mark.Iredell/home/bin:/u/emc.glopara/bin:.:/usrx/local/netcdf-3.6.3/lib:/usrx/local/intel/mkl/lib/intel64:/nwprod/util/exec:/global/save/emc.glopara/bin:/nwprod/util/exec' ';export' 'PATH;_LMFILES_=/usrx/local/modulefiles/ics/16.0.3:/usrx/local/modulefiles/ibmpe/1.3.0.12' ';export' '_LMFILES_;'
+++ LANG=en_US
+++ export LANG
+++ LOADEDMODULES=ics/16.0.3:ibmpe/1.3.0.12
+++ export LOADEDMODULES
+++ MANPATH=/opt/ibmhpc/pecurrent/ppe.man:/usrx/local/intel/2016SP3/itac_latest/man:/usrx/local/intel/2016SP3/compilers_and_libraries/linux/man/common:/usrx/local/intel/2016SP3/compilers_and_libraries/linux/mpi/man:/usrx/local/intel/2016SP3/documentation_2016/en/debugger/gdb-ia/man:/usrx/local/intel/2016SP3/documentation_2016/en/debugger/gdb-mic/man:/usrx/local/intel/2016SP3/documentation_2016/en/debugger/gdb-igfx/man:/usr/share/man:/usrx/local/intel/2016SP3/inspector_xe_2016/man:/usrx/local/intel/2016SP3/vtune_amplifier_xe_2016/man:/usrx/local/intel/2016SP3/advisor_xe_2016/man
+++ export MANPATH
+++ MP_CLOCK_SOURCE=OS
+++ export MP_CLOCK_SOURCE
+++ MP_COMPILER=intel
+++ export MP_COMPILER
+++ MP_CONFIG=13012
+++ export MP_CONFIG
+++ MP_EUILIB=us
+++ export MP_EUILIB
+++ MP_MPILIB=mpich2
+++ export MP_MPILIB
+++ NLSPATH=/opt/ibmhpc/pecurrent/base/msg/%L/%N:/usr/share/locale/%L/%N:/usrx/local/intel/2016SP3/compilers_and_libraries/linux/lib/intel64_lin/locale/%l_%t/%N:/usrx/local/intel/2016SP3/ipp/lib/intel64_lin/locale/%l_%t/%N:/usrx/local/intel/2016SP3/mkl/lib/intel64_lin/locale/%l_%t/%N:/usrx/local/intel/2016SP3/debugger_2016/gdb/intel64_mic/share/locale/%l_%t/%N:/usrx/local/intel/2016SP3/debugger_2016/gdb/intel64/share/locale/%l_%t/%N
+++ export NLSPATH
+++ PATH=/opt/ibmhpc/pecurrent/base/bin:/usrx/local/intel/2016SP3/advisor_xe_2016/bin64:/usrx/local/intel/2016SP3/vtune_amplifier_xe_2016/bin64:/usrx/local/intel/2016SP3/inspector_xe_2016/bin64:/usrx/local/intel/2016SP3/itac_latest/bin:/usrx/local/intel/2016SP3/clck_latest/bin/intel64:/usrx/local/intel/2016SP3/compilers_and_libraries/linux/bin/intel64:/usrx/local/intel/2016SP3/compilers_and_libraries/linux/mpi/bin64:/usrx/local/intel/2016SP3/debugger_2016/gdb/intel64_mic/bin:/usrx/local/intel/2016SP3/debugger_2016/gdb/intel64/bin:/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/opt/ibutils/bin:/global/save/emc.glopara/bin:/nwprod/util/exec:/opt/bin/ssh:/sbin:/usr/sbin:/u/emc.glopara/bin:/global/save/Dana.Carlis/bin:/global/save/Mark.Iredell/home/bin:/u/emc.glopara/bin:.:/usrx/local/netcdf-3.6.3/lib:/usrx/local/intel/mkl/lib/intel64:/nwprod/util/exec:/global/save/emc.glopara/bin:/nwprod/util/exec
+++ export PATH
+++ _LMFILES_=/usrx/local/modulefiles/ics/16.0.3:/usrx/local/modulefiles/ibmpe/1.3.0.12
+++ export _LMFILES_
++ source ./load_libs.rc
+++ w3nco_ver=2.0.6
+++ bufr_ver=11.1.0
+++ bacio_ver=2.0.2
+++ w3emc_ver=2.3.0
+++ nemsio_ver=2.2.2
+++ nemsio_ver_CrayXC40=2.2.2
+++ sigio_ver=2.0.1
+++ sigio_ver_CrayXC40=2.0.1
+++ sp_ver=2.0.2
+++ [[ IBM-p1 == Cray-CS400 ]]
+++ [[ '' =~ (theia|THEIA) ]]
+++ [[ IBM-p1 =~ Cray-XC40 ]]
+++ [[ IBM-p1 =~ Cray-XC40 ]]
+++ [[ IBM-p1 =~ IBM-p[12] ]]
+++ module load w3nco/v2.0.6
++++ /usrx/local/Modules/3.2.10/bin/modulecmd sh load w3nco/v2.0.6
+++ eval COMP=intel ';export' 'COMP;LOADEDMODULES=ics/16.0.3:ibmpe/1.3.0.12:w3nco/v2.0.6' ';export' 'LOADEDMODULES;W3NCO_LIB4=/nwprod2/lib/w3nco/v2.0.6/libw3nco_v2.0.6_4.a' ';export' 'W3NCO_LIB4;W3NCO_LIB8=/nwprod2/lib/w3nco/v2.0.6/libw3nco_v2.0.6_8.a' ';export' 'W3NCO_LIB8;W3NCO_LIBd=/nwprod2/lib/w3nco/v2.0.6/libw3nco_v2.0.6_d.a' ';export' 'W3NCO_LIBd;W3NCO_SRC=/nwprod2/lib/w3nco/v2.0.6/src/w3nco_v2.0.6' ';export' 'W3NCO_SRC;W3NCO_VER=v2.0.6' ';export' 'W3NCO_VER;_LMFILES_=/usrx/local/modulefiles/ics/16.0.3:/usrx/local/modulefiles/ibmpe/1.3.0.12:/nwprod2/lib/modulefiles/w3nco/v2.0.6' ';export' '_LMFILES_;'
++++ COMP=intel
++++ export COMP
++++ LOADEDMODULES=ics/16.0.3:ibmpe/1.3.0.12:w3nco/v2.0.6
++++ export LOADEDMODULES
++++ W3NCO_LIB4=/nwprod2/lib/w3nco/v2.0.6/libw3nco_v2.0.6_4.a
++++ export W3NCO_LIB4
++++ W3NCO_LIB8=/nwprod2/lib/w3nco/v2.0.6/libw3nco_v2.0.6_8.a
++++ export W3NCO_LIB8
++++ W3NCO_LIBd=/nwprod2/lib/w3nco/v2.0.6/libw3nco_v2.0.6_d.a
++++ export W3NCO_LIBd
++++ W3NCO_SRC=/nwprod2/lib/w3nco/v2.0.6/src/w3nco_v2.0.6
++++ export W3NCO_SRC
++++ W3NCO_VER=v2.0.6
++++ export W3NCO_VER
++++ _LMFILES_=/usrx/local/modulefiles/ics/16.0.3:/usrx/local/modulefiles/ibmpe/1.3.0.12:/nwprod2/lib/modulefiles/w3nco/v2.0.6
++++ export _LMFILES_
+++ module load bufr/v11.1.0
++++ /usrx/local/Modules/3.2.10/bin/modulecmd sh load bufr/v11.1.0
+++ eval BUFR_LIB4=/nwprod2/lib/bufr/v11.1.0/libbufr_v11.1.0_4_64.a ';export' 'BUFR_LIB4;BUFR_LIB4_DA=/nwprod2/lib/bufr/v11.1.0/libbufr_v11.1.0_4_64_DA.a' ';export' 'BUFR_LIB4_DA;BUFR_LIB8=/nwprod2/lib/bufr/v11.1.0/libbufr_v11.1.0_8_64.a' ';export' 'BUFR_LIB8;BUFR_LIB8_DA=/nwprod2/lib/bufr/v11.1.0/libbufr_v11.1.0_8_64_DA.a' ';export' 'BUFR_LIB8_DA;BUFR_LIBd=/nwprod2/lib/bufr/v11.1.0/libbufr_v11.1.0_d_64.a' ';export' 'BUFR_LIBd;BUFR_LIBd_DA=/nwprod2/lib/bufr/v11.1.0/libbufr_v11.1.0_d_64_DA.a' ';export' 'BUFR_LIBd_DA;BUFR_LIBs=/nwprod2/lib/bufr/v11.1.0/libbufr_v11.1.0_s_64.a' ';export' 'BUFR_LIBs;BUFR_SRC=/nwprod2/lib/bufr/v11.1.0/src' ';export' 'BUFR_SRC;BUFR_VER=v11.1.0' ';export' 'BUFR_VER;LOADEDMODULES=ics/16.0.3:ibmpe/1.3.0.12:w3nco/v2.0.6:bufr/v11.1.0' ';export' 'LOADEDMODULES;_LMFILES_=/usrx/local/modulefiles/ics/16.0.3:/usrx/local/modulefiles/ibmpe/1.3.0.12:/nwprod2/lib/modulefiles/w3nco/v2.0.6:/nwprod2/lib/modulefiles/bufr/v11.1.0' ';export' '_LMFILES_;'
++++ BUFR_LIB4=/nwprod2/lib/bufr/v11.1.0/libbufr_v11.1.0_4_64.a
++++ export BUFR_LIB4
++++ BUFR_LIB4_DA=/nwprod2/lib/bufr/v11.1.0/libbufr_v11.1.0_4_64_DA.a
++++ export BUFR_LIB4_DA
++++ BUFR_LIB8=/nwprod2/lib/bufr/v11.1.0/libbufr_v11.1.0_8_64.a
++++ export BUFR_LIB8
++++ BUFR_LIB8_DA=/nwprod2/lib/bufr/v11.1.0/libbufr_v11.1.0_8_64_DA.a
++++ export BUFR_LIB8_DA
++++ BUFR_LIBd=/nwprod2/lib/bufr/v11.1.0/libbufr_v11.1.0_d_64.a
++++ export BUFR_LIBd
++++ BUFR_LIBd_DA=/nwprod2/lib/bufr/v11.1.0/libbufr_v11.1.0_d_64_DA.a
++++ export BUFR_LIBd_DA
++++ BUFR_LIBs=/nwprod2/lib/bufr/v11.1.0/libbufr_v11.1.0_s_64.a
++++ export BUFR_LIBs
++++ BUFR_SRC=/nwprod2/lib/bufr/v11.1.0/src
++++ export BUFR_SRC
++++ BUFR_VER=v11.1.0
++++ export BUFR_VER
++++ LOADEDMODULES=ics/16.0.3:ibmpe/1.3.0.12:w3nco/v2.0.6:bufr/v11.1.0
++++ export LOADEDMODULES
++++ _LMFILES_=/usrx/local/modulefiles/ics/16.0.3:/usrx/local/modulefiles/ibmpe/1.3.0.12:/nwprod2/lib/modulefiles/w3nco/v2.0.6:/nwprod2/lib/modulefiles/bufr/v11.1.0
++++ export _LMFILES_
+++ module load bacio/v2.0.2
++++ /usrx/local/Modules/3.2.10/bin/modulecmd sh load bacio/v2.0.2
+++ eval BACIO_LIB4=/nwprod2/lib/bacio/v2.0.2/libbacio_v2.0.2_4.a ';export' 'BACIO_LIB4;BACIO_LIB8=/nwprod2/lib/bacio/v2.0.2/libbacio_v2.0.2_8.a' ';export' 'BACIO_LIB8;BACIO_SRC=/nwprod2/lib/bacio/v2.0.2/src' ';export' 'BACIO_SRC;BACIO_VER=v2.0.2' ';export' 'BACIO_VER;LOADEDMODULES=ics/16.0.3:ibmpe/1.3.0.12:w3nco/v2.0.6:bufr/v11.1.0:bacio/v2.0.2' ';export' 'LOADEDMODULES;_LMFILES_=/usrx/local/modulefiles/ics/16.0.3:/usrx/local/modulefiles/ibmpe/1.3.0.12:/nwprod2/lib/modulefiles/w3nco/v2.0.6:/nwprod2/lib/modulefiles/bufr/v11.1.0:/nwprod2/lib/modulefiles/bacio/v2.0.2' ';export' '_LMFILES_;'
++++ BACIO_LIB4=/nwprod2/lib/bacio/v2.0.2/libbacio_v2.0.2_4.a
++++ export BACIO_LIB4
++++ BACIO_LIB8=/nwprod2/lib/bacio/v2.0.2/libbacio_v2.0.2_8.a
++++ export BACIO_LIB8
++++ BACIO_SRC=/nwprod2/lib/bacio/v2.0.2/src
++++ export BACIO_SRC
++++ BACIO_VER=v2.0.2
++++ export BACIO_VER
++++ LOADEDMODULES=ics/16.0.3:ibmpe/1.3.0.12:w3nco/v2.0.6:bufr/v11.1.0:bacio/v2.0.2
++++ export LOADEDMODULES
++++ _LMFILES_=/usrx/local/modulefiles/ics/16.0.3:/usrx/local/modulefiles/ibmpe/1.3.0.12:/nwprod2/lib/modulefiles/w3nco/v2.0.6:/nwprod2/lib/modulefiles/bufr/v11.1.0:/nwprod2/lib/modulefiles/bacio/v2.0.2
++++ export _LMFILES_
+++ module load w3emc/v2.3.0
++++ /usrx/local/Modules/3.2.10/bin/modulecmd sh load w3emc/v2.3.0
+++ eval LOADEDMODULES=ics/16.0.3:ibmpe/1.3.0.12:w3nco/v2.0.6:bufr/v11.1.0:bacio/v2.0.2:w3emc/v2.3.0 ';export' 'LOADEDMODULES;W3EMC_INC4=/nwtest2/lib/w3emc/v2.3.0/include/w3emc_v2.3.0_4' ';export' 'W3EMC_INC4;W3EMC_INC8=/nwtest2/lib/w3emc/v2.3.0/include/w3emc_v2.3.0_8' ';export' 'W3EMC_INC8;W3EMC_INCd=/nwtest2/lib/w3emc/v2.3.0/include/w3emc_v2.3.0_d' ';export' 'W3EMC_INCd;W3EMC_LIB4=/nwtest2/lib/w3emc/v2.3.0/libw3emc_v2.3.0_4.a' ';export' 'W3EMC_LIB4;W3EMC_LIB8=/nwtest2/lib/w3emc/v2.3.0/libw3emc_v2.3.0_8.a' ';export' 'W3EMC_LIB8;W3EMC_LIBd=/nwtest2/lib/w3emc/v2.3.0/libw3emc_v2.3.0_d.a' ';export' 'W3EMC_LIBd;W3EMC_SRC=/nwtest2/lib/w3emc/v2.3.0/src/libsrc' ';export' 'W3EMC_SRC;W3EMC_VER=v2.3.0' ';export' 'W3EMC_VER;_LMFILES_=/usrx/local/modulefiles/ics/16.0.3:/usrx/local/modulefiles/ibmpe/1.3.0.12:/nwprod2/lib/modulefiles/w3nco/v2.0.6:/nwprod2/lib/modulefiles/bufr/v11.1.0:/nwprod2/lib/modulefiles/bacio/v2.0.2:/nwtest2/lib/modulefiles/w3emc/v2.3.0' ';export' '_LMFILES_;'
++++ LOADEDMODULES=ics/16.0.3:ibmpe/1.3.0.12:w3nco/v2.0.6:bufr/v11.1.0:bacio/v2.0.2:w3emc/v2.3.0
++++ export LOADEDMODULES
++++ W3EMC_INC4=/nwtest2/lib/w3emc/v2.3.0/include/w3emc_v2.3.0_4
++++ export W3EMC_INC4
++++ W3EMC_INC8=/nwtest2/lib/w3emc/v2.3.0/include/w3emc_v2.3.0_8
++++ export W3EMC_INC8
++++ W3EMC_INCd=/nwtest2/lib/w3emc/v2.3.0/include/w3emc_v2.3.0_d
++++ export W3EMC_INCd
++++ W3EMC_LIB4=/nwtest2/lib/w3emc/v2.3.0/libw3emc_v2.3.0_4.a
++++ export W3EMC_LIB4
++++ W3EMC_LIB8=/nwtest2/lib/w3emc/v2.3.0/libw3emc_v2.3.0_8.a
++++ export W3EMC_LIB8
++++ W3EMC_LIBd=/nwtest2/lib/w3emc/v2.3.0/libw3emc_v2.3.0_d.a
++++ export W3EMC_LIBd
++++ W3EMC_SRC=/nwtest2/lib/w3emc/v2.3.0/src/libsrc
++++ export W3EMC_SRC
++++ W3EMC_VER=v2.3.0
++++ export W3EMC_VER
++++ _LMFILES_=/usrx/local/modulefiles/ics/16.0.3:/usrx/local/modulefiles/ibmpe/1.3.0.12:/nwprod2/lib/modulefiles/w3nco/v2.0.6:/nwprod2/lib/modulefiles/bufr/v11.1.0:/nwprod2/lib/modulefiles/bacio/v2.0.2:/nwtest2/lib/modulefiles/w3emc/v2.3.0
++++ export _LMFILES_
+++ module load nemsio/v2.2.2
++++ /usrx/local/Modules/3.2.10/bin/modulecmd sh load nemsio/v2.2.2
+++ eval LOADEDMODULES=ics/16.0.3:ibmpe/1.3.0.12:w3nco/v2.0.6:bufr/v11.1.0:bacio/v2.0.2:w3emc/v2.3.0:nemsio/v2.2.2 ';export' 'LOADEDMODULES;NEMSIO_INC=/nwprod2/lib/nemsio/v2.2.2/include/nemsio_v2.2.2' ';export' 'NEMSIO_INC;NEMSIO_LIB=/nwprod2/lib/nemsio/v2.2.2/libnemsio_v2.2.2.a' ';export' 'NEMSIO_LIB;NEMSIO_SRC=/nwprod2/lib/nemsio/v2.2.2/src' ';export' 'NEMSIO_SRC;NEMSIO_VER=v2.2.2' ';export' 'NEMSIO_VER;_LMFILES_=/usrx/local/modulefiles/ics/16.0.3:/usrx/local/modulefiles/ibmpe/1.3.0.12:/nwprod2/lib/modulefiles/w3nco/v2.0.6:/nwprod2/lib/modulefiles/bufr/v11.1.0:/nwprod2/lib/modulefiles/bacio/v2.0.2:/nwtest2/lib/modulefiles/w3emc/v2.3.0:/nwprod2/lib/modulefiles/nemsio/v2.2.2' ';export' '_LMFILES_;'
++++ LOADEDMODULES=ics/16.0.3:ibmpe/1.3.0.12:w3nco/v2.0.6:bufr/v11.1.0:bacio/v2.0.2:w3emc/v2.3.0:nemsio/v2.2.2
++++ export LOADEDMODULES
++++ NEMSIO_INC=/nwprod2/lib/nemsio/v2.2.2/include/nemsio_v2.2.2
++++ export NEMSIO_INC
++++ NEMSIO_LIB=/nwprod2/lib/nemsio/v2.2.2/libnemsio_v2.2.2.a
++++ export NEMSIO_LIB
++++ NEMSIO_SRC=/nwprod2/lib/nemsio/v2.2.2/src
++++ export NEMSIO_SRC
++++ NEMSIO_VER=v2.2.2
++++ export NEMSIO_VER
++++ _LMFILES_=/usrx/local/modulefiles/ics/16.0.3:/usrx/local/modulefiles/ibmpe/1.3.0.12:/nwprod2/lib/modulefiles/w3nco/v2.0.6:/nwprod2/lib/modulefiles/bufr/v11.1.0:/nwprod2/lib/modulefiles/bacio/v2.0.2:/nwtest2/lib/modulefiles/w3emc/v2.3.0:/nwprod2/lib/modulefiles/nemsio/v2.2.2
++++ export _LMFILES_
+++ module load sigio/v2.0.1
++++ /usrx/local/Modules/3.2.10/bin/modulecmd sh load sigio/v2.0.1
+++ eval LOADEDMODULES=ics/16.0.3:ibmpe/1.3.0.12:w3nco/v2.0.6:bufr/v11.1.0:bacio/v2.0.2:w3emc/v2.3.0:nemsio/v2.2.2:sigio/v2.0.1 ';export' 'LOADEDMODULES;SIGIO_INC4=/nwprod2/lib/sigio/v2.0.1/include/sigio_v2.0.1_4' ';export' 'SIGIO_INC4;SIGIO_LIB4=/nwprod2/lib/sigio/v2.0.1/libsigio_v2.0.1_4.a' ';export' 'SIGIO_LIB4;SIGIO_SRC=/nwprod2/lib/sigio/v2.0.1/src' ';export' 'SIGIO_SRC;SIGIO_VER=v2.0.1' ';export' 'SIGIO_VER;_LMFILES_=/usrx/local/modulefiles/ics/16.0.3:/usrx/local/modulefiles/ibmpe/1.3.0.12:/nwprod2/lib/modulefiles/w3nco/v2.0.6:/nwprod2/lib/modulefiles/bufr/v11.1.0:/nwprod2/lib/modulefiles/bacio/v2.0.2:/nwtest2/lib/modulefiles/w3emc/v2.3.0:/nwprod2/lib/modulefiles/nemsio/v2.2.2:/nwprod2/lib/modulefiles/sigio/v2.0.1' ';export' '_LMFILES_;'
++++ LOADEDMODULES=ics/16.0.3:ibmpe/1.3.0.12:w3nco/v2.0.6:bufr/v11.1.0:bacio/v2.0.2:w3emc/v2.3.0:nemsio/v2.2.2:sigio/v2.0.1
++++ export LOADEDMODULES
++++ SIGIO_INC4=/nwprod2/lib/sigio/v2.0.1/include/sigio_v2.0.1_4
++++ export SIGIO_INC4
++++ SIGIO_LIB4=/nwprod2/lib/sigio/v2.0.1/libsigio_v2.0.1_4.a
++++ export SIGIO_LIB4
++++ SIGIO_SRC=/nwprod2/lib/sigio/v2.0.1/src
++++ export SIGIO_SRC
++++ SIGIO_VER=v2.0.1
++++ export SIGIO_VER
++++ _LMFILES_=/usrx/local/modulefiles/ics/16.0.3:/usrx/local/modulefiles/ibmpe/1.3.0.12:/nwprod2/lib/modulefiles/w3nco/v2.0.6:/nwprod2/lib/modulefiles/bufr/v11.1.0:/nwprod2/lib/modulefiles/bacio/v2.0.2:/nwtest2/lib/modulefiles/w3emc/v2.3.0:/nwprod2/lib/modulefiles/nemsio/v2.2.2:/nwprod2/lib/modulefiles/sigio/v2.0.1
++++ export _LMFILES_
+++ module load sp/v2.0.2
++++ /usrx/local/Modules/3.2.10/bin/modulecmd sh load sp/v2.0.2
+++ eval LOADEDMODULES=ics/16.0.3:ibmpe/1.3.0.12:w3nco/v2.0.6:bufr/v11.1.0:bacio/v2.0.2:w3emc/v2.3.0:nemsio/v2.2.2:sigio/v2.0.1:sp/v2.0.2 ';export' 'LOADEDMODULES;SP_LIB4=/nwprod2/lib/sp/v2.0.2/libsp_v2.0.2_4.a' ';export' 'SP_LIB4;SP_LIB8=/nwprod2/lib/sp/v2.0.2/libsp_v2.0.2_8.a' ';export' 'SP_LIB8;SP_LIBd=/nwprod2/lib/sp/v2.0.2/libsp_v2.0.2_d.a' ';export' 'SP_LIBd;SP_SRC=/nwprod2/lib/sp/v2.0.2/src' ';export' 'SP_SRC;SP_VER=v2.0.2' ';export' 'SP_VER;_LMFILES_=/usrx/local/modulefiles/ics/16.0.3:/usrx/local/modulefiles/ibmpe/1.3.0.12:/nwprod2/lib/modulefiles/w3nco/v2.0.6:/nwprod2/lib/modulefiles/bufr/v11.1.0:/nwprod2/lib/modulefiles/bacio/v2.0.2:/nwtest2/lib/modulefiles/w3emc/v2.3.0:/nwprod2/lib/modulefiles/nemsio/v2.2.2:/nwprod2/lib/modulefiles/sigio/v2.0.1:/nwprod2/lib/modulefiles/sp/v2.0.2' ';export' '_LMFILES_;'
++++ LOADEDMODULES=ics/16.0.3:ibmpe/1.3.0.12:w3nco/v2.0.6:bufr/v11.1.0:bacio/v2.0.2:w3emc/v2.3.0:nemsio/v2.2.2:sigio/v2.0.1:sp/v2.0.2
++++ export LOADEDMODULES
++++ SP_LIB4=/nwprod2/lib/sp/v2.0.2/libsp_v2.0.2_4.a
++++ export SP_LIB4
++++ SP_LIB8=/nwprod2/lib/sp/v2.0.2/libsp_v2.0.2_8.a
++++ export SP_LIB8
++++ SP_LIBd=/nwprod2/lib/sp/v2.0.2/libsp_v2.0.2_d.a
++++ export SP_LIBd
++++ SP_SRC=/nwprod2/lib/sp/v2.0.2/src
++++ export SP_SRC
++++ SP_VER=v2.0.2
++++ export SP_VER
++++ _LMFILES_=/usrx/local/modulefiles/ics/16.0.3:/usrx/local/modulefiles/ibmpe/1.3.0.12:/nwprod2/lib/modulefiles/w3nco/v2.0.6:/nwprod2/lib/modulefiles/bufr/v11.1.0:/nwprod2/lib/modulefiles/bacio/v2.0.2:/nwtest2/lib/modulefiles/w3emc/v2.3.0:/nwprod2/lib/modulefiles/nemsio/v2.2.2:/nwprod2/lib/modulefiles/sigio/v2.0.1:/nwprod2/lib/modulefiles/sp/v2.0.2
++++ export _LMFILES_
++ module list
+++ /usrx/local/Modules/3.2.10/bin/modulecmd sh list
+Currently Loaded Modulefiles:
+  1) ics/16.0.3       4) bufr/v11.1.0     7) nemsio/v2.2.2
+  2) ibmpe/1.3.0.12   5) bacio/v2.0.2     8) sigio/v2.0.1
+  3) w3nco/v2.0.6     6) w3emc/v2.3.0     9) sp/v2.0.2
++ eval
++ '[' 0 -eq 0 ']'
++ dir_list='*.fd'
++ echo prepobs_cqcbufr.fd prepobs_cqcvad.fd prepobs_listheaders.fd prepobs_monoprepbufr.fd prepobs_mpcopybufr.fd prepobs_oiqcbufr.fd prepobs_prepacpf.fd prepobs_prepacqc.fd prepobs_prepanow.fd prepobs_prepdata.fd prepobs_prevents.fd prepobs_profcqc.fd syndat_syndata.fd
+prepobs_cqcbufr.fd prepobs_cqcvad.fd prepobs_listheaders.fd prepobs_monoprepbufr.fd prepobs_mpcopybufr.fd prepobs_oiqcbufr.fd prepobs_prepacpf.fd prepobs_prepacqc.fd prepobs_prepanow.fd prepobs_prepdata.fd prepobs_prevents.fd prepobs_profcqc.fd syndat_syndata.fd
++ clobber=clobber_yes
++ for sdir in '$dir_list'
++ dir=prepobs_cqcbufr.fd
++ cd prepobs_cqcbufr.fd
++ '[' clobber_yes '!=' clobber_no ']'
++ make clobber
+rm -f cqcbufr.o radcor.o xref.db *.lst *.mod
+rm -f prepobs_cqcbufr
++ '[' IBM-p1 = Cray-XC40 ']'
++ make
+ifort -O2 -convert big_endian -list -assume noold_ldout_format -fixed -g -traceback   -c -o cqcbufr.o cqcbufr.f
+ifort -O2 -convert big_endian -list -assume noold_ldout_format -fixed -g -traceback   -c -o radcor.o radcor.f
+ifort  -o prepobs_cqcbufr cqcbufr.o radcor.o /nwprod2/lib/w3nco/v2.0.6/libw3nco_v2.0.6_4.a /nwtest2/lib/w3emc/v2.3.0/libw3emc_v2.3.0_4.a /nwprod2/lib/bufr/v11.1.0/libbufr_v11.1.0_4_64.a 
++ ls -l
+total 4480
+-rwxr-xr-x 1 emc.glopara global  518455 Apr 18 09:45 cqcbufr.f
+-rw-r--r-- 1 emc.glopara global 2133943 Apr 18 11:07 cqcbufr.lst
+-rw-r--r-- 1 emc.glopara global 1312800 Apr 18 11:07 cqcbufr.o
+-rwxr-xr-x 1 emc.glopara global    2227 Apr 18 09:45 makefile
+-rwxr-xr-x 1 emc.glopara global 2644171 Apr 18 11:07 prepobs_cqcbufr
+-rwxr-xr-x 1 emc.glopara global  212112 Apr 18 09:45 radcor.f
+-rw-r--r-- 1 emc.glopara global  406485 Apr 18 11:07 radcor.lst
+-rw-r--r-- 1 emc.glopara global  211072 Apr 18 11:07 radcor.o
++ cd ..
++ for sdir in '$dir_list'
++ dir=prepobs_cqcvad.fd
++ cd prepobs_cqcvad.fd
++ '[' clobber_yes '!=' clobber_no ']'
++ make clobber
+rm -f cqcvad.o xref.db *.lst *.mod
+rm -f prepobs_cqcvad
++ '[' IBM-p1 = Cray-XC40 ']'
++ make
+ifort -O2 -convert big_endian -list -assume noold_ldout_format -fixed -g -traceback   -c -o cqcvad.o cqcvad.f
+ifort  -o prepobs_cqcvad cqcvad.o /nwprod2/lib/w3nco/v2.0.6/libw3nco_v2.0.6_4.a /nwprod2/lib/bufr/v11.1.0/libbufr_v11.1.0_4_64.a
++ ls -l
+total 2560
+-rwxr-xr-x 1 emc.glopara global  106337 Apr 18 09:45 cqcvad.f
+-rw-r--r-- 1 emc.glopara global  366265 Apr 18 11:07 cqcvad.lst
+-rw-r--r-- 1 emc.glopara global 2269328 Apr 18 11:07 cqcvad.o
+-rwxr-xr-x 1 emc.glopara global    2191 Apr 18 09:45 makefile
+-rwxr-xr-x 1 emc.glopara global 3796170 Apr 18 11:07 prepobs_cqcvad
++ cd ..
++ for sdir in '$dir_list'
++ dir=prepobs_listheaders.fd
++ cd prepobs_listheaders.fd
++ '[' clobber_yes '!=' clobber_no ']'
++ make clobber
+rm -f listheaders.o xref.db *.lst *.mod
+rm -f prepobs_listheaders
++ '[' IBM-p1 = Cray-XC40 ']'
++ make
+ifort -O2 -convert big_endian -list -assume noold_ldout_format -g -traceback  -c listheaders.f90
+ifort  -o prepobs_listheaders listheaders.o /nwprod2/lib/w3nco/v2.0.6/libw3nco_v2.0.6_4.a /nwprod2/lib/bufr/v11.1.0/libbufr_v11.1.0_4_64.a
++ ls -l
+total 256
+-rwxr-xr-x 1 emc.glopara global    3017 Apr 18 09:45 listheaders.f90
+-rw-r--r-- 1 emc.glopara global   14425 Apr 18 11:07 listheaders.lst
+-rw-r--r-- 1 emc.glopara global   11232 Apr 18 11:07 listheaders.o
+-rwxr-xr-x 1 emc.glopara global    2253 Apr 18 09:45 makefile
+-rwxr-xr-x 1 emc.glopara global 1334987 Apr 18 11:07 prepobs_listheaders
++ cd ..
++ for sdir in '$dir_list'
++ dir=prepobs_monoprepbufr.fd
++ cd prepobs_monoprepbufr.fd
++ '[' clobber_yes '!=' clobber_no ']'
++ make clobber
+rm -f monoprepbufr.o xref.db *.lst *.mod
+rm -f prepobs_monoprepbufr
++ '[' IBM-p1 = Cray-XC40 ']'
++ make
+ifort -O2 -convert big_endian -list -assume noold_ldout_format -g -traceback  -c monoprepbufr.f90
+ifort  -o prepobs_monoprepbufr monoprepbufr.o /nwprod2/lib/w3nco/v2.0.6/libw3nco_v2.0.6_4.a /nwprod2/lib/bufr/v11.1.0/libbufr_v11.1.0_4_64.a
++ ls -l
+total 256
+-rwxr-xr-x 1 emc.glopara global    2256 Apr 18 09:45 makefile
+-rwxr-xr-x 1 emc.glopara global    4472 Apr 18 09:45 monoprepbufr.f90
+-rw-r--r-- 1 emc.glopara global   18495 Apr 18 11:07 monoprepbufr.lst
+-rw-r--r-- 1 emc.glopara global   20256 Apr 18 11:07 monoprepbufr.o
+-rwxr-xr-x 1 emc.glopara global 1491594 Apr 18 11:07 prepobs_monoprepbufr
++ cd ..
++ for sdir in '$dir_list'
++ dir=prepobs_mpcopybufr.fd
++ cd prepobs_mpcopybufr.fd
++ '[' clobber_yes '!=' clobber_no ']'
++ make clobber
+rm -f mpcopybufr.o xref.db *.lst *.mod
+rm -f prepobs_mpcopybufr
++ '[' IBM-p1 = Cray-XC40 ']'
++ make
+ifort -O2 -convert big_endian -list -assume noold_ldout_format -g -traceback  -c mpcopybufr.f90
+ifort  -o prepobs_mpcopybufr mpcopybufr.o /nwprod2/lib/w3nco/v2.0.6/libw3nco_v2.0.6_4.a /nwprod2/lib/bufr/v11.1.0/libbufr_v11.1.0_4_64.a
++ ls -l
+total 256
+-rwxr-xr-x 1 emc.glopara global    2250 Apr 18 09:45 makefile
+-rwxr-xr-x 1 emc.glopara global    4071 Apr 18 09:45 mpcopybufr.f90
+-rw-r--r-- 1 emc.glopara global   18048 Apr 18 11:07 mpcopybufr.lst
+-rw-r--r-- 1 emc.glopara global   14632 Apr 18 11:07 mpcopybufr.o
+-rwxr-xr-x 1 emc.glopara global 1485613 Apr 18 11:07 prepobs_mpcopybufr
++ cd ..
++ for sdir in '$dir_list'
++ dir=prepobs_oiqcbufr.fd
++ cd prepobs_oiqcbufr.fd
++ '[' clobber_yes '!=' clobber_no ']'
++ make clobber
+rm -f oiqcbufr.o xref.db *.lst *.mod
+rm -f prepobs_oiqcbufr
++ '[' IBM-p1 = Cray-XC40 ']'
++ make
+mpiifort -O2 -convert big_endian -list -assume noold_ldout_format    -c -o oiqcbufr.o oiqcbufr.f
+mpiifort  -o prepobs_oiqcbufr oiqcbufr.o /nwprod2/lib/w3nco/v2.0.6/libw3nco_v2.0.6_4.a /nwprod2/lib/bufr/v11.1.0/libbufr_v11.1.0_4_64.a
++ ls -l
+total 384
+-rwxr-xr-x 1 emc.glopara global    2347 Apr 18 09:45 makefile
+-rwxr-xr-x 1 emc.glopara global  151999 Apr 18 09:45 oiqcbufr.f
+-rw-r--r-- 1 emc.glopara global 1120256 Apr 18 11:07 oiqcbufr.lst
+-rw-r--r-- 1 emc.glopara global  319064 Apr 18 11:07 oiqcbufr.o
+-rwxr-xr-x 1 emc.glopara global 1834916 Apr 18 11:07 prepobs_oiqcbufr
++ cd ..
++ for sdir in '$dir_list'
++ dir=prepobs_prepacpf.fd
++ cd prepobs_prepacpf.fd
++ '[' clobber_yes '!=' clobber_no ']'
++ make clobber
+rm -f prepacpf.o xref.db *.lst *.mod
+rm -f prepobs_prepacpf
++ '[' IBM-p1 = Cray-XC40 ']'
++ make
+ifort -O2 -convert big_endian -list -assume noold_ldout_format -fixed -g -traceback -ftrapuv -check all -check nooutput_conversion -fp-stack-check -fstack-protector  -c -o prepacpf.o prepacpf.f
+ifort: warning #10182: disabling optimization; runtime debug checks enabled
+ifort  -o prepobs_prepacpf prepacpf.o /nwprod2/lib/w3nco/v2.0.6/libw3nco_v2.0.6_4.a /nwtest2/lib/w3emc/v2.3.0/libw3emc_v2.3.0_4.a /nwprod2/lib/bufr/v11.1.0/libbufr_v11.1.0_4_64.a
++ ls -l
+total 256
+-rwxr-xr-x 1 emc.glopara global    2319 Apr 18 09:45 makefile
+-rwxr-xr-x 1 emc.glopara global   49056 Apr 18 09:45 prepacpf.f
+-rw-r--r-- 1 emc.glopara global  114325 Apr 18 11:07 prepacpf.lst
+-rw-r--r-- 1 emc.glopara global  358216 Apr 18 11:07 prepacpf.o
+-rwxr-xr-x 1 emc.glopara global 1880208 Apr 18 11:07 prepobs_prepacpf
++ cd ..
++ for sdir in '$dir_list'
++ dir=prepobs_prepacqc.fd
++ cd prepobs_prepacqc.fd
++ '[' clobber_yes '!=' clobber_no ']'
++ make clobber
+rm -f prepacqc.o acftobs_qc.o tranQCflags.o output_acqc_prof.o output_acqc_noprof.o input_acqc.o indexc40.o sub2mem_mer.o sub2mem_um.o pmat.o pmat2.o pmat3.o pietc.o pspl.o pkind.o xref.db *.lst *.mod
+rm -f prepobs_prepacqc
++ '[' IBM-p1 = Cray-XC40 ']'
++ make
+
+---> Compiling prepacqc.f
+ifort -O2 -convert big_endian -list -assume noold_ldout_format -g -traceback  -c prepacqc.f
+
+---> Compiling acftobs_qc.f
+ifort -O2 -convert big_endian -list -assume noold_ldout_format -g -traceback  -c acftobs_qc.f
+
+---> Compiling tranQCflags.f
+ifort -O2 -convert big_endian -list -assume noold_ldout_format -g -traceback  -c tranQCflags.f
+
+---> Compiling output_acqc_prof.f
+ifort -O2 -convert big_endian -list -assume noold_ldout_format -g -traceback  -c output_acqc_prof.f
+
+---> Compiling output_acqc_noprof.f
+ifort -O2 -convert big_endian -list -assume noold_ldout_format -g -traceback  -c output_acqc_noprof.f
+
+---> Compiling input_acqc.f
+ifort -O2 -convert big_endian -list -assume noold_ldout_format -g -traceback  -c input_acqc.f
+
+---> Compiling indexc40.f
+ifort -O2 -convert big_endian -list -assume noold_ldout_format -g -traceback  -c indexc40.f
+
+---> Compiling pkind.f90
+ifort -O2 -convert big_endian -list -assume noold_ldout_format -g -traceback  -c pkind.f90
+
+---> Compiling pietc.f90
+ifort -O2 -convert big_endian -list -assume noold_ldout_format -g -traceback  -c pietc.f90
+
+---> Compiling pmat.f90
+ifort -O2 -convert big_endian -list -assume noold_ldout_format -g -traceback  -c pmat.f90
+
+---> Compiling pmat2.f90
+ifort -O2 -convert big_endian -list -assume noold_ldout_format -g -traceback  -c pmat2.f90
+
+---> Compiling pmat3.f90
+ifort -O2 -convert big_endian -list -assume noold_ldout_format -g -traceback  -c pmat3.f90
+
+---> Compiling pspl.f90
+ifort -O2 -convert big_endian -list -assume noold_ldout_format -g -traceback  -c pspl.f90
+
+---> Compiling sub2mem_mer.f
+ifort -O2 -convert big_endian -list -assume noold_ldout_format -g -traceback  -c sub2mem_mer.f
+
+---> Compiling sub2mem_um.f
+ifort -O2 -convert big_endian -list -assume noold_ldout_format -g -traceback  -c sub2mem_um.f
+ifort  -o prepobs_prepacqc prepacqc.o acftobs_qc.o tranQCflags.o output_acqc_prof.o output_acqc_noprof.o input_acqc.o indexc40.o sub2mem_mer.o sub2mem_um.o pmat.o pmat2.o pmat3.o pietc.o pspl.o pkind.o /nwprod2/lib/w3nco/v2.0.6/libw3nco_v2.0.6_4.a /nwtest2/lib/w3emc/v2.3.0/libw3emc_v2.3.0_4.a /nwprod2/lib/bufr/v11.1.0/libbufr_v11.1.0_4_64.a
++ ls -l
+total 11136
+-rwxr-xr-x 1 emc.glopara global 1255521 Apr 18 09:45 acftobs_qc.f
+-rw-r--r-- 1 emc.glopara global 2538336 Apr 18 11:08 acftobs_qc.lst
+-rw-r--r-- 1 emc.glopara global 1773608 Apr 18 11:08 acftobs_qc.o
+-rwxr-xr-x 1 emc.glopara global    2960 Apr 18 09:45 indexc40.f
+-rw-r--r-- 1 emc.glopara global   13183 Apr 18 11:09 indexc40.lst
+-rw-r--r-- 1 emc.glopara global    5584 Apr 18 11:09 indexc40.o
+-rwxr-xr-x 1 emc.glopara global   96018 Apr 18 09:45 input_acqc.f
+-rw-r--r-- 1 emc.glopara global  163406 Apr 18 11:09 input_acqc.lst
+-rw-r--r-- 1 emc.glopara global  103848 Apr 18 11:09 input_acqc.o
+-rwxr-xr-x 1 emc.glopara global    3007 Apr 18 09:45 makefile
+-rwxr-xr-x 1 emc.glopara global   74047 Apr 18 09:45 output_acqc_noprof.f
+-rw-r--r-- 1 emc.glopara global  125948 Apr 18 11:09 output_acqc_noprof.lst
+-rw-r--r-- 1 emc.glopara global   98168 Apr 18 11:09 output_acqc_noprof.o
+-rwxr-xr-x 1 emc.glopara global   71675 Apr 18 09:45 output_acqc_prof.f
+-rw-r--r-- 1 emc.glopara global  126350 Apr 18 11:09 output_acqc_prof.lst
+-rw-r--r-- 1 emc.glopara global   87328 Apr 18 11:09 output_acqc_prof.o
+-rwxr-xr-x 1 emc.glopara global    6416 Apr 18 09:45 pietc.f90
+-rw-r--r-- 1 emc.glopara global   44000 Apr 18 11:09 pietc.lst
+-rw-r--r-- 1 emc.glopara global   33083 Apr 18 11:09 pietc.mod
+-rw-r--r-- 1 emc.glopara global    2696 Apr 18 11:09 pietc.o
+-rwxr-xr-x 1 emc.glopara global     280 Apr 18 09:45 pkind.f90
+-rw-r--r-- 1 emc.glopara global    8744 Apr 18 11:09 pkind.lst
+-rw-r--r-- 1 emc.glopara global    1134 Apr 18 11:09 pkind.mod
+-rw-r--r-- 1 emc.glopara global    2696 Apr 18 11:09 pkind.o
+-rwxr-xr-x 1 emc.glopara global   57604 Apr 18 09:45 pmat2.f90
+-rw-r--r-- 1 emc.glopara global  184861 Apr 18 11:09 pmat2.lst
+-rw-r--r-- 1 emc.glopara global   51387 Apr 18 11:09 pmat2.mod
+-rw-r--r-- 1 emc.glopara global  173736 Apr 18 11:09 pmat2.o
+-rwxr-xr-x 1 emc.glopara global   45914 Apr 18 09:45 pmat3.f90
+-rw-r--r-- 1 emc.glopara global  196052 Apr 18 11:09 pmat3.lst
+-rw-r--r-- 1 emc.glopara global   76112 Apr 18 11:09 pmat3.mod
+-rw-r--r-- 1 emc.glopara global  187240 Apr 18 11:09 pmat3.o
+-rwxr-xr-x 1 emc.glopara global   43132 Apr 18 09:45 pmat.f90
+-rw-r--r-- 1 emc.glopara global  153406 Apr 18 11:09 pmat.lst
+-rw-r--r-- 1 emc.glopara global   28204 Apr 18 11:09 pmat.mod
+-rw-r--r-- 1 emc.glopara global  333448 Apr 18 11:09 pmat.o
+-rwxr-xr-x 1 emc.glopara global   94020 Apr 18 09:45 prepacqc.f
+-rw-r--r-- 1 emc.glopara global  154575 Apr 18 11:07 prepacqc.lst
+-rw-r--r-- 1 emc.glopara global  100744 Apr 18 11:07 prepacqc.o
+-rwxr-xr-x 1 emc.glopara global 4055383 Apr 18 11:09 prepobs_prepacqc
+-rwxr-xr-x 1 emc.glopara global   91911 Apr 18 09:45 pspl.f90
+-rw-r--r-- 1 emc.glopara global  264146 Apr 18 11:09 pspl.lst
+-rw-r--r-- 1 emc.glopara global   52687 Apr 18 11:09 pspl.mod
+-rw-r--r-- 1 emc.glopara global  213368 Apr 18 11:09 pspl.o
+-rwxr-xr-x 1 emc.glopara global   98532 Apr 18 09:45 sub2mem_mer.f
+-rw-r--r-- 1 emc.glopara global  178550 Apr 18 11:09 sub2mem_mer.lst
+-rw-r--r-- 1 emc.glopara global   91840 Apr 18 11:09 sub2mem_mer.o
+-rwxr-xr-x 1 emc.glopara global   31252 Apr 18 09:45 sub2mem_um.f
+-rw-r--r-- 1 emc.glopara global   57499 Apr 18 11:09 sub2mem_um.lst
+-rw-r--r-- 1 emc.glopara global   15256 Apr 18 11:09 sub2mem_um.o
+-rwxr-xr-x 1 emc.glopara global   38829 Apr 18 09:45 tranQCflags.f
+-rw-r--r-- 1 emc.glopara global   67736 Apr 18 11:09 tranQCflags.lst
+-rw-r--r-- 1 emc.glopara global   28128 Apr 18 11:09 tranQCflags.o
++ cd ..
++ for sdir in '$dir_list'
++ dir=prepobs_prepanow.fd
++ cd prepobs_prepanow.fd
++ '[' clobber_yes '!=' clobber_no ']'
++ make clobber
+rm -f prepanow.o *.lst
+rm -f prepobs_prepanow
++ '[' IBM-p1 = Cray-XC40 ']'
++ make
+ifort -O2 -g -traceback   -c -o prepanow.o prepanow.f
+ifort  -o prepobs_prepanow prepanow.o /nwprod2/lib/w3nco/v2.0.6/libw3nco_v2.0.6_4.a /nwprod2/lib/bufr/v11.1.0/libbufr_v11.1.0_4_64.a
++ ls -l
+total 256
+-rwxr-xr-x 1 emc.glopara global    1044 Apr 18 09:45 makefile
+-rwxr-xr-x 1 emc.glopara global   13780 Apr 18 09:45 prepanow.f
+-rw-r--r-- 1 emc.glopara global   23792 Apr 18 11:09 prepanow.o
+-rwxr-xr-x 1 emc.glopara global 1489961 Apr 18 11:09 prepobs_prepanow
++ cd ..
++ for sdir in '$dir_list'
++ dir=prepobs_prepdata.fd
++ cd prepobs_prepdata.fd
++ '[' clobber_yes '!=' clobber_no ']'
++ make clobber
+rm -f prepdata.o wordlength.o w3unpkb7.o w3xtovsmnd.o iw3unpbf.o w3cnvxtovs.o w3rtovsunp.o w3atovsunp.o w3xtovseds.o xref.db *.lst *.mod
+rm -f prepobs_prepdata
++ '[' IBM-p1 = Cray-XC40 ']'
++ make
+ifort -O2 -convert big_endian -list -assume noold_ldout_format -auto -g -traceback   -c -o prepdata.o prepdata.f
+ifort -O2 -convert big_endian -list -assume noold_ldout_format -auto -g -traceback   -c -o wordlength.o wordlength.f
+ifort -O2 -convert big_endian -list -assume noold_ldout_format -auto -g -traceback   -c -o w3unpkb7.o w3unpkb7.f
+ifort -O2 -convert big_endian -list -assume noold_ldout_format -auto -g -traceback   -c -o w3xtovsmnd.o w3xtovsmnd.f
+ifort -O2 -convert big_endian -list -assume noold_ldout_format -auto -g -traceback   -c -o iw3unpbf.o iw3unpbf.f
+ifort -O2 -convert big_endian -list -assume noold_ldout_format -auto -g -traceback   -c -o w3cnvxtovs.o w3cnvxtovs.f
+ifort -O2 -convert big_endian -list -assume noold_ldout_format -auto -g -traceback   -c -o w3rtovsunp.o w3rtovsunp.f
+ifort -O2 -convert big_endian -list -assume noold_ldout_format -auto -g -traceback   -c -o w3atovsunp.o w3atovsunp.f
+ifort -O2 -convert big_endian -list -assume noold_ldout_format -auto -g -traceback   -c -o w3xtovseds.o w3xtovseds.f
+ifort -mkl -o prepobs_prepdata prepdata.o wordlength.o w3unpkb7.o w3xtovsmnd.o iw3unpbf.o w3cnvxtovs.o w3rtovsunp.o w3atovsunp.o w3xtovseds.o /nwtest2/lib/w3emc/v2.3.0/libw3emc_v2.3.0_4.a /nwprod2/lib/nemsio/v2.2.2/libnemsio_v2.2.2.a  /nwprod2/lib/sigio/v2.0.1/libsigio_v2.0.1_4.a /nwprod2/lib/bufr/v11.1.0/libbufr_v11.1.0_4_64.a /nwprod2/lib/w3nco/v2.0.6/libw3nco_v2.0.6_4.a /nwprod2/lib/sp/v2.0.2/libsp_v2.0.2_4.a /nwprod2/lib/bacio/v2.0.2/libbacio_v2.0.2_4.a
++ ls -l
+total 6144
+-rwxr-xr-x 1 emc.glopara global    2803 Apr 18 09:45 inc_w3unpkb7.inc
+-rwxr-xr-x 1 emc.glopara global  276110 Apr 18 09:45 iw3unpbf.f
+-rw-r--r-- 1 emc.glopara global  583361 Apr 18 11:09 iw3unpbf.lst
+-rw-r--r-- 1 emc.glopara global  452296 Apr 18 11:09 iw3unpbf.o
+-rwxr-xr-x 1 emc.glopara global    2489 Apr 18 09:45 makefile
+-rwxr-xr-x 1 emc.glopara global  955934 Apr 18 09:45 prepdata.f
+-rw-r--r-- 1 emc.glopara global 1966724 Apr 18 11:09 prepdata.lst
+-rw-r--r-- 1 emc.glopara global 1172616 Apr 18 11:09 prepdata.o
+-rwxr-xr-x 1 emc.glopara global 5397547 Apr 18 11:09 prepobs_prepdata
+-rwxr-xr-x 1 emc.glopara global   33101 Apr 18 09:45 w3atovsunp.f
+-rw-r--r-- 1 emc.glopara global   67878 Apr 18 11:09 w3atovsunp.lst
+-rw-r--r-- 1 emc.glopara global   47920 Apr 18 11:09 w3atovsunp.o
+-rwxr-xr-x 1 emc.glopara global    6800 Apr 18 09:45 w3cnvxtovs.f
+-rw-r--r-- 1 emc.glopara global   19932 Apr 18 11:09 w3cnvxtovs.lst
+-rw-r--r-- 1 emc.glopara global   11200 Apr 18 11:09 w3cnvxtovs.o
+-rwxr-xr-x 1 emc.glopara global   28862 Apr 18 09:45 w3rtovsunp.f
+-rw-r--r-- 1 emc.glopara global   61081 Apr 18 11:09 w3rtovsunp.lst
+-rw-r--r-- 1 emc.glopara global   41704 Apr 18 11:09 w3rtovsunp.o
+-rwxr-xr-x 1 emc.glopara global  178296 Apr 18 09:45 w3unpkb7.f
+-rw-r--r-- 1 emc.glopara global  369376 Apr 18 11:09 w3unpkb7.lst
+-rw-r--r-- 1 emc.glopara global  272800 Apr 18 11:09 w3unpkb7.o
+-rwxr-xr-x 1 emc.glopara global   46819 Apr 18 09:45 w3xtovseds.f
+-rw-r--r-- 1 emc.glopara global  104139 Apr 18 11:09 w3xtovseds.lst
+-rw-r--r-- 1 emc.glopara global   78848 Apr 18 11:09 w3xtovseds.o
+-rwxr-xr-x 1 emc.glopara global   13158 Apr 18 09:45 w3xtovsmnd.f
+-rw-r--r-- 1 emc.glopara global   37401 Apr 18 11:09 w3xtovsmnd.lst
+-rw-r--r-- 1 emc.glopara global   32104 Apr 18 11:09 w3xtovsmnd.o
+-rwxr-xr-x 1 emc.glopara global    1534 Apr 18 09:45 wordlength.f
+-rw-r--r-- 1 emc.glopara global   10913 Apr 18 11:09 wordlength.lst
+-rw-r--r-- 1 emc.glopara global    5264 Apr 18 11:09 wordlength.o
++ cd ..
++ for sdir in '$dir_list'
++ dir=prepobs_prevents.fd
++ cd prepobs_prevents.fd
++ '[' clobber_yes '!=' clobber_no ']'
++ make clobber
+rm -f prevents.o gblevents_cdas.o xref.db *.lst *.mod
+rm -f prepobs_prevents
++ '[' IBM-p1 = Cray-XC40 ']'
++ make
+ifort -O2 -convert big_endian -list -assume noold_ldout_format -auto -g -traceback   -c -o prevents.o prevents.f
+ifort -O2 -convert big_endian -list -assume noold_ldout_format -auto -g -traceback   -c -o gblevents_cdas.o gblevents_cdas.f
+ifort -mkl -o prepobs_prevents prevents.o gblevents_cdas.o /nwtest2/lib/w3emc/v2.3.0/libw3emc_v2.3.0_4.a /nwprod2/lib/nemsio/v2.2.2/libnemsio_v2.2.2.a /nwprod2/lib/bufr/v11.1.0/libbufr_v11.1.0_4_64.a /nwprod2/lib/w3nco/v2.0.6/libw3nco_v2.0.6_4.a /nwprod2/lib/sigio/v2.0.1/libsigio_v2.0.1_4.a /nwprod2/lib/sp/v2.0.2/libsp_v2.0.2_4.a /nwprod2/lib/bacio/v2.0.2/libbacio_v2.0.2_4.a
++ ls -l
+total 384
+-rwxr-xr-x 1 emc.glopara global   97799 Apr 18 09:45 gblevents_cdas.f
+-rw-r--r-- 1 emc.glopara global  260011 Apr 18 11:09 gblevents_cdas.lst
+-rw-r--r-- 1 emc.glopara global  185064 Apr 18 11:09 gblevents_cdas.o
+-rwxr-xr-x 1 emc.glopara global    2322 Apr 18 09:45 makefile
+-rwxr-xr-x 1 emc.glopara global 4173362 Apr 18 11:09 prepobs_prevents
+-rwxr-xr-x 1 emc.glopara global   13096 Apr 18 09:45 prevents.f
+-rw-r--r-- 1 emc.glopara global   29474 Apr 18 11:09 prevents.lst
+-rw-r--r-- 1 emc.glopara global   16376 Apr 18 11:09 prevents.o
++ cd ..
++ for sdir in '$dir_list'
++ dir=prepobs_profcqc.fd
++ cd prepobs_profcqc.fd
++ '[' clobber_yes '!=' clobber_no ']'
++ make clobber
+rm -f profcqc.o xref.db *.lst *.mod
+rm -f prepobs_profcqc
++ '[' IBM-p1 = Cray-XC40 ']'
++ make
+ifort -O2 -convert big_endian -list -assume noold_ldout_format -fixed -g -traceback   -c -o profcqc.o profcqc.f
+ifort  -o prepobs_profcqc profcqc.o /nwprod2/lib/w3nco/v2.0.6/libw3nco_v2.0.6_4.a /nwprod2/lib/bufr/v11.1.0/libbufr_v11.1.0_4_64.a
++ ls -l
+total 384
+-rwxr-xr-x 1 emc.glopara global    2194 Apr 18 09:45 makefile
+-rwxr-xr-x 1 emc.glopara global 1986173 Apr 18 11:09 prepobs_profcqc
+-rwxr-xr-x 1 emc.glopara global  132074 Apr 18 09:45 profcqc.f
+-rw-r--r-- 1 emc.glopara global  490075 Apr 18 11:09 profcqc.lst
+-rw-r--r-- 1 emc.glopara global  474840 Apr 18 11:09 profcqc.o
++ cd ..
++ for sdir in '$dir_list'
++ dir=syndat_syndata.fd
++ cd syndat_syndata.fd
++ '[' clobber_yes '!=' clobber_no ']'
++ make clobber
+rm -f syndata.o xref.db *.lst *.mod
+rm -f syndat_syndata
++ '[' IBM-p1 = Cray-XC40 ']'
++ make
+ifort -O2 -convert big_endian -list -assume noold_ldout_format -auto -g -traceback -ftrapuv -check all -check nooutput_conversion -fp-stack-check -fstack-protector  -c -o syndata.o syndata.f
+ifort: warning #10182: disabling optimization; runtime debug checks enabled
+syndata.f(29653): remark #5140: Unrecognized directive
+CDIR$ NEXTSCALAR
+----------------^
+ifort -mkl -o syndat_syndata syndata.o /nwtest2/lib/w3emc/v2.3.0/libw3emc_v2.3.0_4.a /nwprod2/lib/nemsio/v2.2.2/libnemsio_v2.2.2.a /nwprod2/lib/bufr/v11.1.0/libbufr_v11.1.0_4_64.a /nwprod2/lib/w3nco/v2.0.6/libw3nco_v2.0.6_4.a /nwprod2/lib/sigio/v2.0.1/libsigio_v2.0.1_4.a /nwprod2/lib/sp/v2.0.2/libsp_v2.0.2_4.a /nwprod2/lib/bacio/v2.0.2/libbacio_v2.0.2_4.a
++ ls -l
+total 8448
+-rwxr-xr-x 1 emc.glopara global    2392 Apr 18 09:45 makefile
+-rwxr-xr-x 1 emc.glopara global  920323 Apr 18 09:45 syndata.f
+-rw-r--r-- 1 emc.glopara global 2872491 Apr 18 11:10 syndata.lst
+-rw-r--r-- 1 emc.glopara global 7426560 Apr 18 11:10 syndata.o
+-rwxr-xr-x 1 emc.glopara global 9109356 Apr 18 11:10 syndat_syndata
++ cd ..

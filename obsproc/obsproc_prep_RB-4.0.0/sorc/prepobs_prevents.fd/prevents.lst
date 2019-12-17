@@ -1,0 +1,534 @@
+Page 1           Source Listing                  PREPOBS_PREVENTS
+2017-04-18 11:09                                 prevents.f
+
+      1 C$$$  MAIN PROGRAM DOCUMENTATION BLOCK
+      2 C
+      3 C MAIN PROGRAM: PREPOBS_PREVENTS
+      4 C   PRGMMR: KEYSER           ORG: NP22        DATE: 2013-02-13
+      5 C
+      6 C ABSTRACT: PREPARES OBSERVATIONAL PREPBUFR FILE FOR SUBSEQUENT
+      7 C   QUALITY CONTROL AND ANALYSIS PROGRAMS.  THIS IS DONE THROUGH THE
+      8 C   FOLLOWING: INTERPOLATION OF GLOBAL SPECTRAL SIGMA OR HYBRID FIRST
+      9 C   GUESS TO PREPBUFR OBSERVATION LOCATIONS WITH ENCODING OF FIRST
+     10 C   GUESS VALUES INTO PREPBUFR REPORTS; ENCODING OF "PREVENT" AND/OR
+     11 C   "VIRTMP" EVENTS INTO PREPBUFR REPORTS; AND ENCODING OF OBSERVATION
+     12 C   ERRORS FROM THE ERROR SPECIFICATION FILE INTO PREPBUFR REPORTS.
+     13 C   FOR MORE INFORMATION ON THE DETAILS OF THE "PREVENT" AND "VIRTMP"
+     14 C   EVENTS, SEE THE DOCBLOCK FOR EITHER W3NCO ROUTINE "GBLEVENTS"
+     15 C   (WHICH CURRENTLY READS SIGMA OR HYBRID FIRST GUESS IN ALL NETWORKS
+     16 C   EXCEPT "cdas" or "cdc") OR FOR IN-LINE ROUTINE GBLEVENTS_CDAS
+     17 C   (WHICH CURRENTLY READS SIGMA GUESS IN "cdas" or "cdc" NETWORKS).
+     18 C   THIS PROGRAM CALLS GBLEVENTS OR GBLEVENTS_CDAS, WHICH RUNS HERE IN
+     19 C   THE "PREVENTS" MODE.  W3NCO ROUTINE GBLEVENTS (OR IN-LINE ROUTINE
+     20 C   GBLEVENTS_CDAS) DOES THE BULK OF THE WORK HERE.  AFTER EACH REPORT
+     21 C   IS UPDATED BY GBLEVENTS/GBLEVENTS_CDAS, IT IS WRITTEN OUT TO A
+     22 C   "PREPROCESSED" VERSION OF THE PREPBUFR FILE.  
+     23 C
+     24 C PROGRAM HISTORY LOG:
+     25 C 1994-01-06  J. WOOLLEN  ORIGINAL VERSION FOR REANALYSIS
+     26 C 1994-09-06  J. WOOLLEN  VERSION FOR IMPLEMENTATION IN GBL SYSTEM
+     27 C 1997-10-07  D.A. KEYSER -- ADDED NAMELIST SWITCH TO BYPASS VIRT.
+     28 C             TEMPERATURE EVENT FOR NON-RADIOSONDE/SATSND DATA TYPES
+     29 C             (INVOKED IN RUC VERSION - TOB NOT CHANGED FROM INPUT)
+     30 C 1997-11-24  D.A. KEYSER -- ADDED NAMELIST SWITCH "REDUCE" TO BYPASS
+     31 C             ALL PREVENTS PROCESSING (IF TRUE) FOR MESSAGE TYPES NOT
+     32 C             EQUAL TO "ADPUPA", "AIRCFT" AND "PROFLR"
+     33 C 1998-02-03  D.A. KEYSER -- CORRECTED ERROR FROM PREVIOUS CHANGE THAT
+     34 C             RESULTED IN BYPASSING THE VIRT. TEMPERATURE EVENT FOR
+     35 C             "ADPUPA" AND "SFCSHP" TYPES WHEN N-LIST SWITCH "REDUCE"
+     36 C             IS TRUE - REDUCE=TRUE WILL NOW CONTINUE TO DO ALL
+     37 C             PREVENTS PROCESSING FOR MESSAGE TYPES "ADPUPA", "AIRCFT",
+     38 C             "PROFLR" AS WELL AS NOW "ADPSFC" AND "SFCSHP"
+     39 C 1998-08-25  D.A. KEYSER -- ADDED SWITCHES 'DOBERR' AND 'DOFCST' IN
+     40 C             NAMELIST READ FROM DATA CARDS; SUBROUTINE NOW Y2K AND
+     41 C             FORTRAN 90 COMPLIANT
+     42 C 1998-09-14  J.WOOLLEN - ADDED SWITCH FOR INSTALLING ANALYSED VALUES
+     43 C 1998-09-17  D.A. KEYSER -- PROGRAM NOW CALLS EXIT PRIOR TO STOP FOR
+     44 C             NON-ZERO EXIT STATES (TRANSFERS EXIT STATE TO UNIX
+     45 C             FOREGROUND STATUS CODE)
+     46 C 1998-09-21  D. A. KEYSER -- SUBROUTINE NOW Y2K AND FORTRAN 90
+     47 C             COMPLIANT
+     48 C 1998-07-06  D. A. KEYSER -- MODIFIED TO COMPILE AND RUN ON IBM;
+     49 C             NOW CALLS NEW W3LIB ROUTINE "GBLEVENTS" TO PERFORM
+     50 C             MOST OF THE FUNCTIONS THAT THIS PROGRAM USED TO DO
+     51 C             (THIS W3LIB ROUTINE IS ALSO CALLED BY PREPDATA,
+     52 C             SYNDATA AND POSTEVENTS), ONLY THE READING IN OF
+     53 C             REPORTS IS DONE BY THIS MAIN PROGRAM NOW
+     54 C 1999-09-26  D. A. KEYSER -- CHANGES TO MAKE CODE MORE PORTABLE
+     55 C 2001-02-02  D. A. KEYSER -- MINOR HOUSKEEPING CHANGES; PICKS UP AN
+     56 C             UPDATED W3LIB ROUTINE GBLEVENTS
+     57 C 2001-10-10  D. A. KEYSER -- MODIFIED TO NOW PASS TWO SPANNING GLOBAL
+
+Page 2           Source Listing                  PREPOBS_PREVENTS
+2017-04-18 11:09                                 prevents.f
+
+     58 C             SIGMA GUESS FILES INTO W3LIB ROUTINE GBLEVENTS IN
+     59 C             SITUATIONS WHERE THE CENTER DATE FOR THE PREPBUFR FILE
+     60 C             HAS AN HOUR THAT IS NOT A MULTIPLE OF 3 (SEE 2001-10-10
+     61 C             CHANGES TO GBLEVENTS)
+     62 C 2007-11-20  D. A. KEYSER -- CHECK NETWORK WHICH THIS CODE IS RUNNING
+     63 C             UNDER (VIA CALL TO SYSTEM ROUTINE "GETENV") - IF NETWORK
+     64 C             IS NOT "cdas" OR "cdc", CALL W3LIB ROUTINE GBLEVENTS AS
+     65 C             BEFORE, IF NETWORK IS "cdas" OR "cdc", CALL NEW IN-LINE
+     66 C             ROUTINE GBLEVENTS_CDAS WHICH IS A FROZEN VERSION OF THE
+     67 C             2006-07-14 VERSION OF GBLEVENTS NEEDED TO READ THE CDAS-
+     68 C             STYLE SIGMA FIRST GUESS (THE NEW SIGIO VERSION OF W3LIB
+     69 C             ROUTINE GBLEVENTS CANNOT READ THE OLD CDAS-STYLE SIGMA
+     70 C             FIRST GUESS)
+     71 C 2012-11-20  J. WOOLLEN   -- INITIAL PORT TO WCOSS 
+     72 C 2013-02-13  D. A. KEYSER -- FINAL CHANGES TO RUN ON WCOSS: SET
+     73 C             BUFRLIB MISSING (BMISS) TO 10E8 RATHER THAN 10E10 TO
+     74 C             AVOID INTEGER OVERFLOW;  REPLACED GETENV WITH MORE
+     75 C             STANDARD GET_ENVIRONMENT_VARIABLE; USE FORMATTED PRINT
+     76 C             STATEMENTS WHERE PREVIOUSLY UNFORMATTED PRINT WAS > 80
+     77 C             CHARACTERS
+     78 C
+     79 C USAGE:
+     80 C   INPUT FILES:
+     81 C     UNIT 05  - STANDARD INPUT (DATA CARDS - SEE NAMELIST
+     82 C                DOCUMENTATION IN W3NCO ROUTINE GBLEVENTS OR IN-LINE
+     83 C                ROUTINE GBLEVENTS_CDAS DOCBLOCK)
+     84 C     UNIT 11  - PREPBUFR FILE
+     85 C     UNIT 12  - FIRST INPUT SPECTRAL (GLOBAL) SIGMA OR HYBRID FIRST
+     86 C                GUESS FILE; IF HOUR IN CENTER DATE FOR PREPBUFR FILE
+     87 C                IS A MULTIPLE OF 3 THEN THIS FILE IS VALID AT THE
+     88 C                CENTER DATE OF THE PREPBUFR FILE, IF THE HOUR IN
+     89 C                CENTER DATE FOR PREPBUFR FILE IS NOT A MULTIPLE OF 3
+     90 C                THEN THIS FILE IS VALID AT THE CLOSEST TIME PRIOR TO
+     91 C                THE CENTER DATE OF THE PREPBUFR FILE THAT IS A
+     92 C                MULTIPLE OF 3
+     93 C     UNIT 13  - SECOND INPUT SPECTRAL (GLOBAL) SIGMA OR HYBRID FIRST
+     94 C                GUESS FILE; IF HOUR IN CENTER DATE FOR PREPBUFR FILE
+     95 C                IS A MULTIPLE OF 3 THEN THIS FILE IS EMPTY, IF THE
+     96 C                HOUR IN CENTER DATE FOR PREPBUFR FILE IS NOT A
+     97 C                MULTIPLE OF 3 THEN THIS FILE IS VALID AT THE CLOSEST
+     98 C                TIME AFTER THE CENTER DATE OF THE PREPBUFR FILE THAT
+     99 C                IS A MULTIPLE OF 3
+    100 C     UNIT 14  - OBSERVATION ERROR FILE
+    101 C     UNIT 15  - EXPECTED CENTER DATE IN PREPBUFR FILE IN FORM
+    102 C                YYYYMMDDHH
+    103 C
+    104 C   OUTPUT FILES:
+    105 C     UNIT 06  - STANDARD OUTPUT PRINT
+    106 C     UNIT 51  - PREPBUFR FILE (NOW CONTAINING FIRST GUESS VALUES,
+    107 C              - "PREVENT" AND "VIRTMP" EVENTS, AND OBERVATIONAL ERROR
+    108 C              - VALUES)
+    109 C     UNIT 52  - "PREVENT" EVENTS DATA FILTERING SUMMARY PRINT FILE
+    110 C
+    111 C   SUBPROGRAMS CALLED:
+    112 C       UNIQUE   - GBLEVENTS_CDAS
+    113 C       W3NCO    - W3TAGB    W3TAGE    ERREXIT
+    114 C       W3EMC    - GBLEVENTS
+
+Page 3           Source Listing                  PREPOBS_PREVENTS
+2017-04-18 11:09                                 prevents.f
+
+    115 C       BUFRLIB  - DATELEN   OPENBF    READMG    OPENMB
+    116 C                - WRITSB    CLOSBF    SETBMISS  GETBMISS
+    117 C       SYSTEM   - GET_ENVIRONMENT_VARIABLE
+    118 C
+    119 C   EXIT STATES:
+    120 C     COND =   0 - SUCCESSFUL RUN
+    121 C     COND =  21 - DATE DISAGREEMENT BETWEEN ACTUAL CENTER DATE IN
+    122 C                  PREPBUFR FILE AND EXPECTED CENTER DATE READ IN
+    123 C                  FROM UNIT 15
+    124 C     COND =  22 - BAD OR MISSING DATE READ IN FROM UNIT 15
+    125 C     COND =  60-79 - RESERVED FOR W3NCO ROUTINE GBLEVENTS OR IN-LINE
+    126 C                      ROUTINE GBLEVENTS_CDAS (SEE GBLEVENTS/
+    127 C                      GBLEVENTS_CDAS DOCBLOCK)
+    128 C
+    129 C
+    130 C REMARKS: NONE.
+    131 C
+    132 C
+    133 C ATTRIBUTES:
+    134 C   LANGUAGE: FORTRAN 90
+    135 C   MACHINE:  NCEP WCOSS
+    136 C
+    137 C$$$
+    138 
+    139       PROGRAM PREPOBS_PREVENTS
+    140 
+    141       REAL(8)   BMISS,GETBMISS
+    142 
+    143       CHARACTER*4  NET
+    144       CHARACTER*8  SUBSET,LAST
+    145 
+    146       DIMENSION IUNITG(2)
+    147 
+    148       DATA  LAST/'XXXXXXXX'/
+    149 
+    150       CALL W3TAGB('PREPOBS_PREVENTS',2013,0044,0061,'NP22')
+    151 
+    152       PRINT 700
+    153   700 FORMAT(/'  =====> WELCOME TO PREVENTS PROGRAM -- LAST UPDATED ',
+    154      $ '2013-02-13'/)
+    155 
+    156 C  On WCOSS should always set BUFRLIB missing (BMISS) to 10E8 to avoid
+    157 C   overflow when either an INTEGER*4 variable is set to BMISS or a
+    158 C   REAL*8 (or REAL*4) variable that is missing is NINT'd
+    159 C  -------------------------------------------------------------------
+    160 ccccc CALL SETBMISS(10E10_8)
+    161       CALL SETBMISS(10E8_8)
+    162       BMISS=GETBMISS()
+    163       print *
+    164       print *, 'BUFRLIB value for missing is: ',bmiss
+    165       print *
+    166 
+    167       IUNITI    = 11
+    168       IUNITG(1) = 12
+    169       IUNITG(2) = 13
+    170       IUNITE    = 14
+    171       IUNITD    = 15
+
+Page 4           Source Listing                  PREPOBS_PREVENTS
+2017-04-18 11:09                                 prevents.f
+
+    172       IUNITP    = 51
+    173       IUNITS    = 52
+    174 
+    175 C  OPEN INPUT PREPBUFR FILE JUST TO GET MESSAGE DATE (WHICH IS THE
+    176 C   ACTUAL CENTER DATE), LATER CLOSE FILE
+    177 C  ---------------------------------------------------------------
+    178 
+    179       CALL DATELEN(10)
+    180 
+    181       CALL OPENBF(IUNITI,'IN',IUNITI)
+    182       CALL READMG(IUNITI,SUBSET,IDATEP,IRET)
+    183 
+    184       PRINT 53, IDATEP
+    185    53 FORMAT(/' --> ACTUAL   CENTER DATE OF PREPBUFR FILE READ FROM ',
+    186      $ ' SEC. 1 MESSAGE DATE IS:',I11/)
+    187 
+    188       IF(IDATEP.LT.1000000000)  THEN
+    189 
+    190 C If 2-digit year returned in IDATEP, must use "windowing" technique
+    191 C  to create a 4-digit year
+    192 
+    193 C IMPORTANT: IF DATELEN(10) IS CALLED, THE DATE HERE SHOULD ALWAYS
+    194 C            CONTAIN A 4-DIGIT YEAR, EVEN IF INPUT FILE IS NOT
+    195 C            Y2K COMPLIANT (BUFRLIB DOES THE WINDOWING HERE)
+    196 
+    197          PRINT *, '##> THE FOLLOWING SHOULD NEVER HAPPEN!!!!!'
+    198          PRINT'(" ##> 2-DIGIT YEAR IN IDATEP RETURNED FROM READMG ",
+    199      $    "(IDATEP IS: ",I0,") - USE WINDOWING TECHNIQUE TO OBTAIN ",
+    200      $    "4-DIGIT YEAR")', IDATEP
+    201          IF(IDATEP/1000000.GT.20)  THEN
+    202             IDATEP = 1900000000 + IDATEP
+    203          ELSE
+    204             IDATEP = 2000000000 + IDATEP
+    205          ENDIF
+    206          PRINT *, '##> CORRECTED IDATEP WITH 4-DIGIT YEAR, IDATEP NOW',
+    207      $    ' IS: ',IDATEP
+    208       ENDIF
+    209 
+    210 C  READ IN EXPECTED CENTER DATE OF PREPBUFR FILE
+    211 C  ---------------------------------------------
+    212 
+    213       REWIND IUNITD
+    214       READ(IUNITD,'(6X,I10)',END=904,ERR=904)  IDATED
+    215       PRINT 3, IUNITD, IDATED
+    216     3 FORMAT(/' --> EXPECTED CENTER DATE OF PREPBUFR FILE READ FROM ',
+    217      $ 'UNIT',I3,' IS:',13X,I11/)
+    218 
+    219 C  CHECK ACTUAL CENTER DATE OF PREPBUFR FILE VS. EXPECTED CENTER DATE
+    220 C  ------------------------------------------------------------------
+    221 
+    222       IF(IDATEP.NE.IDATED)  GO TO 901
+    223 
+    224       CALL CLOSBF(IUNITI)
+    225 
+    226 C  OPEN INPUT AND OUTPUT PREPBUFR FILES FOR DATA PROCESSING
+    227 C  --------------------------------------------------------
+    228 
+
+Page 5           Source Listing                  PREPOBS_PREVENTS
+2017-04-18 11:09                                 prevents.f
+
+    229       CALL OPENBF(IUNITI,'IN ',IUNITI)
+    230       CALL OPENBF(IUNITP,'OUT',IUNITI)
+    231 
+    232 C  DETERMINE WHICH NETWORK WE ARE RUNNING UNDER
+    233 C  --------------------------------------------
+    234 
+    235       CALL GET_ENVIRONMENT_VARIABLE('NET',NET)
+    236 
+    237       print *
+    238       if(net.eq.'cdas' .or. net.eq.'cdc') then
+    239          print'(" --> Running in ",A," network - CALL IN-LINE ROUTINE ",
+    240      $    "GBLEVENTS_CDAS (expects CDAS-style sigma guess)")', net
+    241       else
+    242          print'(" --> Running in ",A," network - CALL W3NCO ROUTINE ",
+    243      $    "GBLEVENTS (expects GFS-style sigma or hybrid guess)")', net
+    244       end if
+    245       print *
+    246 
+    247 C----------------------------------------------------------------------
+    248 C----------------------------------------------------------------------
+    249 
+    250       NEWTYP = 0
+    251 
+    252 C  LOOP THROUGH THE INPUT MESSAGES
+    253 C  -------------------------------
+    254 
+    255       DO WHILE(IREADMG(IUNITI,SUBSET,JDATEP).EQ.0)
+    256          IF(SUBSET.NE.LAST)  THEN
+    257             NEWTYP = 1
+    258 cppppp
+    259             print *, 'New input message type read in: ',SUBSET
+    260 cppppp
+    261          END IF
+    262 
+    263          CALL OPENMB(IUNITP,SUBSET,JDATEP)
+    264          DO WHILE(IREADSB(IUNITI).EQ.0)
+    265 
+    266 C  COPY DECODED REPORT FROM INPUT PREPBUFR FILE TO OUTPUT PREPBUFR FILE
+    267 C  --------------------------------------------------------------------
+    268 
+    269             CALL UFBCPY(IUNITI,IUNITP)
+    270 
+    271             IF(NET.NE.'cdas' .AND. NET.NE.'cdc') THEN
+    272 
+    273 C  FOR ALL NETWORKS EXCEPT CDAS AND CDC, CALL W3NCO ROUTINE GBLEVENTS
+    274 C   TO ENCODE FIRST GUESS VALUES FOR THIS REPORT (EXPECTS GFS-STYLE
+    275 C   SIGMA OR HYBRID GUESS)
+    276 C  --------------------------------------------------------------------
+    277 
+    278                CALL GBLEVENTS(IDATED,IUNITG,IUNITE,IUNITP,IUNITS,SUBSET,
+    279      $                        NEWTYP)
+    280 
+    281             ELSE
+    282 
+    283 C  FOR CDAS NETWORK, CALL IN-LINE ROUTINE GBLEVENTS_CDAS TO ENCODE
+    284 C   FIRST GUESS VALUES FOR THIS REPORT (EXPECTS CDAS-STYLE SIGMA GUESS)
+    285 C  --------------------------------------------------------------------
+
+Page 6           Source Listing                  PREPOBS_PREVENTS
+2017-04-18 11:09                                 prevents.f
+
+    286 
+    287                CALL GBLEVENTS_CDAS(IDATED,IUNITG,IUNITE,IUNITP,IUNITS,
+    288      $                             SUBSET,NEWTYP)
+    289 
+    290             END IF
+    291 
+    292 C  WRITE THIS REPORT (SUBSET) INTO BUFR MESSAGE IN OUTPUT PREPBUFR FILE
+    293 C  --------------------------------------------------------------------
+    294 
+    295             CALL WRITSB(IUNITP)
+    296 
+    297             NEWTYP = 0
+    298 
+    299          ENDDO
+    300 
+    301          LAST = SUBSET
+    302 
+    303       ENDDO
+    304 
+    305 C  CLOSE THE BUFR FILES
+    306 C  --------------------
+    307 
+    308       CALL CLOSBF(IUNITI)
+    309       CALL CLOSBF(IUNITP)
+    310 
+    311 C  ALL DONE
+    312 C  --------
+    313 
+    314       CALL W3TAGE('PREPOBS_PREVENTS')
+    315 
+    316       STOP
+    317 C-----------------------------------------------------------------------
+    318 
+    319   901 CONTINUE
+    320       PRINT 9901, IDATEP,IDATED
+    321  9901 FORMAT(/' ##> ACTUAL CENTER DATE OF INPUT PREPBUFR FILE (',I10,
+    322      $ ') DOES NOT MATCH EXPECTED CENTER DATE (',I10,') - STOP 21'/)
+    323       CALL W3TAGE('PREPOBS_PREVENTS')
+    324       CALL ERREXIT(21)
+    325 
+    326 C-----------------------------------------------------------------------
+    327 
+    328   904 CONTINUE
+    329       PRINT 9902, IUNITD
+    330  9902 FORMAT(/' ##> BAD OR MISSING EXPECTED PREPBUFR CENTER DATE ',
+    331      $ 'READ FROM UNIT',I3,' - STOP 22'/)
+    332       CALL W3TAGE('PREPOBS_PREVENTS')
+    333       CALL ERREXIT(22)
+    334 
+    335 C-----------------------------------------------------------------------
+    336 
+    337       END
+
+Page 7           Source Listing                  PREPOBS_PREVENTS
+2017-04-18 11:09 Entry Points                    prevents.f
+
+
+
+ENTRY POINTS
+
+  Name              
+                    
+ MAIN__             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ 3                          Label  216                                                            215                               
+ 53                         Label  185                                                            184                               
+ 700                        Label  153                                                            152                               
+ 901                        Label  319                                                            222                               
+ 904                        Label  328                                                            214                               
+ 9901                       Label  321                                                            320                               
+ 9902                       Label  330                                                            329                               
+ BMISS                      Local  141      R(8)            8           scalar                    162,164                           
+ CLOSBF                     Subr   224                                                            224,308,309                       
+ DATELEN                    Subr   179                                                            179                               
+ ERREXIT                    Subr   324                                                            324,333                           
+ GBLEVENTS                  Subr   278                                                            278                               
+ GBLEVENTS_CDAS             Subr   287                                                            287                               
+ GETBMISS                   Func   141      R(8)            8           scalar                    162                               
+ GET_ENVIRONMENT_VARIABLE   Intrin 235                                                            235                               
+ IDATED                     Local  214      I(4)            4           scalar                    214,215,222,278,287,320           
+ IDATEP                     Local  182      I(4)            4           scalar                    182,184,188,200,201,202,204,207,22
+                                                                                                  2,320                             
+ IREADMG                    Func   255      I(4)            4           scalar                    255                               
+ IREADSB                    Func   264      I(4)            4           scalar                    264                               
+ IRET                       Local  182      I(4)            4           scalar                    182                               
+ IUNITD                     Local  171      I(4)            4           scalar                    171,213,214,215,329               
+ IUNITE                     Local  170      I(4)            4           scalar                    170,278,287                       
+ IUNITG                     Local  146      I(4)            4     1     2                         168,169,278,287                   
+ IUNITI                     Local  167      I(4)            4           scalar                    167,181,182,224,229,230,255,264,26
+                                                                                                  9,308                             
+ IUNITP                     Local  172      I(4)            4           scalar                    172,230,263,269,278,287,295,309   
+ IUNITS                     Local  173      I(4)            4           scalar                    173,278,287                       
+ JDATEP                     Local  255      I(4)            4           scalar                    255,263                           
+ LAST                       Local  144      CHAR            8           scalar                    148,256,301                       
+ NET                        Local  143      CHAR            4           scalar                    235,238,240,243,271               
+ NEWTYP                     Local  250      I(4)            4           scalar                    250,257,279,288,297               
+ OPENBF                     Subr   181                                                            181,229,230                       
+ OPENMB                     Subr   263                                                            263                               
+ PREPOBS_PREVENTS           Prog   139                                                                                              
+ READMG                     Subr   182                                                            182                               
+ SETBMISS                   Subr   161                                                            161                               
+ SUBSET                     Local  144      CHAR            8           scalar                    182,255,256,259,263,278,288,301   
+ UFBCPY                     Subr   269                                                            269                               
+ W3TAGB                     Subr   150                                                            150                               
+ W3TAGE                     Subr   314                                                            314,323,332                       
+ WRITSB                     Subr   295                                                            295                               
+
+Page 8           Source Listing                  PREPOBS_PREVENTS
+2017-04-18 11:09 Subprograms/Common Blocks       prevents.f
+
+
+
+SUBPROGRAMS/COMMON BLOCKS
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ PREPOBS_PREVENTS           Prog   139                                                                                              
+
+COMPILER OPTIONS BEING USED
+
+       -align noall                          -align nonone
+       -align nocommons                      -align nodcommons
+       -align noqcommons                     -align nozcommons
+       -align records                        -align nosequence
+       -align norec1byte                     -align norec2byte
+       -align norec4byte                     -align norec8byte
+       -align norec16byte                    -align norec32byte
+       -align norec64byte                    -align noarray8byte
+       -align noarray16byte                  -align noarray32byte
+       -align noarray64byte                  -align noarray128byte
+       -align noarray256byte                 -altparam
+       -assume accuracy_sensitive            -assume nobscc
+       -assume nobuffered_io                 -assume nobuffered_stdout
+       -assume nobyterecl                    -assume nocc_omp
+       -assume nocstring                     -assume nodummy_aliases
+       -assume nofpe_summary                 -assume noieee_fpe_flags
+       -assume nominus0                      -assume noold_boz
+       -assume old_complex_align             -assume old_unit_star
+       -assume noold_ldout_format            -assume noold_logical_ldio
+       -assume old_maxminloc                 -assume old_xor
+       -assume noprotect_allocates           -assume protect_constants
+       -assume noprotect_parens              -assume split_common
+       -assume source_include                -assume nostd_intent_in
+       -assume std_minus0_rounding           -assume nostd_mod_proc_name
+       -assume std_value                     -assume norealloc_lhs
+       -assume underscore                    -assume no2underscores
+       -auto                            no   -auto_scalar
+  no   -bintext                              -ccdefault default
+       -check noargs                         -check noarg_temp_created
+       -check noassume                       -check nobounds
+       -check noformat                       -check nooutput_conversion
+       -check nooverflow                     -check nopointers
+       -check power                          -check noshape
+       -check nostack                        -check nounderflow
+       -check nouninitialized                -coarray-num-procs 0
+  no   -coarray-config-file                  -convert big_endian
+       -cross_reference                      -D __INTEL_COMPILER=1600
+       -D __INTEL_COMPILER_UPDATE=3          -D __unix__
+       -D __unix                             -D __linux__
+       -D __linux                            -D __gnu_linux__
+       -D unix                               -D linux
+       -D __ELF__                            -D __x86_64
+       -D __x86_64__                         -D __amd64
+       -D __amd64__                          -D __INTEL_COMPILER_BUILD_DATE=20160415
+       -D __INTEL_OFFLOAD                    -D __i686
+       -D __i686__                           -D __pentiumpro
+       -D __pentiumpro__                     -D __pentium4
+
+Page 9           Source Listing                  PREPOBS_PREVENTS
+2017-04-18 11:09                                 prevents.f
+
+       -D __pentium4__                       -D __tune_pentium4__
+       -D __SSE2__                           -D __SSE2_MATH__
+       -D __SSE__                            -D __SSE_MATH__
+       -D __MMX__                            -double_size 64
+  no   -d_lines                         no   -Qdyncom
+       -error_limit 30                  no   -f66
+  no   -f77rtl                          no   -fast
+       -fpscomp nofilesfromcmd               -fpscomp nogeneral
+       -fpscomp noioformat                   -fpscomp noldio_spacing
+       -fpscomp nologicals                   -fixed
+  no   -fpconstant                           -fpe3
+       -fprm nearest                    no   -ftz
+       -fp_model noprecise                   -fp_model fast
+       -fp_model nostrict                    -fp_model nosource
+       -fp_model nodouble                    -fp_model noextended
+       -fp_model novery_fast                 -fp_model noexcept
+       -fp_model nono_except                 -heap_arrays 0
+  no   -threadprivate_compat                 -g2
+       -iface nomixed_str_len_arg            -iface nono_mixed_str_len_arg
+       -init noarrays                        -init noinf
+       -init nonan                           -init nosnan
+       -init nozero                     no   -intconstant
+       -integer_size 32                 no   -mixed_str_len_arg
+  no   -module                               -names lowercase
+  no   -noinclude                            -offload-build=host
+       -O2                              no   -pad_source
+       -real_size 32                    no   -recursive
+       -reentrancy none                 no   -sharable_localsaves
+       -vec=simd                             -show noinclude
+       -show map                             -show options
+  no   -syntax_only                     no   -threadcom
+  no   -U                               no   -vms
+       -w noall                              -w nonone
+       -w alignments                         -w noargument_checking
+       -w nodeclarations                     -w general
+       -w noignore_bounds                    -w noignore_loc
+       -w nointerfaces                       -w notruncated_source
+       -w uncalled                           -w uninitialized
+       -w nounused                           -w usage
+  no   -wrap-margins
+
+       -includepath : /usrx/local/intel/2016SP3/daal/include/,/usr/include/,.FOR,./.FOR,/usrx/local/intel/2016SP3/ipp/include/.FOR,
+           /usrx/local/intel/2016SP3/mkl/include/.FOR,/usrx/local/intel/2016SP3/tbb/include/.FOR,/usrx/local/intel/2016SP3/daal/include/.FOR,
+           /gpfs/tp1/usrx/local/intel/2016SP3/compilers_and_libraries_2016.3.210/linux/compiler/include/intel64/.FOR,
+           /gpfs/tp1/usrx/local/intel/2016SP3/compilers_and_libraries_2016.3.210/linux/compiler/include/.FOR,/usr/local/include/.FOR,
+           /usr/lib/gcc/x86_64-redhat-linux/4.4.7/include/.FOR,/usr/include/.FOR,/usr/include/.FOR,/usr/include/.FOR
+       -list filename : prevents.lst
+       -o    filename : none
+
+COMPILER: Intel(R) Fortran 16.0-1633

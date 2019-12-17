@@ -1,0 +1,263 @@
+Page 1           Source Listing                  PREPOBS_LISTHEADERS
+2017-04-18 11:07                                 listheaders.f90
+
+      1               PROGRAM PREPOBS_LISTHEADERS
+      2 !$$$  MAIN PROGRAM DOCUMENTATION BLOCK
+      3 !
+      4 ! MAIN PROGRAM: PREPOBS_LISTHEADERS
+      5 !   PRGMMR: KEYSER           ORG: NP22        DATE: 2013-03-06
+      6 !
+      7 ! ABSTRACT: GENERATES A LIST OF ALL UNIQUE HEADERS IN A PREPBUFR FILE
+      8 !    MATCHING INPUT LIST.  REORDERS THE FILE INTO THE INPUT LIST ORDER.
+      9 !
+     10 ! PROGRAM HISTORY LOG:
+     11 ! 1999-06-29  KISTLER -- ORIGINAL AUTHOR
+     12 ! 2000-06-15  KEYSER  -- REPLACED INCORRECT CALL TO W3TAGB WITH CALL
+     13 !                        TO W3TAGE AT END OF CODE
+     14 ! 2000-12-05  KEYSER  -- NOW READS THROUGH THE ENTIRE INPUT FILE WHEN
+     15 !                        LOOKING FOR MESSAGES MATCHING A PARTICULAR TYPE
+     16 !                        FROM THE INPUT LIST, BEFORE IT STOPPED LOOKING
+     17 !                        FOR MESSAGES MATCHING THE TYPE IN THE INPUT LIST
+     18 !                        ONCE THE INPUT MESSAGE TYPE CHANGED TO ANOTHER
+     19 !                        TYPE (THIS ALLOWS FOR INPUT PREPBUFR FILES WITH
+     20 !                        INTERMINGLED MESSAGE TYPES TO BE HANDLED
+     21 !                        PROPERLY)
+     22 ! 2013-03-06  KEYSER  -- CHANGES TO RUN ON WCOSS
+     23 !
+     24 ! USAGE:
+     25 !   INPUT FILES:
+     26 !     STDIN    - NAMELIST/NAMIN/
+     27 !     UNIT 11  - PREPBUFR FILE TO BE LISTED
+     28 !
+     29 !   OUTPUT FILES:
+     30 !     UNIT 06  - STANDARD PRINTFILE
+     31 !     UNIT 51  - REORDERED PREPBUFR FILE
+     32 !     UNIT 52  - LISTING OF UNIQUE HEADERS
+     33 !
+     34 !   SUBPROGRAMS CALLED:
+     35 !     LIBRARY:
+     36 !       BUFRLIB  - DATELEN  OPENBF UFBMEM  RDMEMM  CLOSBF
+     37 !       W3NCO    - W3TAGB   W3TAGE
+     38 !
+     39 !   EXIT STATES:
+     40 !     COND =   0 - SUCCESSFUL RUN
+     41 !     COND =   1 - BUFR I/O ERROR 
+     42 !
+     43 ! REMARKS: NONE.
+     44 !
+     45 ! ATTRIBUTES:
+     46 !   LANGUAGE: FORTRAN 90
+     47 !   MACHINE:  NCEP WCOSS
+     48 !
+     49 !$$$
+     50 
+     51 ! program prepobs_listheaders
+     52 
+     53 implicit none
+     54 
+     55 character*8  subset, prvset
+     56 character*8, allocatable :: bufrlist(:)
+     57 integer,      allocatable :: kount(:)
+
+Page 2           Source Listing                  PREPOBS_LISTHEADERS
+2017-04-18 11:07                                 listheaders.f90
+
+     58 integer :: iret,jdate,k,m,kmsgs,lunin=11,klist=0,lunot=51,lunlst=52
+     59 
+     60       CALL W3TAGB('PREPOBS_LISTHEADERS',2013,0065,0057,'NP22')
+     61 
+     62 read(*,*) klist
+     63 if (klist.lt.1) then
+     64     write(lunlst,*) ' klist = ',klist, 'not set > 1 on namelist namin'
+     65 endif
+     66 allocate (bufrlist(klist),kount(klist))
+     67 
+     68 k=0
+     69 do k=1,klist
+     70    read(*,'(a6)') bufrlist(k)(1:6)
+     71 enddo
+     72 
+     73 call ufbmem(lunin,0,kmsgs,iret)
+     74 call datelen(10)
+     75 call openbf(lunot,'OUT',lunin)
+     76 
+     77 do k=1,klist
+     78    kount(k)=0
+     79    do m=1,kmsgs+1
+     80       call rdmemm(m,subset,jdate,iret)
+     81       if (iret.ne.0 ) then
+     82 ! All messages have been read; write out the count associated with the
+     83 !  current list type and move on to the next list type
+     84          write(lunlst,*) bufrlist(k)(1:6), kount(k)
+     85          exit
+     86       else  if (subset(1:6) .ne. bufrlist(k)(1:6)) then
+     87 ! This message does not match the current list type; read in the next
+     88 !  message in the input file
+     89          cycle
+     90       else
+     91 ! This message matches the current list type, count it and copy it to the
+     92 !  output file, then read in the next message in the input file
+     93          kount(k)=kount(k)+1
+     94          call copymg(lunin,lunot)
+     95       endif
+     96    enddo
+     97 enddo
+     98 
+     99 call closbf(lunin)
+    100       CALL W3TAGE('PREPOBS_LISTHEADERS')
+    101 stop
+    102 end
+
+Page 3           Source Listing                  PREPOBS_LISTHEADERS
+2017-04-18 11:07 Entry Points                    listheaders.f90
+
+
+
+ENTRY POINTS
+
+  Name              
+                    
+ MAIN__             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ BUFRLIST                   Local  56       CHAR            8     1     1        ALC              66,70,84,86                       
+ CLOSBF                     Subr   99                                                             99                                
+ COPYMG                     Subr   94                                                             94                                
+ DATELEN                    Subr   74                                                             74                                
+ IRET                       Local  58       I(4)            4           scalar                    73,80,81                          
+ JDATE                      Local  58       I(4)            4           scalar                    80                                
+ K                          Local  58       I(4)            4           scalar                    68,69,70,77,78,84,86,93           
+ KLIST                      Local  58       I(4)            4           scalar                    58,62,63,64,66,69,77              
+ KMSGS                      Local  58       I(4)            4           scalar                    73,79                             
+ KOUNT                      Local  57       I(4)            4     1     1        ALC              66,78,84,93                       
+ LUNIN                      Local  58       I(4)            4           scalar                    58,73,75,94,99                    
+ LUNLST                     Local  58       I(4)            4           scalar                    58,64,84                          
+ LUNOT                      Local  58       I(4)            4           scalar                    58,75,94                          
+ M                          Local  58       I(4)            4           scalar                    79,80                             
+ OPENBF                     Subr   75                                                             75                                
+ PREPOBS_LISTHEADERS        Prog   1                                                                                                
+ PRVSET                     Local  55       CHAR            8           scalar                                                      
+ RDMEMM                     Subr   80                                                             80                                
+ SUBSET                     Local  55       CHAR            8           scalar                    80,86                             
+ UFBMEM                     Subr   73                                                             73                                
+ W3TAGB                     Subr   60                                                             60                                
+ W3TAGE                     Subr   100                                                            100                               
+
+Page 4           Source Listing                  PREPOBS_LISTHEADERS
+2017-04-18 11:07 Subprograms/Common Blocks       listheaders.f90
+
+
+
+SUBPROGRAMS/COMMON BLOCKS
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ PREPOBS_LISTHEADERS        Prog   1                                                                                                
+
+COMPILER OPTIONS BEING USED
+
+       -align noall                          -align nonone
+       -align nocommons                      -align nodcommons
+       -align noqcommons                     -align nozcommons
+       -align records                        -align nosequence
+       -align norec1byte                     -align norec2byte
+       -align norec4byte                     -align norec8byte
+       -align norec16byte                    -align norec32byte
+       -align norec64byte                    -align noarray8byte
+       -align noarray16byte                  -align noarray32byte
+       -align noarray64byte                  -align noarray128byte
+       -align noarray256byte                 -altparam
+       -assume accuracy_sensitive            -assume nobscc
+       -assume nobuffered_io                 -assume nobuffered_stdout
+       -assume nobyterecl                    -assume nocc_omp
+       -assume nocstring                     -assume nodummy_aliases
+       -assume nofpe_summary                 -assume noieee_fpe_flags
+       -assume nominus0                      -assume noold_boz
+       -assume old_complex_align             -assume old_unit_star
+       -assume noold_ldout_format            -assume noold_logical_ldio
+       -assume old_maxminloc                 -assume old_xor
+       -assume noprotect_allocates           -assume protect_constants
+       -assume noprotect_parens              -assume split_common
+       -assume source_include                -assume nostd_intent_in
+       -assume std_minus0_rounding           -assume nostd_mod_proc_name
+       -assume std_value                     -assume norealloc_lhs
+       -assume underscore                    -assume no2underscores
+  no   -auto                                 -auto_scalar
+  no   -bintext                              -ccdefault default
+       -check noargs                         -check noarg_temp_created
+       -check noassume                       -check nobounds
+       -check noformat                       -check nooutput_conversion
+       -check nooverflow                     -check nopointers
+       -check power                          -check noshape
+       -check nostack                        -check nounderflow
+       -check nouninitialized                -coarray-num-procs 0
+  no   -coarray-config-file                  -convert big_endian
+       -cross_reference                      -D __INTEL_COMPILER=1600
+       -D __INTEL_COMPILER_UPDATE=3          -D __unix__
+       -D __unix                             -D __linux__
+       -D __linux                            -D __gnu_linux__
+       -D unix                               -D linux
+       -D __ELF__                            -D __x86_64
+       -D __x86_64__                         -D __amd64
+       -D __amd64__                          -D __INTEL_COMPILER_BUILD_DATE=20160415
+       -D __INTEL_OFFLOAD                    -D __i686
+       -D __i686__                           -D __pentiumpro
+       -D __pentiumpro__                     -D __pentium4
+
+Page 5           Source Listing                  PREPOBS_LISTHEADERS
+2017-04-18 11:07                                 listheaders.f90
+
+       -D __pentium4__                       -D __tune_pentium4__
+       -D __SSE2__                           -D __SSE2_MATH__
+       -D __SSE__                            -D __SSE_MATH__
+       -D __MMX__                            -double_size 64
+  no   -d_lines                         no   -Qdyncom
+       -error_limit 30                  no   -f66
+  no   -f77rtl                          no   -fast
+       -fpscomp nofilesfromcmd               -fpscomp nogeneral
+       -fpscomp noioformat                   -fpscomp noldio_spacing
+       -fpscomp nologicals              no   -fpconstant
+       -fpe3                                 -fprm nearest
+  no   -ftz                                  -fp_model noprecise
+       -fp_model fast                        -fp_model nostrict
+       -fp_model nosource                    -fp_model nodouble
+       -fp_model noextended                  -fp_model novery_fast
+       -fp_model noexcept                    -fp_model nono_except
+       -heap_arrays 0                   no   -threadprivate_compat
+       -free                                 -g2
+       -iface nomixed_str_len_arg            -iface nono_mixed_str_len_arg
+       -init noarrays                        -init noinf
+       -init nonan                           -init nosnan
+       -init nozero                     no   -intconstant
+       -integer_size 32                 no   -mixed_str_len_arg
+  no   -module                               -names lowercase
+  no   -noinclude                            -offload-build=host
+       -O2                              no   -pad_source
+       -real_size 32                    no   -recursive
+       -reentrancy none                 no   -sharable_localsaves
+       -vec=simd                             -show noinclude
+       -show map                             -show options
+  no   -syntax_only                     no   -threadcom
+  no   -U                               no   -vms
+       -w noall                              -w nonone
+       -w alignments                         -w noargument_checking
+       -w nodeclarations                     -w general
+       -w noignore_bounds                    -w noignore_loc
+       -w nointerfaces                       -w notruncated_source
+       -w uncalled                           -w uninitialized
+       -w nounused                           -w usage
+  no   -wrap-margins
+
+       -includepath : /usrx/local/intel/2016SP3/daal/include/,/usr/include/,.FOR,./.FOR,/usrx/local/intel/2016SP3/ipp/include/.FOR,
+           /usrx/local/intel/2016SP3/mkl/include/.FOR,/usrx/local/intel/2016SP3/tbb/include/.FOR,/usrx/local/intel/2016SP3/daal/include/.FOR,
+           /gpfs/tp1/usrx/local/intel/2016SP3/compilers_and_libraries_2016.3.210/linux/compiler/include/intel64/.FOR,
+           /gpfs/tp1/usrx/local/intel/2016SP3/compilers_and_libraries_2016.3.210/linux/compiler/include/.FOR,/usr/local/include/.FOR,
+           /usr/lib/gcc/x86_64-redhat-linux/4.4.7/include/.FOR,/usr/include/.FOR,/usr/include/.FOR,/usr/include/.FOR
+       -list filename : listheaders.lst
+       -o    filename : none
+
+COMPILER: Intel(R) Fortran 16.0-1633

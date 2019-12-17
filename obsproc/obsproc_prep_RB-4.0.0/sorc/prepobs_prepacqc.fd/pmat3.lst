@@ -1,0 +1,2985 @@
+Page 1           Source Listing                  NORV_D
+2017-04-18 11:09                                 pmat3.f90
+
+      1 !
+      2 !                                **********************************************
+      3 !                                *             MODULE pmat3                   *
+      4 !                                *  R. J. Purser, NOAA/NCEP/EMC    Oct 2012   *
+      5 !                                *  jim.purser@noaa.gov                       *
+      6 !                                *                                            *
+      7 !                                **********************************************
+      8 !
+      9 ! Basic generic matrix routines that can each be expressed conveniently as a
+     10 ! fortran PURE FUNCTION, or, where matrix inversion is involved, as a
+     11 ! fortran FUNCTION at least
+     12 !
+     13 ! Single precision real and complex routines are not accommodated here.
+     14 ! Where it generally makes sense to include an integer version, this is
+     15 ! included and signified by a function name ending "_i".
+     16 ! The real functions have names ending "_d".
+     17 ! The complex functions have names ending "_c".
+     18 !
+     19 ! Last modified: 
+     20 !  Keyser (2014-12-12) - print written to unit 41 rather than stdout (for use in
+     21 !                        prepobs_prepacqc program - limits amount of stdout)
+     22 !
+     23 ! DIRECT DEPENDENCIES
+     24 ! Libraries[their Modules]: pmat[pmat,pmat2]
+     25 ! Additional Modules      : pietc, pkind
+     26 !
+     27 !=============================================================================
+     28 module pmat3
+     29 !=============================================================================
+     30 use pkind, only: dp,dpc
+     31 implicit none
+     32 private
+     33 public:: norv,mulmd,muldm,diag,inv,mulpp,difp,intp,invp,powp,polps,polpp, &
+     34      copbm,copmb,transposeb,mulbb,mulbd,muldb,mulbv,mulbx,mulby, &
+     35      mulvb,mulxb,mulyb,L1Lb,u1ub,LdLb,udub
+     36 
+     37 interface norv;  module procedure norv_d,norv_c;                  end interface
+     38 interface mulmd; module procedure mulmd_i,mulmd_d,mulmd_c;        end interface
+     39 interface muldm; module procedure muldm_i,muldm_d,muldm_c;        end interface
+     40 interface diag
+     41                  module procedure diagmofd_i,diagmofd_d,diagmofd_c, &
+     42                                   diagdofm_i,diagdofm_d,diagdofm_c 
+     43                                                                   end interface
+     44 interface inv;   module procedure invm_d,invm_c,  finvm_d,finvm_c,    &
+     45                                   invmv_d,invmv_c,finvmv_d,finvmv_c
+     46                                                                   end interface
+     47 interface mulpp; module procedure mulpp_i,mulpp_d,mulpp_c;        end interface
+     48 interface difp;  module procedure difp_d,difp_c,ndifp_d,ndifp_c;  end interface
+     49 interface intp;  module procedure intp_d,intp_c,nintp_d,nintp_c;  end interface
+     50 interface invp;  module procedure ninvp_d,ninvp_c;                end interface
+     51 interface powp;  module procedure npowp_d,npowp_c;                end interface
+     52 interface polps; module procedure polps_d,polps_c, &
+     53                                   npolps_d,npolps_c;              end interface
+     54 interface polpp; module procedure npolpp_d,npolpp_c;              end interface
+     55 !-----------------------------------------------------------------------------
+     56 ! Banded matrix functions:
+     57 interface copbm; module procedure copbm_d,copbm_c;                end interface
+
+Page 2           Source Listing                  NORV_D
+2017-04-18 11:09                                 pmat3.f90
+
+     58 interface copmb; module procedure copmb_d,copmb_c;                end interface
+     59 interface transposeb; module procedure transposeb_d,transposeb_c; end interface
+     60 interface mulbb; module procedure mulbb_d;                        end interface
+     61 interface mulbd; module procedure mulbd_d;                        end interface
+     62 interface muldb; module procedure muldb_d;                        end interface
+     63 interface mulbv; module procedure mulbv_d;                        end interface
+     64 interface mulbx; module procedure mulbx_d;                        end interface
+     65 interface mulby; module procedure mulby_d;                        end interface
+     66 interface mulvb; module procedure mulvb_d;                        end interface
+     67 interface mulxb; module procedure mulxb_d;                        end interface
+     68 interface mulyb; module procedure mulyb_d;                        end interface
+     69 interface L1Lb;  module procedure L1Lb_d,fL1Lb_d;                 end interface
+     70 interface u1ub;  module procedure u1ub_d,fu1ub_d;                 end interface
+     71 interface LdLb;  module procedure LdLb_d,fLdLb_d;                 end interface
+     72 interface udub;  module procedure udub_d,fudub_d;                 end interface
+     73 
+     74 contains
+     75 !=============================================================================
+     76 pure function norv_d(a)result(b)!                                       [norv]
+     77 !=============================================================================
+     78 ! Norm of vector a
+     79 !------------------------------
+     80 real(dp),dimension(:),intent(in):: a
+     81 real(dp)                        :: b
+     82 b=sqrt(dot_product(a,a))
+     83 end function norv_d
+
+
+ENTRY POINTS
+
+  Name                        
+                              
+ pmat3_mp_norv_d_             
+
+Page 3           Source Listing                  NORV_D
+2017-04-18 11:09 Symbol Table                    pmat3.f90
+
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  76       R(8)            8     1     1        ARG,IN           82                                
+ B                          Local  81       R(8)            8           scalar                    82                                
+ DOT_PRODUCT                Func   82                                   scalar                    82                                
+ DP                         Param  80       I(4)            4           scalar                    30,80,81,90,110,111,112,144,145,14
+                                                                                                  6,177,178,208,209,228,229,248,250,
+                                                                                                  269,270,271,272,293,294,296,297,32
+                                                                                                  9,330,332,363,364,366,385,386,404,
+                                                                                                  405,424,425,443,444,462,463,465,48
+                                                                                                  3,484,501,502,503,520,521,522,543,
+                                                                                                  544,565,566,593,594,622,623,650,65
+                                                                                                  1,652,665,666,667,681,682,683,694,
+                                                                                                  695,696,708,709,710,723,724,725,73
+                                                                                                  7,738,739,751,752,753,765,766,767,
+                                                                                                  779,780,791,793,795,817,818,819,82
+                                                                                                  0,828,830,831,832,843,844,855,857,
+                                                                                                  859,891,892,893,894,901,903,904,90
+                                                                                                  5                                 
+ NORV_D                     Func   76       R(8)            8           scalar   PRIV                                               
+ SQRT                       Func   82                                   scalar                    82                                
+
+Page 4           Source Listing                  NORV_D
+2017-04-18 11:09                                 pmat3.f90
+
+     84 !=============================================================================
+     85 pure function norv_c(a)result(b)!                                       [norv]
+     86 !=============================================================================
+     87 ! Norm of vector a
+     88 !------------------------------
+     89 complex(dpc),dimension(:),intent(in):: a
+     90 real(dp)                            :: b
+     91 b=sqrt(real(dot_product(a,a)))
+     92 end function norv_c
+
+
+ENTRY POINTS
+
+  Name                        
+                              
+ pmat3_mp_norv_c_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  85       C(16)           16    1     1        ARG,IN           91                                
+ B                          Local  90       R(8)            8           scalar                    91                                
+ DOT_PRODUCT                Func   91                                   scalar                    91                                
+ DPC                        Param  89       I(4)            4           scalar                    30,89,121,122,123,155,156,157,187,
+                                                                                                  188,218,219,238,239,258,260,281,28
+                                                                                                  2,283,284,305,306,308,309,338,339,
+                                                                                                  341,373,374,376,393,394,413,414,43
+                                                                                                  2,433,452,453,472,473,475,492,493,
+                                                                                                  510,511,512,530,531,532,552,553,57
+                                                                                                  8,579,607,608,636,637             
+ NORV_C                     Func   85       R(8)            8           scalar   PRIV                                               
+ REAL                       Func   91                                   scalar                    91                                
+ SQRT                       Func   91                                   scalar                    91                                
+
+Page 5           Source Listing                  NORV_C
+2017-04-18 11:09                                 pmat3.f90
+
+     93 
+     94 !=============================================================================
+     95 pure function mulmd_i(a,d)result(b)!                                   [mulmd]
+     96 !=============================================================================
+     97 ! matrix times diagonal
+     98 !------------------------------
+     99 integer,dimension(:,:),     intent(in):: a
+    100 integer,dimension(:)  ,     intent(in):: d
+    101 integer,dimension(size(a,1),size(a,2)):: b
+    102 integer                               :: i
+    103 forall(i=1:size(a,2))b(:,i)=a(:,i)*d(i)
+    104 end function mulmd_i
+
+
+ENTRY POINTS
+
+  Name                         
+                               
+ pmat3_mp_mulmd_i_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  95       I(4)            4     2     1        ARG,IN           101,103                           
+ B                          Local  101      I(4)            4     2     0                         103                               
+ D                          Dummy  95       I(4)            4     1     1        ARG,IN           103                               
+ I                          Local  102      I(4)            4           scalar                                                      
+ I                          Local  103      I(4)            4           scalar                    103                               
+ MULMD_I                    Func   95       I(4)            4     2     0        PRIV                                               
+ SIZE                       Func   101                                  scalar   PRIV             101,103                           
+
+Page 6           Source Listing                  MULMD_I
+2017-04-18 11:09                                 pmat3.f90
+
+    105 !=============================================================================
+    106 pure function mulmd_d(a,d)result(b)!                                   [mulmd]
+    107 !=============================================================================
+    108 ! matrix times diagonal
+    109 !------------------------------
+    110 real(dp),dimension(:,:),     intent(in):: a
+    111 real(dp),dimension(:)  ,     intent(in):: d
+    112 real(dp),dimension(size(a,1),size(a,2)):: b
+    113 integer                                :: i
+    114 forall(i=1:size(a,2))b(:,i)=a(:,i)*d(i)
+    115 end function mulmd_d
+
+
+ENTRY POINTS
+
+  Name                         
+                               
+ pmat3_mp_mulmd_d_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  106      R(8)            8     2     1        ARG,IN           112,114                           
+ B                          Local  112      R(8)            8     2     0                         114                               
+ D                          Dummy  106      R(8)            8     1     1        ARG,IN           114                               
+ I                          Local  113      I(4)            4           scalar                                                      
+ I                          Local  114      I(4)            4           scalar                    114                               
+ MULMD_D                    Func   106      R(8)            8     2     0        PRIV                                               
+ SIZE                       Func   112                                  scalar   PRIV             112,114                           
+
+Page 7           Source Listing                  MULMD_D
+2017-04-18 11:09                                 pmat3.f90
+
+    116 !=============================================================================
+    117 pure function mulmd_c(a,d)result(b)!                                   [mulmd]
+    118 !=============================================================================
+    119 ! matrix times diagonal
+    120 !------------------------------
+    121 complex(dpc),dimension(:,:),     intent(in):: a
+    122 complex(dpc),dimension(:)  ,     intent(in):: d
+    123 complex(dpc),dimension(size(a,1),size(a,2)):: b
+    124 integer                                    :: i
+    125 forall(i=1:size(a,2))b(:,i)=a(:,i)*d(i)
+    126 end function mulmd_c
+
+
+ENTRY POINTS
+
+  Name                         
+                               
+ pmat3_mp_mulmd_c_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  117      C(16)           16    2     1        ARG,IN           123,125                           
+ B                          Local  123      C(16)           16    2     0                         125                               
+ D                          Dummy  117      C(16)           16    1     1        ARG,IN           125                               
+ I                          Local  124      I(4)            4           scalar                                                      
+ I                          Local  125      I(4)            4           scalar                    125                               
+ MULMD_C                    Func   117      C(16)           16    2     0        PRIV                                               
+ SIZE                       Func   123                                  scalar   PRIV             123,125                           
+
+Page 8           Source Listing                  MULMD_C
+2017-04-18 11:09                                 pmat3.f90
+
+    127 
+    128 !=============================================================================
+    129 pure function muldm_i(d,a)result(b)!                                   [muldm]
+    130 !=============================================================================
+    131 ! matrix times diagonal
+    132 !------------------------------
+    133 integer,dimension(:)  ,     intent(in):: d
+    134 integer,dimension(:,:),     intent(in):: a
+    135 integer,dimension(size(a,1),size(a,2)):: b
+    136 integer                               :: i
+    137 forall(i=1:size(a,1))b(i,:)=d(i)*a(i,:)
+    138 end function muldm_i
+
+
+ENTRY POINTS
+
+  Name                         
+                               
+ pmat3_mp_muldm_i_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  129      I(4)            4     2     1        ARG,IN           135,137                           
+ B                          Local  135      I(4)            4     2     0                         137                               
+ D                          Dummy  129      I(4)            4     1     1        ARG,IN           137                               
+ I                          Local  136      I(4)            4           scalar                                                      
+ I                          Local  137      I(4)            4           scalar                    137                               
+ MULDM_I                    Func   129      I(4)            4     2     0        PRIV                                               
+ SIZE                       Func   135                                  scalar   PRIV             135,137                           
+
+Page 9           Source Listing                  MULDM_I
+2017-04-18 11:09                                 pmat3.f90
+
+    139 !=============================================================================
+    140 pure function muldm_d(d,a)result(b)!                                   [muldm]
+    141 !=============================================================================
+    142 ! matrix times diagonal
+    143 !------------------------------
+    144 real(dp),dimension(:)  ,     intent(in):: d
+    145 real(dp),dimension(:,:),     intent(in):: a
+    146 real(dp),dimension(size(a,1),size(a,2)):: b
+    147 integer                                :: i
+    148 forall(i=1:size(a,1))b(i,:)=d(i)*a(i,:)
+    149 end function muldm_d
+
+
+ENTRY POINTS
+
+  Name                         
+                               
+ pmat3_mp_muldm_d_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  140      R(8)            8     2     1        ARG,IN           146,148                           
+ B                          Local  146      R(8)            8     2     0                         148                               
+ D                          Dummy  140      R(8)            8     1     1        ARG,IN           148                               
+ I                          Local  147      I(4)            4           scalar                                                      
+ I                          Local  148      I(4)            4           scalar                    148                               
+ MULDM_D                    Func   140      R(8)            8     2     0        PRIV                                               
+ SIZE                       Func   146                                  scalar   PRIV             146,148                           
+
+Page 10          Source Listing                  MULDM_D
+2017-04-18 11:09                                 pmat3.f90
+
+    150 !=============================================================================
+    151 pure function muldm_c(d,a)result(b)!                                   [muldm]
+    152 !=============================================================================
+    153 ! matrix times diagonal
+    154 !------------------------------
+    155 complex(dpc),dimension(:)  ,     intent(in):: d
+    156 complex(dpc),dimension(:,:),     intent(in):: a
+    157 complex(dpc),dimension(size(a,1),size(a,2)):: b
+    158 integer                                    :: i
+    159 forall(i=1:size(a,1))b(i,:)=d(i)*a(i,:)
+    160 end function muldm_c
+
+
+ENTRY POINTS
+
+  Name                         
+                               
+ pmat3_mp_muldm_c_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  151      C(16)           16    2     1        ARG,IN           157,159                           
+ B                          Local  157      C(16)           16    2     0                         159                               
+ D                          Dummy  151      C(16)           16    1     1        ARG,IN           159                               
+ I                          Local  158      I(4)            4           scalar                                                      
+ I                          Local  159      I(4)            4           scalar                    159                               
+ MULDM_C                    Func   151      C(16)           16    2     0        PRIV                                               
+ SIZE                       Func   157                                  scalar   PRIV             157,159                           
+
+Page 11          Source Listing                  MULDM_C
+2017-04-18 11:09                                 pmat3.f90
+
+    161 
+    162 !=============================================================================
+    163 pure function diagmofd_i(d)result(a)!                                   [diag]
+    164 !=============================================================================
+    165 ! Diagonal matrix possessing given diagonal elements
+    166 !------------------------------
+    167 integer,dimension(:),   intent(in):: d
+    168 integer,dimension(size(d),size(d)):: a
+    169 integer                           :: i
+    170 a=0; forall(i=1:size(d))a(i,i)=d(i)
+    171 end function diagmofd_i
+
+
+ENTRY POINTS
+
+  Name                            
+                                  
+ pmat3_mp_diagmofd_i_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Local  168      I(4)            4     2     0                         170                               
+ D                          Dummy  163      I(4)            4     1     1        ARG,IN           168,170                           
+ DIAGMOFD_I                 Func   163      I(4)            4     2     0        PRIV                                               
+ I                          Local  169      I(4)            4           scalar                                                      
+ I                          Local  170      I(4)            4           scalar                    170                               
+ SIZE                       Func   168                                  scalar   PRIV             168,170                           
+
+Page 12          Source Listing                  DIAGMOFD_I
+2017-04-18 11:09                                 pmat3.f90
+
+    172 !=============================================================================
+    173 pure function diagmofd_d(d)result(a)!                                   [diag]
+    174 !=============================================================================
+    175 ! Diagonal matrix possessing given diagonal elements
+    176 !------------------------------
+    177 real(dp),dimension(:),   intent(in):: d
+    178 real(dp),dimension(size(d),size(d)):: a
+    179 integer                            :: i
+    180 a=0; forall(i=1:size(d))a(i,i)=d(i)
+    181 end function diagmofd_d
+
+
+ENTRY POINTS
+
+  Name                            
+                                  
+ pmat3_mp_diagmofd_d_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Local  178      R(8)            8     2     0                         180                               
+ D                          Dummy  173      R(8)            8     1     1        ARG,IN           178,180                           
+ DIAGMOFD_D                 Func   173      R(8)            8     2     0        PRIV                                               
+ I                          Local  179      I(4)            4           scalar                                                      
+ I                          Local  180      I(4)            4           scalar                    180                               
+ SIZE                       Func   178                                  scalar   PRIV             178,180                           
+
+Page 13          Source Listing                  DIAGMOFD_D
+2017-04-18 11:09                                 pmat3.f90
+
+    182 !=============================================================================
+    183 pure function diagmofd_c(d)result(a)!                                   [diag]
+    184 !=============================================================================
+    185 ! Diagonal matrix possessing given diagonal elements
+    186 !------------------------------
+    187 complex(dpc),dimension(:),   intent(in):: d
+    188 complex(dpc),dimension(size(d),size(d)):: a
+    189 integer                                :: i
+    190 a=0; forall(i=1:size(d))a(i,i)=d(i)
+    191 end function diagmofd_c
+
+
+ENTRY POINTS
+
+  Name                            
+                                  
+ pmat3_mp_diagmofd_c_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Local  188      C(16)           16    2     0                         190                               
+ D                          Dummy  183      C(16)           16    1     1        ARG,IN           188,190                           
+ DIAGMOFD_C                 Func   183      C(16)           16    2     0        PRIV                                               
+ I                          Local  189      I(4)            4           scalar                                                      
+ I                          Local  190      I(4)            4           scalar                    190                               
+ SIZE                       Func   188                                  scalar   PRIV             188,190                           
+
+Page 14          Source Listing                  DIAGMOFD_C
+2017-04-18 11:09                                 pmat3.f90
+
+    192 
+    193 !=============================================================================
+    194 pure function diagdofm_i(a)result(d)!                                   [diag]
+    195 !=============================================================================
+    196 ! Diagonal vector of principal diagonal elements of square matrix
+    197 !------------------------------
+    198 integer,dimension(:,:),intent(in):: a
+    199 integer,dimension(size(a,1))     :: d
+    200 integer                          :: i
+    201 forall(i=1:size(a,1))d(i)=a(i,i)
+    202 end function diagdofm_i
+
+
+ENTRY POINTS
+
+  Name                            
+                                  
+ pmat3_mp_diagdofm_i_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  194      I(4)            4     2     1        ARG,IN           199,201                           
+ D                          Local  199      I(4)            4     1     0                         201                               
+ DIAGDOFM_I                 Func   194      I(4)            4     1     0        PRIV                                               
+ I                          Local  200      I(4)            4           scalar                                                      
+ I                          Local  201      I(4)            4           scalar                    201                               
+ SIZE                       Func   199                                  scalar   PRIV             199,201                           
+
+Page 15          Source Listing                  DIAGDOFM_I
+2017-04-18 11:09                                 pmat3.f90
+
+    203 !=============================================================================
+    204 pure function diagdofm_d(a)result(d)!                                   [diag]
+    205 !=============================================================================
+    206 ! Diagonal vector of principal diagonal elements of square matrix
+    207 !------------------------------
+    208 real(dp),dimension(:,:),intent(in):: a
+    209 real(dp),dimension(size(a,1))     :: d
+    210 integer                           :: i
+    211 forall(i=1:size(a,1))d(i)=a(i,i)
+    212 end function diagdofm_d
+
+
+ENTRY POINTS
+
+  Name                            
+                                  
+ pmat3_mp_diagdofm_d_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  204      R(8)            8     2     1        ARG,IN           209,211                           
+ D                          Local  209      R(8)            8     1     0                         211                               
+ DIAGDOFM_D                 Func   204      R(8)            8     1     0        PRIV                                               
+ I                          Local  210      I(4)            4           scalar                                                      
+ I                          Local  211      I(4)            4           scalar                    211                               
+ SIZE                       Func   209                                  scalar   PRIV             209,211                           
+
+Page 16          Source Listing                  DIAGDOFM_D
+2017-04-18 11:09                                 pmat3.f90
+
+    213 !=============================================================================
+    214 pure function diagdofm_c(a)result(d)!                                   [diag]
+    215 !=============================================================================
+    216 ! Diagonal vector of principal diagonal elements of square matrix
+    217 !------------------------------
+    218 complex(dpc),dimension(:,:),intent(in):: a
+    219 complex(dpc),dimension(size(a,1))     :: d
+    220 integer                               :: i
+    221 forall(i=1:size(a,1))d(i)=a(i,i)
+    222 end function diagdofm_c
+
+
+ENTRY POINTS
+
+  Name                            
+                                  
+ pmat3_mp_diagdofm_c_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  214      C(16)           16    2     1        ARG,IN           219,221                           
+ D                          Local  219      C(16)           16    1     0                         221                               
+ DIAGDOFM_C                 Func   214      C(16)           16    1     0        PRIV                                               
+ I                          Local  220      I(4)            4           scalar                                                      
+ I                          Local  221      I(4)            4           scalar                    221                               
+ SIZE                       Func   219                                  scalar   PRIV             219,221                           
+
+Page 17          Source Listing                  DIAGDOFM_C
+2017-04-18 11:09                                 pmat3.f90
+
+    223 
+    224 !=============================================================================
+    225 function invm_d(a)result(b)!                                             [inv]
+    226 !=============================================================================
+    227 use pmat, only: sinv=>inv
+    228 real(dp),dimension(:,:),     intent(in):: a
+    229 real(dp),dimension(size(a,1),size(a,1)):: b
+    230 logical                                :: ff
+    231 b=a; call sinv(b,ff)
+    232 if(ff)stop 'In function invm_d; matrix singular, unable to continue'
+    233 end function invm_d
+
+
+ENTRY POINTS
+
+  Name                        
+                              
+ pmat3_mp_invm_d_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  225      R(8)            8     2     1        ARG,IN           229,231                           
+ B                          Local  229      R(8)            8     2     0                         231                               
+ DINVMTF                    Subr   231                                           PRIV             231                               
+ FF                         Local  230      L(4)            4           scalar                    231,232                           
+ INVM_D                     Func   225      R(8)            8     2     0        PRIV                                               
+ PMAT                       Module 227                                                            227                               
+ SINV                       Local  227                                  scalar                    231                               
+ SIZE                       Func   229                                  scalar   PRIV             229                               
+
+Page 18          Source Listing                  INVM_D
+2017-04-18 11:09                                 pmat3.f90
+
+    234 !=============================================================================
+    235 function invm_c(a)result(b)!                                             [inv]
+    236 !=============================================================================
+    237 use pmat, only: sinv=>inv
+    238 complex(dpc),dimension(:,:),     intent(in):: a
+    239 complex(dpc),dimension(size(a,1),size(a,1)):: b
+    240 logical                                    :: ff
+    241 b=a; call sinv(b,ff)
+    242 if(ff)stop 'In function invm_c; matrix singular, unable to continue'
+    243 end function invm_c
+
+
+ENTRY POINTS
+
+  Name                        
+                              
+ pmat3_mp_invm_c_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  235      C(16)           16    2     1        ARG,IN           239,241                           
+ B                          Local  239      C(16)           16    2     0                         241                               
+ CINVMTF                    Subr   241                                           PRIV             241                               
+ FF                         Local  240      L(4)            4           scalar                    241,242                           
+ INVM_C                     Func   235      C(16)           16    2     0        PRIV                                               
+ PMAT                       Module 237                                                            237                               
+ SINV                       Local  237                                  scalar                    241                               
+ SIZE                       Func   239                                  scalar   PRIV             239                               
+
+Page 19          Source Listing                  INVM_C
+2017-04-18 11:09                                 pmat3.f90
+
+    244 !=============================================================================
+    245 function finvm_d(a,ff)result(b)!                                         [inv]
+    246 !=============================================================================
+    247 use pmat, only: sinv=>inv
+    248 real(dp),dimension(:,:),     intent(in ):: a
+    249 logical,                     intent(out):: ff
+    250 real(dp),dimension(size(a,1),size(a,1)) :: b
+    251 b=a; call sinv(b,ff)
+    252 if(ff) write(41,'("In function finvm_d; singular matrix")')
+    253 end function finvm_d
+
+
+ENTRY POINTS
+
+  Name                         
+                               
+ pmat3_mp_finvm_d_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  245      R(8)            8     2     1        ARG,IN           250,251                           
+ B                          Local  250      R(8)            8     2     0                         251                               
+ DINVMTF                    Subr   251                                           PRIV             251                               
+ FF                         Dummy  245      L(4)            4           scalar   ARG,OUT          251,252                           
+ FINVM_D                    Func   245      R(8)            8     2     0        PRIV                                               
+ PMAT                       Module 247                                                            247                               
+ SINV                       Local  247                                  scalar                    251                               
+ SIZE                       Func   250                                  scalar   PRIV             250                               
+
+Page 20          Source Listing                  FINVM_D
+2017-04-18 11:09                                 pmat3.f90
+
+    254 !=============================================================================
+    255 function finvm_c(a,ff)result(b)!                                         [inv]
+    256 !=============================================================================
+    257 use pmat, only: sinv=>inv
+    258 complex(dpc),dimension(:,:),     intent(in ):: a
+    259 logical,                         intent(out):: ff
+    260 complex(dpc),dimension(size(a,1),size(a,1)) :: b
+    261 b=a; call sinv(b,ff)
+    262 if(ff) write(41,'("In function finvm_c; singular matrix")')
+    263 end function finvm_c
+
+
+ENTRY POINTS
+
+  Name                         
+                               
+ pmat3_mp_finvm_c_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  255      C(16)           16    2     1        ARG,IN           260,261                           
+ B                          Local  260      C(16)           16    2     0                         261                               
+ CINVMTF                    Subr   261                                           PRIV             261                               
+ FF                         Dummy  255      L(4)            4           scalar   ARG,OUT          261,262                           
+ FINVM_C                    Func   255      C(16)           16    2     0        PRIV                                               
+ PMAT                       Module 257                                                            257                               
+ SINV                       Local  257                                  scalar                    261                               
+ SIZE                       Func   260                                  scalar   PRIV             260                               
+
+Page 21          Source Listing                  FINVM_C
+2017-04-18 11:09                                 pmat3.f90
+
+    264 
+    265 !=============================================================================
+    266 function invmv_d(a,v)result(u)!                                          [inv]
+    267 !=============================================================================
+    268 use pmat, only: sinv=>inv
+    269 real(dp),dimension(:,:),     intent(in):: a
+    270 real(dp),dimension(:)  ,     intent(in):: v
+    271 real(dp),dimension(size(a,1),size(a,1)):: b
+    272 real(dp),dimension(size(a,1))          :: u
+    273 logical                                :: ff
+    274 b=a; u=v; call sinv(b,u,ff)
+    275 if(ff)stop 'IN function invmv_d; matrix singular, unable to continue'
+    276 end function invmv_d
+
+
+ENTRY POINTS
+
+  Name                         
+                               
+ pmat3_mp_invmv_d_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  266      R(8)            8     2     1        ARG,IN           271,272,274                       
+ B                          Local  271      R(8)            8     2     0        TGT              274                               
+ DLINMVTF                   Subr   274                                           PRIV             274                               
+ FF                         Local  273      L(4)            4           scalar                    274,275                           
+ INVMV_D                    Func   266      R(8)            8     1     0        PRIV                                               
+ PMAT                       Module 268                                                            268                               
+ SINV                       Local  268                                  scalar                    274                               
+ SIZE                       Func   271                                  scalar   PRIV             271,272                           
+ U                          Local  272      R(8)            8     1     0                         274                               
+ V                          Dummy  266      R(8)            8     1     1        ARG,IN           274                               
+
+Page 22          Source Listing                  INVMV_D
+2017-04-18 11:09                                 pmat3.f90
+
+    277 !=============================================================================
+    278 function invmv_c(a,v)result(u)!                                          [inv]
+    279 !=============================================================================
+    280 use pmat, only: sinv=>inv
+    281 complex(dpc),dimension(:,:),     intent(in):: a
+    282 complex(dpc),dimension(:)  ,     intent(in):: v
+    283 complex(dpc),dimension(size(a,1),size(a,1)):: b
+    284 complex(dpc),dimension(size(a,1))          :: u
+    285 logical                                    :: ff
+    286 b=a; u=v; call sinv(b,u,ff)
+    287 if(ff)stop 'IN function invmv_c; matrix singular, unable to continue'
+    288 end function invmv_c
+
+
+ENTRY POINTS
+
+  Name                         
+                               
+ pmat3_mp_invmv_c_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  278      C(16)           16    2     1        ARG,IN           283,284,286                       
+ B                          Local  283      C(16)           16    2     0        TGT              286                               
+ CLINMVTF                   Subr   286                                           PRIV             286                               
+ FF                         Local  285      L(4)            4           scalar                    286,287                           
+ INVMV_C                    Func   278      C(16)           16    1     0        PRIV                                               
+ PMAT                       Module 280                                                            280                               
+ SINV                       Local  280                                  scalar                    286                               
+ SIZE                       Func   283                                  scalar   PRIV             283,284                           
+ U                          Local  284      C(16)           16    1     0                         286                               
+ V                          Dummy  278      C(16)           16    1     1        ARG,IN           286                               
+
+Page 23          Source Listing                  INVMV_C
+2017-04-18 11:09                                 pmat3.f90
+
+    289 !=============================================================================
+    290 function finvmv_d(a,v,ff)result(u)!                                      [inv]
+    291 !=============================================================================
+    292 use pmat, only: sinv=>inv
+    293 real(dp),dimension(:,:),     intent(in):: a
+    294 real(dp),dimension(:)  ,     intent(in):: v
+    295 logical,                     intent(out):: ff
+    296 real(dp),dimension(size(a,1),size(a,1)) :: b
+    297 real(dp),dimension(size(a,1))           :: u
+    298 b=a; u=v; call sinv(b,u,ff)
+    299 if(ff) write(41,'("In function finvmv_d; singular matrix")')
+    300 end function finvmv_d
+
+
+ENTRY POINTS
+
+  Name                          
+                                
+ pmat3_mp_finvmv_d_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  290      R(8)            8     2     1        ARG,IN           296,297,298                       
+ B                          Local  296      R(8)            8     2     0        TGT              298                               
+ DLINMVTF                   Subr   298                                           PRIV             298                               
+ FF                         Dummy  290      L(4)            4           scalar   ARG,OUT          298,299                           
+ FINVMV_D                   Func   290      R(8)            8     1     0        PRIV                                               
+ PMAT                       Module 292                                                            292                               
+ SINV                       Local  292                                  scalar                    298                               
+ SIZE                       Func   296                                  scalar   PRIV             296,297                           
+ U                          Local  297      R(8)            8     1     0                         298                               
+ V                          Dummy  290      R(8)            8     1     1        ARG,IN           298                               
+
+Page 24          Source Listing                  FINVMV_D
+2017-04-18 11:09                                 pmat3.f90
+
+    301 !=============================================================================
+    302 function finvmv_c(a,v,ff)result(u)!                                      [inv]
+    303 !=============================================================================
+    304 use pmat, only: sinv=>inv
+    305 complex(dpc),dimension(:,:),     intent(in ):: a
+    306 complex(dpc),dimension(:)  ,     intent(in ):: v
+    307 logical,                         intent(out):: ff
+    308 complex(dpc),dimension(size(a,1),size(a,1)) :: b
+    309 complex(dpc),dimension(size(a,1))           :: u
+    310 b=a; u=v; call sinv(b,u,ff)
+    311 if(ff) write(41,'("In function finvmv_c; singular matrix")')
+    312 end function finvmv_c
+
+
+ENTRY POINTS
+
+  Name                          
+                                
+ pmat3_mp_finvmv_c_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  302      C(16)           16    2     1        ARG,IN           308,309,310                       
+ B                          Local  308      C(16)           16    2     0        TGT              310                               
+ CLINMVTF                   Subr   310                                           PRIV             310                               
+ FF                         Dummy  302      L(4)            4           scalar   ARG,OUT          310,311                           
+ FINVMV_C                   Func   302      C(16)           16    1     0        PRIV                                               
+ PMAT                       Module 304                                                            304                               
+ SINV                       Local  304                                  scalar                    310                               
+ SIZE                       Func   308                                  scalar   PRIV             308,309                           
+ U                          Local  309      C(16)           16    1     0                         310                               
+ V                          Dummy  302      C(16)           16    1     1        ARG,IN           310                               
+
+Page 25          Source Listing                  FINVMV_C
+2017-04-18 11:09                                 pmat3.f90
+
+    313 
+    314 !=============================================================================
+    315 pure function mulpp_i(a,b)result(c)!                                   [mulpp]
+    316 !=============================================================================
+    317 ! Multiply two polynomials expressed by their coefficients, or convolve
+    318 ! two one-sided discrete distributions of not necessarily equal size.
+    319 !=============================================================================
+    320 integer,dimension(0:),intent(in)      :: a,b
+    321 integer,dimension(0:size(a)+size(b)-2):: c
+    322 integer                               :: i,j
+    323 integer                               :: ai
+    324 c=0;do i=0,size(a)-1;ai=a(i);forall(j=0:size(b)-1)c(i+j)=c(i+j)+ai*b(j); enddo
+    325 end function mulpp_i
+
+
+ENTRY POINTS
+
+  Name                         
+                               
+ pmat3_mp_mulpp_i_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  315      I(4)            4     1     1        ARG,IN           321,324                           
+ AI                         Local  323      I(4)            4           scalar                    324                               
+ B                          Dummy  315      I(4)            4     1     1        ARG,IN           321,324                           
+ C                          Local  321      I(4)            4     1     0                         324                               
+ I                          Local  322      I(4)            4           scalar                    324                               
+ J                          Local  322      I(4)            4           scalar                                                      
+ J                          Local  324      I(4)            4           scalar                    324                               
+ MULPP_I                    Func   315      I(4)            4     1     0        PRIV                                               
+ SIZE                       Func   321                                  scalar   PRIV             321,324                           
+
+Page 26          Source Listing                  MULPP_I
+2017-04-18 11:09                                 pmat3.f90
+
+    326 !=============================================================================
+    327 pure function mulpp_d(a,b)result(c)!                                   [mulpp]
+    328 !=============================================================================
+    329 real(dp),dimension(0:),intent(in)      :: a,b
+    330 real(dp),dimension(0:size(a)+size(b)-2):: c
+    331 integer                                :: i,j
+    332 real(dp)                               :: ai
+    333 c=0;do i=0,size(a)-1;ai=a(i);forall(j=0:size(b)-1)c(i+j)=c(i+j)+ai*b(j); enddo
+    334 end function mulpp_d
+
+
+ENTRY POINTS
+
+  Name                         
+                               
+ pmat3_mp_mulpp_d_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  327      R(8)            8     1     1        ARG,IN           330,333                           
+ AI                         Local  332      R(8)            8           scalar                    333                               
+ B                          Dummy  327      R(8)            8     1     1        ARG,IN           330,333                           
+ C                          Local  330      R(8)            8     1     0                         333                               
+ I                          Local  331      I(4)            4           scalar                    333                               
+ J                          Local  331      I(4)            4           scalar                                                      
+ J                          Local  333      I(4)            4           scalar                    333                               
+ MULPP_D                    Func   327      R(8)            8     1     0        PRIV                                               
+ SIZE                       Func   330                                  scalar   PRIV             330,333                           
+
+Page 27          Source Listing                  MULPP_D
+2017-04-18 11:09                                 pmat3.f90
+
+    335 !=============================================================================
+    336 pure function mulpp_c(a,b)result(c)!                                   [mulpp]
+    337 !=============================================================================
+    338 complex(dpc),dimension(0:),intent(in)      :: a,b
+    339 complex(dpc),dimension(0:size(a)+size(b)-2):: c
+    340 integer                                    :: i,j
+    341 complex(dpc)                               :: ai
+    342 c=0;do i=0,size(a)-1;ai=a(i);forall(j=0:size(b)-1)c(i+j)=c(i+j)+ai*b(j); enddo
+    343 end function mulpp_c
+
+
+ENTRY POINTS
+
+  Name                         
+                               
+ pmat3_mp_mulpp_c_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  336      C(16)           16    1     1        ARG,IN           339,342                           
+ AI                         Local  341      C(16)           16          scalar                    342                               
+ B                          Dummy  336      C(16)           16    1     1        ARG,IN           339,342                           
+ C                          Local  339      C(16)           16    1     0                         342                               
+ I                          Local  340      I(4)            4           scalar                    342                               
+ J                          Local  340      I(4)            4           scalar                                                      
+ J                          Local  342      I(4)            4           scalar                    342                               
+ MULPP_C                    Func   336      C(16)           16    1     0        PRIV                                               
+ SIZE                       Func   339                                  scalar   PRIV             339,342                           
+
+Page 28          Source Listing                  MULPP_C
+2017-04-18 11:09                                 pmat3.f90
+
+    344 
+    345 !=============================================================================
+    346 pure function nmulpp_i(n,a,b)result(c)!                                [mulpp]
+    347 !=============================================================================
+    348 ! Multiply two polynomials expressed by their coefficients, or convolve
+    349 ! two one-sided discrete distributions of fixed size, truncating the result
+    350 ! to the same size.
+    351 !=============================================================================
+    352 integer,               intent(in):: n
+    353 integer,dimension(0:n),intent(in):: a,b
+    354 integer,dimension(0:n)           :: c
+    355 integer                          :: i,j
+    356 integer                          :: ai
+    357 c=0; do i=0,n; ai=a(i);forall(j=0:n-i)c(i+j)=c(i+j)+ai*b(j); enddo
+    358 end function nmulpp_i
+
+
+ENTRY POINTS
+
+  Name                          
+                                
+ pmat3_mp_nmulpp_i_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  346      I(4)            4     1     0        ARG,IN           357                               
+ AI                         Local  356      I(4)            4           scalar                    357                               
+ B                          Dummy  346      I(4)            4     1     0        ARG,IN           357                               
+ C                          Local  354      I(4)            4     1     0                         357                               
+ I                          Local  355      I(4)            4           scalar                    357                               
+ J                          Local  355      I(4)            4           scalar                                                      
+ J                          Local  357      I(4)            4           scalar                    357                               
+ N                          Dummy  346      I(4)            4           scalar   ARG,IN           353,354,357                       
+ NMULPP_I                   Func   346      I(4)            4     1     0        PRIV                                               
+
+Page 29          Source Listing                  NMULPP_I
+2017-04-18 11:09                                 pmat3.f90
+
+    359 !=============================================================================
+    360 pure function nmulpp_d(n,a,b)result(c)!                                [mulpp]
+    361 !=============================================================================
+    362 integer,                intent(in):: n
+    363 real(dp),dimension(0:n),intent(in):: a,b
+    364 real(dp),dimension(0:n)           :: c
+    365 integer                           :: i,j
+    366 real(dp)                          :: ai
+    367 c=0; do i=0,n; ai=a(i);forall(j=0:n-i)c(i+j)=c(i+j)+ai*b(j); enddo
+    368 end function nmulpp_d
+
+
+ENTRY POINTS
+
+  Name                          
+                                
+ pmat3_mp_nmulpp_d_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  360      R(8)            8     1     0        ARG,IN           367                               
+ AI                         Local  366      R(8)            8           scalar                    367                               
+ B                          Dummy  360      R(8)            8     1     0        ARG,IN           367                               
+ C                          Local  364      R(8)            8     1     0                         367                               
+ I                          Local  365      I(4)            4           scalar                    367                               
+ J                          Local  365      I(4)            4           scalar                                                      
+ J                          Local  367      I(4)            4           scalar                    367                               
+ N                          Dummy  360      I(4)            4           scalar   ARG,IN           363,364,367                       
+ NMULPP_D                   Func   360      R(8)            8     1     0        PRIV             486,546                           
+
+Page 30          Source Listing                  NMULPP_D
+2017-04-18 11:09                                 pmat3.f90
+
+    369 !=============================================================================
+    370 pure function nmulpp_c(n,a,b)result(c)!                                [mulpp]
+    371 !=============================================================================
+    372 integer,                    intent(in):: n
+    373 complex(dpc),dimension(0:n),intent(in):: a,b
+    374 complex(dpc),dimension(0:n)           :: c
+    375 integer                               :: i,j
+    376 complex(dpc)                          :: ai
+    377 c=0; do i=0,n; ai=a(i);forall(j=0:n-i)c(i+j)=c(i+j)+ai*b(j); enddo
+    378 end function nmulpp_c
+
+
+ENTRY POINTS
+
+  Name                          
+                                
+ pmat3_mp_nmulpp_c_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  370      C(16)           16    1     0        ARG,IN           377                               
+ AI                         Local  376      C(16)           16          scalar                    377                               
+ B                          Dummy  370      C(16)           16    1     0        ARG,IN           377                               
+ C                          Local  374      C(16)           16    1     0                         377                               
+ I                          Local  375      I(4)            4           scalar                    377                               
+ J                          Local  375      I(4)            4           scalar                                                      
+ J                          Local  377      I(4)            4           scalar                    377                               
+ N                          Dummy  370      I(4)            4           scalar   ARG,IN           373,374,377                       
+ NMULPP_C                   Func   370      C(16)           16    1     0        PRIV             495,555                           
+
+Page 31          Source Listing                  NMULPP_C
+2017-04-18 11:09                                 pmat3.f90
+
+    379 
+    380 !=============================================================================
+    381 pure function difp_d(a)result(b)!                                       [difp]
+    382 !=============================================================================
+    383 ! Differentiate the polynomial, result being of degree one less.
+    384 !=============================================================================
+    385 real(dp),dimension(0:),intent(in):: a
+    386 real(dp),dimension(0:size(a)-2)  :: b
+    387 integer                          :: i
+    388 forall(i=1:size(a)-1)b(i-1)=i*a(i)
+    389 end function difp_d
+
+
+ENTRY POINTS
+
+  Name                        
+                              
+ pmat3_mp_difp_d_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  381      R(8)            8     1     1        ARG,IN           386,388                           
+ B                          Local  386      R(8)            8     1     0                         388                               
+ DIFP_D                     Func   381      R(8)            8     1     0        PRIV                                               
+ I                          Local  387      I(4)            4           scalar                                                      
+ I                          Local  388      I(4)            4           scalar                    388                               
+ SIZE                       Func   386                                  scalar   PRIV             386,388                           
+
+Page 32          Source Listing                  DIFP_D
+2017-04-18 11:09                                 pmat3.f90
+
+    390 !=============================================================================
+    391 pure function difp_c(a)result(b)!                                       [difp]
+    392 !=============================================================================
+    393 complex(dpc),dimension(0:),intent(in):: a
+    394 complex(dpc),dimension(0:size(a)-2)  :: b
+    395 integer                              :: i
+    396 forall(i=1:size(a)-1)b(i-1)=i*a(i)
+    397 end function difp_c
+
+
+ENTRY POINTS
+
+  Name                        
+                              
+ pmat3_mp_difp_c_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  391      C(16)           16    1     1        ARG,IN           394,396                           
+ B                          Local  394      C(16)           16    1     0                         396                               
+ DIFP_C                     Func   391      C(16)           16    1     0        PRIV                                               
+ I                          Local  395      I(4)            4           scalar                                                      
+ I                          Local  396      I(4)            4           scalar                    396                               
+ SIZE                       Func   394                                  scalar   PRIV             394,396                           
+
+Page 33          Source Listing                  DIFP_C
+2017-04-18 11:09                                 pmat3.f90
+
+    398 !=============================================================================
+    399 pure function ndifp_d(n,a)result(b)!                                    [difp]
+    400 !=============================================================================
+    401 ! Differentiate the polynomial of fixed degree, force result to be same degree
+    402 !=============================================================================
+    403 integer,                intent(in):: n
+    404 real(dp),dimension(0:n),intent(in):: a
+    405 real(dp),dimension(0:n)           :: b
+    406 integer                           :: i
+    407 b(n)=0; forall(i=1:n)b(i-1)=i*a(i)
+    408 end function ndifp_d
+
+
+ENTRY POINTS
+
+  Name                         
+                               
+ pmat3_mp_ndifp_d_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  399      R(8)            8     1     0        ARG,IN           407                               
+ B                          Local  405      R(8)            8     1     0                         407                               
+ I                          Local  406      I(4)            4           scalar                                                      
+ I                          Local  407      I(4)            4           scalar                    407                               
+ N                          Dummy  399      I(4)            4           scalar   ARG,IN           404,405,407                       
+ NDIFP_D                    Func   399      R(8)            8     1     0        PRIV                                               
+
+Page 34          Source Listing                  NDIFP_D
+2017-04-18 11:09                                 pmat3.f90
+
+    409 !=============================================================================
+    410 pure function ndifp_c(n,a)result(b)!                                    [difp]
+    411 !=============================================================================
+    412 integer,                    intent(in):: n
+    413 complex(dpc),dimension(0:n),intent(in):: a
+    414 complex(dpc),dimension(0:n)           :: b
+    415 integer                               :: i
+    416 b(n)=0; forall(i=1:n)b(i-1)=i*a(i)
+    417 end function ndifp_c
+
+
+ENTRY POINTS
+
+  Name                         
+                               
+ pmat3_mp_ndifp_c_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  410      C(16)           16    1     0        ARG,IN           416                               
+ B                          Local  414      C(16)           16    1     0                         416                               
+ I                          Local  415      I(4)            4           scalar                                                      
+ I                          Local  416      I(4)            4           scalar                    416                               
+ N                          Dummy  410      I(4)            4           scalar   ARG,IN           413,414,416                       
+ NDIFP_C                    Func   410      C(16)           16    1     0        PRIV                                               
+
+Page 35          Source Listing                  NDIFP_C
+2017-04-18 11:09                                 pmat3.f90
+
+    418 
+    419 !=============================================================================
+    420 pure function intp_d(a)result(b)!                                       [intp]
+    421 !=============================================================================
+    422 ! Integrate the polynomial, result being of degree one greater.
+    423 !=============================================================================
+    424 real(dp),dimension(0:),intent(in):: a
+    425 real(dp),dimension(0:size(a))    :: b
+    426 integer                          :: i
+    427 b(0)=0; forall(i=1:size(a))b(i)=a(i-1)/i
+    428 end function intp_d
+
+
+ENTRY POINTS
+
+  Name                        
+                              
+ pmat3_mp_intp_d_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  420      R(8)            8     1     1        ARG,IN           425,427                           
+ B                          Local  425      R(8)            8     1     0                         427                               
+ I                          Local  426      I(4)            4           scalar                                                      
+ I                          Local  427      I(4)            4           scalar                    427                               
+ INTP_D                     Func   420      R(8)            8     1     0        PRIV                                               
+ SIZE                       Func   425                                  scalar   PRIV             425,427                           
+
+Page 36          Source Listing                  INTP_D
+2017-04-18 11:09                                 pmat3.f90
+
+    429 !=============================================================================
+    430 pure function intp_c(a)result(b)!                                       [intp]
+    431 !=============================================================================
+    432 complex(dpc),dimension(0:),intent(in):: a
+    433 complex(dpc),dimension(0:size(a))    :: b
+    434 integer                              :: i
+    435 b(0)=0; forall(i=1:size(a))b(i)=a(i-1)/i
+    436 end function intp_c
+
+
+ENTRY POINTS
+
+  Name                        
+                              
+ pmat3_mp_intp_c_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  430      C(16)           16    1     1        ARG,IN           433,435                           
+ B                          Local  433      C(16)           16    1     0                         435                               
+ I                          Local  434      I(4)            4           scalar                                                      
+ I                          Local  435      I(4)            4           scalar                    435                               
+ INTP_C                     Func   430      C(16)           16    1     0        PRIV                                               
+ SIZE                       Func   433                                  scalar   PRIV             433,435                           
+
+Page 37          Source Listing                  INTP_C
+2017-04-18 11:09                                 pmat3.f90
+
+    437 !=============================================================================
+    438 pure function nintp_d(n,a)result(b)!                                    [intp]
+    439 !=============================================================================
+    440 ! Integrate the polynomial of fixed degree, force result to be same degree
+    441 !=============================================================================
+    442 integer,                intent(in):: n
+    443 real(dp),dimension(0:n),intent(in):: a
+    444 real(dp),dimension(0:n)           :: b
+    445 integer                           :: i
+    446 b(0)=0; forall(i=1:n)b(i)=a(i-1)/i
+    447 end function nintp_d
+
+
+ENTRY POINTS
+
+  Name                         
+                               
+ pmat3_mp_nintp_d_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  438      R(8)            8     1     0        ARG,IN           446                               
+ B                          Local  444      R(8)            8     1     0                         446                               
+ I                          Local  445      I(4)            4           scalar                                                      
+ I                          Local  446      I(4)            4           scalar                    446                               
+ N                          Dummy  438      I(4)            4           scalar   ARG,IN           443,444,446                       
+ NINTP_D                    Func   438      R(8)            8     1     0        PRIV                                               
+
+Page 38          Source Listing                  NINTP_D
+2017-04-18 11:09                                 pmat3.f90
+
+    448 !=============================================================================
+    449 pure function nintp_c(n,a)result(b)!                                    [intp]
+    450 !=============================================================================
+    451 integer,                    intent(in):: n
+    452 complex(dpc),dimension(0:n),intent(in):: a
+    453 complex(dpc),dimension(0:n)           :: b
+    454 integer                               :: i
+    455 b(0)=0; forall(i=1:n)b(i)=a(i-1)/i
+    456 end function nintp_c
+
+
+ENTRY POINTS
+
+  Name                         
+                               
+ pmat3_mp_nintp_c_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  449      C(16)           16    1     0        ARG,IN           455                               
+ B                          Local  453      C(16)           16    1     0                         455                               
+ I                          Local  454      I(4)            4           scalar                                                      
+ I                          Local  455      I(4)            4           scalar                    455                               
+ N                          Dummy  449      I(4)            4           scalar   ARG,IN           452,453,455                       
+ NINTP_C                    Func   449      C(16)           16    1     0        PRIV                                               
+
+Page 39          Source Listing                  NINTP_C
+2017-04-18 11:09                                 pmat3.f90
+
+    457 
+    458 !=============================================================================
+    459 pure function ninvp_d(n,a)result(b)!                                    [invp]
+    460 !=============================================================================
+    461 integer,                intent(in):: n
+    462 real(dp),dimension(0:n),intent(in):: a
+    463 real(dp),dimension(0:n)           :: b
+    464 integer                           :: i
+    465 real(dp)                          :: b0
+    466 b0=1/a(0); b(0)=b0; do i=1,n; b(i)=-b0*sum(b(i-1:0:-1)*a(1:i)); enddo
+    467 end function ninvp_d
+
+
+ENTRY POINTS
+
+  Name                         
+                               
+ pmat3_mp_ninvp_d_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  459      R(8)            8     1     0        ARG,IN           466                               
+ B                          Local  463      R(8)            8     1     0                         466                               
+ B0                         Local  465      R(8)            8           scalar                    466                               
+ I                          Local  464      I(4)            4           scalar                    466                               
+ N                          Dummy  459      I(4)            4           scalar   ARG,IN           462,463,466                       
+ NINVP_D                    Func   459      R(8)            8     1     0        PRIV                                               
+ SUM                        Func   466                                  scalar                    466                               
+
+Page 40          Source Listing                  NINVP_D
+2017-04-18 11:09                                 pmat3.f90
+
+    468 !=============================================================================
+    469 pure function ninvp_c(n,a)result(b)!                                    [invp]
+    470 !=============================================================================
+    471 integer,                    intent(in):: n
+    472 complex(dpc),dimension(0:n),intent(in):: a
+    473 complex(dpc),dimension(0:n)           :: b
+    474 integer                               :: i
+    475 complex(dpc)                          :: b0
+    476 b0=1/a(0); b(0)=b0; do i=1,n; b(i)=-b0*sum(b(i-1:0:-1)*a(1:i)); enddo
+    477 end function ninvp_c
+
+
+ENTRY POINTS
+
+  Name                         
+                               
+ pmat3_mp_ninvp_c_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  469      C(16)           16    1     0        ARG,IN           476                               
+ B                          Local  473      C(16)           16    1     0                         476                               
+ B0                         Local  475      C(16)           16          scalar                    476                               
+ I                          Local  474      I(4)            4           scalar                    476                               
+ N                          Dummy  469      I(4)            4           scalar   ARG,IN           472,473,476                       
+ NINVP_C                    Func   469      C(16)           16    1     0        PRIV                                               
+ SUM                        Func   476                                  scalar                    476                               
+
+Page 41          Source Listing                  NINVP_C
+2017-04-18 11:09                                 pmat3.f90
+
+    478 
+    479 !=============================================================================
+    480 pure function npowp_d(n,a,m)result(b)!                                  [powp]
+    481 !=============================================================================
+    482 integer,                intent(in):: n,m
+    483 real(dp),dimension(0:n),intent(in):: a
+    484 real(dp),dimension(0:n)           :: b
+    485 integer                           :: i
+    486 b=0; b(0)=1; do i=1,m; b=nmulpp_d(n,a,b); enddo
+    487 end function npowp_d
+
+
+ENTRY POINTS
+
+  Name                         
+                               
+ pmat3_mp_npowp_d_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  480      R(8)            8     1     0        ARG,IN           486                               
+ B                          Local  484      R(8)            8     1     0                         486                               
+ I                          Local  485      I(4)            4           scalar                    486                               
+ M                          Dummy  480      I(4)            4           scalar   ARG,IN           486                               
+ N                          Dummy  480      I(4)            4           scalar   ARG,IN           483,484,486                       
+ NPOWP_D                    Func   480      R(8)            8     1     0        PRIV                                               
+
+Page 42          Source Listing                  NPOWP_D
+2017-04-18 11:09                                 pmat3.f90
+
+    488 !=============================================================================
+    489 pure function npowp_c(n,a,m)result(b)!                                  [powp]
+    490 !=============================================================================
+    491 integer,                    intent(in):: n,m
+    492 complex(dpc),dimension(0:n),intent(in):: a
+    493 complex(dpc),dimension(0:n)           :: b
+    494 integer                               :: i
+    495 b=0; b(0)=1; do i=1,m; b=nmulpp_c(n,a,b); enddo
+    496 end function npowp_c
+
+
+ENTRY POINTS
+
+  Name                         
+                               
+ pmat3_mp_npowp_c_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  489      C(16)           16    1     0        ARG,IN           495                               
+ B                          Local  493      C(16)           16    1     0                         495                               
+ I                          Local  494      I(4)            4           scalar                    495                               
+ M                          Dummy  489      I(4)            4           scalar   ARG,IN           495                               
+ N                          Dummy  489      I(4)            4           scalar   ARG,IN           492,493,495                       
+ NPOWP_C                    Func   489      C(16)           16    1     0        PRIV                                               
+
+Page 43          Source Listing                  NPOWP_C
+2017-04-18 11:09                                 pmat3.f90
+
+    497 
+    498 !=============================================================================
+    499 pure function polps_d(a,s1)result(s2) !                                [polps]
+    500 !=============================================================================
+    501 real(dp),dimension(0:),intent(in):: a
+    502 real(dp),              intent(in):: s1
+    503 real(dp)                         :: s2
+    504 integer                          :: i,n
+    505 n=size(a)-1; s2=a(n); do i=n-1,0,-1; s2=s2*s1+a(i); enddo
+    506 end function polps_d
+
+
+ENTRY POINTS
+
+  Name                         
+                               
+ pmat3_mp_polps_d_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  499      R(8)            8     1     1        ARG,IN           505                               
+ I                          Local  504      I(4)            4           scalar                    505                               
+ N                          Local  504      I(4)            4           scalar                    505                               
+ POLPS_D                    Func   499      R(8)            8           scalar   PRIV                                               
+ S1                         Dummy  499      R(8)            8           scalar   ARG,IN           505                               
+ S2                         Local  503      R(8)            8           scalar                    505                               
+ SIZE                       Func   505                                  scalar                    505                               
+
+Page 44          Source Listing                  POLPS_D
+2017-04-18 11:09                                 pmat3.f90
+
+    507 !=============================================================================
+    508 pure function polps_c(a,s1)result(s2) !                                [polps]
+    509 !=============================================================================
+    510 complex(dpc),dimension(0:),intent(in):: a
+    511 complex(dpc),              intent(in):: s1
+    512 complex(dpc)                         :: s2
+    513 integer                              :: i,n
+    514 n=size(a)-1; s2=a(n); do i=n-1,0,-1; s2=s2*s1+a(i); enddo
+    515 end function polps_c
+
+
+ENTRY POINTS
+
+  Name                         
+                               
+ pmat3_mp_polps_c_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  508      C(16)           16    1     1        ARG,IN           514                               
+ I                          Local  513      I(4)            4           scalar                    514                               
+ N                          Local  513      I(4)            4           scalar                    514                               
+ POLPS_C                    Func   508      C(16)           16          scalar   PRIV                                               
+ S1                         Dummy  508      C(16)           16          scalar   ARG,IN           514                               
+ S2                         Local  512      C(16)           16          scalar                    514                               
+ SIZE                       Func   514                                  scalar                    514                               
+
+Page 45          Source Listing                  POLPS_C
+2017-04-18 11:09                                 pmat3.f90
+
+    516 !=============================================================================
+    517 pure function npolps_d(n,a,s1)result(s2) !                             [polps]
+    518 !=============================================================================
+    519 integer,                intent(in):: n
+    520 real(dp),dimension(0:n),intent(in):: a
+    521 real(dp),               intent(in):: s1
+    522 real(dp)                          :: s2
+    523 integer                           :: i
+    524 s2=a(n); do i=n-1,0,-1; s2=s2*s1+a(i); enddo
+    525 end function npolps_d
+
+
+ENTRY POINTS
+
+  Name                          
+                                
+ pmat3_mp_npolps_d_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  517      R(8)            8     1     0        ARG,IN           524                               
+ I                          Local  523      I(4)            4           scalar                    524                               
+ N                          Dummy  517      I(4)            4           scalar   ARG,IN           520,524                           
+ NPOLPS_D                   Func   517      R(8)            8           scalar   PRIV                                               
+ S1                         Dummy  517      R(8)            8           scalar   ARG,IN           524                               
+ S2                         Local  522      R(8)            8           scalar                    524                               
+
+Page 46          Source Listing                  NPOLPS_D
+2017-04-18 11:09                                 pmat3.f90
+
+    526 !=============================================================================
+    527 pure function npolps_c(n,a,s1)result(s2) !                             [polps]
+    528 !=============================================================================
+    529 integer,                    intent(in):: n
+    530 complex(dpc),dimension(0:n),intent(in):: a
+    531 complex(dpc),               intent(in):: s1
+    532 complex(dpc)                          :: s2
+    533 integer                               :: i
+    534 s2=a(n); do i=n-1,0,-1; s2=s2*s1+a(i); enddo
+    535 end function npolps_c
+
+
+ENTRY POINTS
+
+  Name                          
+                                
+ pmat3_mp_npolps_c_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  527      C(16)           16    1     0        ARG,IN           534                               
+ I                          Local  533      I(4)            4           scalar                    534                               
+ N                          Dummy  527      I(4)            4           scalar   ARG,IN           530,534                           
+ NPOLPS_C                   Func   527      C(16)           16          scalar   PRIV                                               
+ S1                         Dummy  527      C(16)           16          scalar   ARG,IN           534                               
+ S2                         Local  532      C(16)           16          scalar                    534                               
+
+Page 47          Source Listing                  NPOLPS_C
+2017-04-18 11:09                                 pmat3.f90
+
+    536 
+    537 !=============================================================================
+    538 pure function npolpp_d(n,a,b)result(c)!                                [polpp]
+    539 !=============================================================================
+    540 ! Up to degree n, get polynomial series c(x)=a(b(x))
+    541 !--------------------------------
+    542 integer,                intent(in):: n
+    543 real(dp),dimension(0:n),intent(in):: a,b
+    544 real(dp),dimension(0:n)           :: c
+    545 integer                           :: i
+    546 c=a(n); do i=n-1,0,-1; c=nmulpp_d(n,c,b)+a(i); enddo
+    547 end function npolpp_d
+
+
+ENTRY POINTS
+
+  Name                          
+                                
+ pmat3_mp_npolpp_d_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  538      R(8)            8     1     0        ARG,IN           546                               
+ B                          Dummy  538      R(8)            8     1     0        ARG,IN           546                               
+ C                          Local  544      R(8)            8     1     0                         546                               
+ I                          Local  545      I(4)            4           scalar                    546                               
+ N                          Dummy  538      I(4)            4           scalar   ARG,IN           543,544,546                       
+ NPOLPP_D                   Func   538      R(8)            8     1     0        PRIV                                               
+
+Page 48          Source Listing                  NPOLPP_D
+2017-04-18 11:09                                 pmat3.f90
+
+    548 !=============================================================================
+    549 pure function npolpp_c(n,a,b)result(c)!                                [polpp]
+    550 !=============================================================================
+    551 integer,                    intent(in):: n
+    552 complex(dpc),dimension(0:n),intent(in):: a,b
+    553 complex(dpc),dimension(0:n)           :: c
+    554 integer                               :: i
+    555 c=a(n); do i=n-1,0,-1; c=nmulpp_c(n,c,b)+a(i); enddo
+    556 end function npolpp_c
+
+
+ENTRY POINTS
+
+  Name                          
+                                
+ pmat3_mp_npolpp_c_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  549      C(16)           16    1     0        ARG,IN           555                               
+ B                          Dummy  549      C(16)           16    1     0        ARG,IN           555                               
+ C                          Local  553      C(16)           16    1     0                         555                               
+ I                          Local  554      I(4)            4           scalar                    555                               
+ N                          Dummy  549      I(4)            4           scalar   ARG,IN           552,553,555                       
+ NPOLPP_C                   Func   549      C(16)           16    1     0        PRIV                                               
+
+Page 49          Source Listing                  NPOLPP_C
+2017-04-18 11:09                                 pmat3.f90
+
+    557 
+    558 !-----------------------------------------------------------------------------
+    559 ! Banded matrix functions begin here:
+    560 
+    561 !=============================================================================
+    562 pure function copbm_d(m1,m2,mah1,mah2,aband)result(afull)!            [copbm]
+    563 !=============================================================================
+    564 integer,                          intent(IN ) :: m1, m2, mah1, mah2
+    565 real(dp),dimension(m1,-mah1:mah2),intent(IN ) :: aband
+    566 real(dp),dimension(m1,m2)                     :: afull
+    567 integer                                       :: i1,i2, i, j
+    568 !=============================================================================
+    569 afull=0.
+    570 do j=1,m1; i1=max(1,1-j); i2=min(m1,m2-j)
+    571    do i=i1,i2; afull(i,j+i)= aband(i,j); enddo
+    572 enddo
+    573 end function copbm_d
+
+
+ENTRY POINTS
+
+  Name                         
+                               
+ pmat3_mp_copbm_d_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ ABAND                      Dummy  562      R(8)            8     2     0        ARG,IN           571                               
+ AFULL                      Local  566      R(8)            8     2     0                         569,571                           
+ COPBM_D                    Func   562      R(8)            8     2     0        PRIV                                               
+ I                          Local  567      I(4)            4           scalar                    571                               
+ I1                         Local  567      I(4)            4           scalar                    570,571                           
+ I2                         Local  567      I(4)            4           scalar                    570,571                           
+ J                          Local  567      I(4)            4           scalar                    570,571                           
+ M1                         Dummy  562      I(4)            4           scalar   ARG,IN           565,566,570                       
+ M2                         Dummy  562      I(4)            4           scalar   ARG,IN           566,570                           
+ MAH1                       Dummy  562      I(4)            4           scalar   ARG,IN           565                               
+ MAH2                       Dummy  562      I(4)            4           scalar   ARG,IN           565                               
+ MAX                        Func   570                                  scalar                    570                               
+ MIN                        Func   570                                  scalar                    570                               
+
+Page 50          Source Listing                  COPBM_D
+2017-04-18 11:09                                 pmat3.f90
+
+    574 !=============================================================================
+    575 pure function copbm_c(m1,m2,mah1,mah2,aband)result(afull)!            [copbm]
+    576 !=============================================================================
+    577 integer,                              intent(IN ) :: m1, m2, mah1, mah2
+    578 complex(dpc),dimension(m1,-mah1:mah2),intent(IN ) :: aband
+    579 complex(dpc),dimension(m1,m2)                     :: afull
+    580 integer                                           :: i1,i2, i, j
+    581 !=============================================================================
+    582 afull=0.
+    583 do j=1,m1; i1=max(1,1-j); i2=min(m1,m2-j)
+    584    do i=i1,i2; afull(i,j+i)= aband(i,j); enddo
+    585 enddo
+    586 end function copbm_c
+
+
+ENTRY POINTS
+
+  Name                         
+                               
+ pmat3_mp_copbm_c_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ ABAND                      Dummy  575      C(16)           16    2     0        ARG,IN           584                               
+ AFULL                      Local  579      C(16)           16    2     0                         582,584                           
+ COPBM_C                    Func   575      C(16)           16    2     0        PRIV                                               
+ I                          Local  580      I(4)            4           scalar                    584                               
+ I1                         Local  580      I(4)            4           scalar                    583,584                           
+ I2                         Local  580      I(4)            4           scalar                    583,584                           
+ J                          Local  580      I(4)            4           scalar                    583,584                           
+ M1                         Dummy  575      I(4)            4           scalar   ARG,IN           578,579,583                       
+ M2                         Dummy  575      I(4)            4           scalar   ARG,IN           579,583                           
+ MAH1                       Dummy  575      I(4)            4           scalar   ARG,IN           578                               
+ MAH2                       Dummy  575      I(4)            4           scalar   ARG,IN           578                               
+ MAX                        Func   583                                  scalar                    583                               
+ MIN                        Func   583                                  scalar                    583                               
+
+Page 51          Source Listing                  COPBM_C
+2017-04-18 11:09                                 pmat3.f90
+
+    587 
+    588 !=============================================================================
+    589 pure function copmb_d(m1,m2,mah1,mah2,afull)result(aband)!             [copmb]
+    590 !=============================================================================
+    591 use pmat2, only: clipb 
+    592 integer,                          intent(IN ):: m1, m2, mah1, mah2
+    593 real(dp),dimension(m1,m2),        intent(IN ):: afull
+    594 real(dp),dimension(m1,-mah1:mah2)            :: aband
+    595 integer                                      :: i1,i2, i, j
+    596 !=============================================================================
+    597 call clipb(m1,m2,mah1,mah2,aband)
+    598 do j=1,m1; i1=max(1,1-j); i2=min(m1,m2-j)
+    599    do i=i1,i2; aband(i,j)= afull(i,j+i); enddo
+    600 enddo
+    601 end function copmb_d
+
+
+ENTRY POINTS
+
+  Name                         
+                               
+ pmat3_mp_copmb_d_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ ABAND                      Local  594      R(8)            8     2     0                         597,599                           
+ AFULL                      Dummy  589      R(8)            8     2     0        ARG,IN           599                               
+ CLIB_D                     Subr   597                                           PRIV             597                               
+ CLIPB                      Local  591                                  scalar                    591,597                           
+ COPMB_D                    Func   589      R(8)            8     2     0        PRIV                                               
+ I                          Local  595      I(4)            4           scalar                    599                               
+ I1                         Local  595      I(4)            4           scalar                    598,599                           
+ I2                         Local  595      I(4)            4           scalar                    598,599                           
+ J                          Local  595      I(4)            4           scalar                    598,599                           
+ M1                         Dummy  589      I(4)            4           scalar   ARG,IN           593,594,597,598                   
+ M2                         Dummy  589      I(4)            4           scalar   ARG,IN           593,597,598                       
+ MAH1                       Dummy  589      I(4)            4           scalar   ARG,IN           594,597                           
+ MAH2                       Dummy  589      I(4)            4           scalar   ARG,IN           594,597                           
+ MAX                        Func   598                                  scalar                    598                               
+ MIN                        Func   598                                  scalar                    598                               
+ PMAT2                      Module 591                                                            591                               
+
+Page 52          Source Listing                  COPMB_D
+2017-04-18 11:09                                 pmat3.f90
+
+    602 !=============================================================================
+    603 pure function copmb_c(m1,m2,mah1,mah2,afull)result(aband)!             [copmb]
+    604 !=============================================================================
+    605 use pmat2, only: clipb 
+    606 integer,                          intent(IN ):: m1, m2, mah1, mah2
+    607 complex(dpc),dimension(m1,m2),    intent(IN ):: afull
+    608 complex(dpc),dimension(m1,-mah1:mah2)        :: aband
+    609 integer                                      :: i1,i2, i, j
+    610 !=============================================================================
+    611 call clipb(m1,m2,mah1,mah2,aband)
+    612 do j=1,m1; i1=max(1,1-j); i2=min(m1,m2-j)
+    613    do i=i1,i2; aband(i,j)= afull(i,j+i); enddo
+    614 enddo
+    615 end function copmb_c
+
+
+ENTRY POINTS
+
+  Name                         
+                               
+ pmat3_mp_copmb_c_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ ABAND                      Local  608      C(16)           16    2     0                         611,613                           
+ AFULL                      Dummy  603      C(16)           16    2     0        ARG,IN           613                               
+ CLIB_C                     Subr   611                                           PRIV             611                               
+ CLIPB                      Local  605                                  scalar                    605,611                           
+ COPMB_C                    Func   603      C(16)           16    2     0        PRIV                                               
+ I                          Local  609      I(4)            4           scalar                    613                               
+ I1                         Local  609      I(4)            4           scalar                    612,613                           
+ I2                         Local  609      I(4)            4           scalar                    612,613                           
+ J                          Local  609      I(4)            4           scalar                    612,613                           
+ M1                         Dummy  603      I(4)            4           scalar   ARG,IN           607,608,611,612                   
+ M2                         Dummy  603      I(4)            4           scalar   ARG,IN           607,611,612                       
+ MAH1                       Dummy  603      I(4)            4           scalar   ARG,IN           608,611                           
+ MAH2                       Dummy  603      I(4)            4           scalar   ARG,IN           608,611                           
+ MAX                        Func   612                                  scalar                    612                               
+ MIN                        Func   612                                  scalar                    612                               
+ PMAT2                      Module 605                                                            605                               
+
+Page 53          Source Listing                  COPMB_C
+2017-04-18 11:09                                 pmat3.f90
+
+    616 
+    617 !=============================================================================
+    618 pure function transposeb_d(m1,m2,mah1,mah2,a)result(b)!           [transposeb]
+    619 !=============================================================================
+    620 use pmat2, only: clipb
+    621 integer,                          intent(IN):: m1, m2, mah1, mah2
+    622 real(dp),dimension(m1,-mah1:mah2),intent(IN):: a
+    623 real(dp),dimension(m2,-mah2:mah1)           :: b
+    624 integer                                     :: j, i
+    625 !=============================================================================
+    626 call CLIPB(m2,m1,mah2,mah1,b)
+    627 do j=-mah1,mah2
+    628    forall(i = max(1,1-j) : min(m1,m2-j))b(j+i,-j)=a(i,j)
+    629 enddo
+    630 end function transposeb_d
+
+
+ENTRY POINTS
+
+  Name                              
+                                    
+ pmat3_mp_transposeb_d_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  618      R(8)            8     2     0        ARG,IN           628                               
+ B                          Local  623      R(8)            8     2     0                         626,628                           
+ CLIB_D                     Subr   626                                           PRIV             626                               
+ CLIPB                      Local  620                                  scalar                    620,626                           
+ I                          Local  624      I(4)            4           scalar                                                      
+ I                          Local  628      I(4)            4           scalar                    628                               
+ J                          Local  624      I(4)            4           scalar                    627,628                           
+ M1                         Dummy  618      I(4)            4           scalar   ARG,IN           622,626,628                       
+ M2                         Dummy  618      I(4)            4           scalar   ARG,IN           623,626,628                       
+ MAH1                       Dummy  618      I(4)            4           scalar   ARG,IN           622,623,626,627                   
+ MAH2                       Dummy  618      I(4)            4           scalar   ARG,IN           622,623,626,627                   
+ MAX                        Func   628                                  scalar                    628                               
+ MIN                        Func   628                                  scalar                    628                               
+ PMAT2                      Module 620                                                            620                               
+ TRANSPOSEB_D               Func   618      R(8)            8     2     0        PRIV                                               
+
+Page 54          Source Listing                  TRANSPOSEB_D
+2017-04-18 11:09                                 pmat3.f90
+
+    631 !=============================================================================
+    632 pure function transposeb_c(m1,m2,mah1,mah2,a)result(b)!           [transposeb]
+    633 !=============================================================================
+    634 use pmat2, only: clipb
+    635 integer,                          intent(IN):: m1, m2, mah1, mah2
+    636 complex(dpc),dimension(m1,-mah1:mah2),intent(IN):: a
+    637 complex(dpc),dimension(m2,-mah2:mah1)           :: b
+    638 integer                                         :: j, i
+    639 !=============================================================================
+    640 call CLIPB(m2,m1,mah2,mah1,b)
+    641 do j=-mah1,mah2
+    642    forall(i = max(1,1-j) : min(m1,m2-j))b(j+i,-j)=a(i,j)
+    643 enddo
+    644 end function transposeb_c
+
+
+ENTRY POINTS
+
+  Name                              
+                                    
+ pmat3_mp_transposeb_c_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  632      C(16)           16    2     0        ARG,IN           642                               
+ B                          Local  637      C(16)           16    2     0                         640,642                           
+ CLIB_C                     Subr   640                                           PRIV             640                               
+ CLIPB                      Local  634                                  scalar                    634,640                           
+ I                          Local  638      I(4)            4           scalar                                                      
+ I                          Local  642      I(4)            4           scalar                    642                               
+ J                          Local  638      I(4)            4           scalar                    641,642                           
+ M1                         Dummy  632      I(4)            4           scalar   ARG,IN           636,640,642                       
+ M2                         Dummy  632      I(4)            4           scalar   ARG,IN           637,640,642                       
+ MAH1                       Dummy  632      I(4)            4           scalar   ARG,IN           636,637,640,641                   
+ MAH2                       Dummy  632      I(4)            4           scalar   ARG,IN           636,637,640,641                   
+ MAX                        Func   642                                  scalar                    642                               
+ MIN                        Func   642                                  scalar                    642                               
+ PMAT2                      Module 634                                                            634                               
+ TRANSPOSEB_C               Func   632      C(16)           16    2     0        PRIV                                               
+
+Page 55          Source Listing                  TRANSPOSEB_C
+2017-04-18 11:09                                 pmat3.f90
+
+    645 
+    646 !=============================================================================
+    647 pure function mulbb_d(m1,m2,mah1,mah2,mbh1,mbh2, a,b)result(c)!       [mulbb]
+    648 !=============================================================================
+    649 integer,                          intent(IN):: m1,m2,mah1,mah2,mbh1,mbh2
+    650 real(dp),dimension(m1,-mah1:mah2),intent(in):: a
+    651 real(dp),dimension(m2,-mbh1:mbh2),intent(in):: b
+    652 real(dp)                                    :: c(m1,-mah1-mbh1:mah2+mbh2)
+    653 integer:: j,k,jpk,i1,i2
+    654 c=0
+    655 do j=-mah1,mah2; do k=-mbh1,mbh2; jpk=j+k; i1=max(1,1-j); i2=min(m1,m2-j)
+    656    c(i1:i2,jpk)=c(i1:i2,jpk)+a(i1:i2,j)*b(j+i1:j+i2,k)
+    657 enddo;           enddo
+    658 end function mulbb_d
+
+
+ENTRY POINTS
+
+  Name                         
+                               
+ pmat3_mp_mulbb_d_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  647      R(8)            8     2     0        ARG,IN           656                               
+ B                          Dummy  647      R(8)            8     2     0        ARG,IN           656                               
+ C                          Local  652      R(8)            8     2     0                         654,656                           
+ I1                         Local  653      I(4)            4           scalar                    655,656                           
+ I2                         Local  653      I(4)            4           scalar                    655,656                           
+ J                          Local  653      I(4)            4           scalar                    655,656                           
+ JPK                        Local  653      I(4)            4           scalar                    655,656                           
+ K                          Local  653      I(4)            4           scalar                    655,656                           
+ M1                         Dummy  647      I(4)            4           scalar   ARG,IN           650,652,655                       
+ M2                         Dummy  647      I(4)            4           scalar   ARG,IN           651,655                           
+ MAH1                       Dummy  647      I(4)            4           scalar   ARG,IN           650,652,655                       
+ MAH2                       Dummy  647      I(4)            4           scalar   ARG,IN           650,652,655                       
+ MAX                        Func   655                                  scalar                    655                               
+ MBH1                       Dummy  647      I(4)            4           scalar   ARG,IN           651,652,655                       
+ MBH2                       Dummy  647      I(4)            4           scalar   ARG,IN           651,652,655                       
+ MIN                        Func   655                                  scalar                    655                               
+ MULBB_D                    Func   647      R(8)            8     2     0        PRIV                                               
+
+Page 56          Source Listing                  MULBB_D
+2017-04-18 11:09                                 pmat3.f90
+
+    659 
+    660 !=============================================================================
+    661 pure function mulbd_d(m1,m2,mah1,mah2,a,d)result(b)!                   [mulbd]
+    662 !=============================================================================
+    663 use pmat2, only: clipb
+    664 integer,                          intent(IN):: m1, m2, mah1, mah2
+    665 real(dp),dimension(m1,-mah1:mah2),intent(in):: a
+    666 real(dp),dimension(m2)           ,intent(in):: d
+    667 real(dp),dimension(m1,-mah1:mah2)           :: b
+    668 integer                                     :: j, i1,i2
+    669 !=============================================================================
+    670 call CLIPB(m1,m2,mah1,mah2,b)
+    671 do j=-mah1,mah2; i1=max(1,1-j); i2=min(m1,m2-j)
+    672    b(i1:i2,j)=a(i1:i2,j)*d(j+i1:j+i2)
+    673 enddo
+    674 end function mulbd_d
+
+
+ENTRY POINTS
+
+  Name                         
+                               
+ pmat3_mp_mulbd_d_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  661      R(8)            8     2     0        ARG,IN           672                               
+ B                          Local  667      R(8)            8     2     0                         670,672                           
+ CLIB_D                     Subr   670                                           PRIV             670                               
+ CLIPB                      Local  663                                  scalar                    663,670                           
+ D                          Dummy  661      R(8)            8     1     0        ARG,IN           672                               
+ I1                         Local  668      I(4)            4           scalar                    671,672                           
+ I2                         Local  668      I(4)            4           scalar                    671,672                           
+ J                          Local  668      I(4)            4           scalar                    671,672                           
+ M1                         Dummy  661      I(4)            4           scalar   ARG,IN           665,667,670,671                   
+ M2                         Dummy  661      I(4)            4           scalar   ARG,IN           666,670,671                       
+ MAH1                       Dummy  661      I(4)            4           scalar   ARG,IN           665,667,670,671                   
+ MAH2                       Dummy  661      I(4)            4           scalar   ARG,IN           665,667,670,671                   
+ MAX                        Func   671                                  scalar                    671                               
+ MIN                        Func   671                                  scalar                    671                               
+ MULBD_D                    Func   661      R(8)            8     2     0        PRIV                                               
+ PMAT2                      Module 663                                                            663                               
+
+Page 57          Source Listing                  MULBD_D
+2017-04-18 11:09                                 pmat3.f90
+
+    675 
+    676 !=============================================================================
+    677 pure function muldb_d(m1,m2,mah1,mah2,d,a)result(b)!                   [muldb]
+    678 !=============================================================================
+    679 use pmat2, only: clipb
+    680 integer,                          intent(IN):: m1, m2, mah1, mah2
+    681 real(dp),dimension(m1)           ,intent(in):: d
+    682 real(dp),dimension(m1,-mah1:mah2),intent(in):: a
+    683 real(dp),dimension(m1,-mah1:mah2)           :: b
+    684 integer                                     :: j
+    685 call CLIPB(m1,m2,mah1,mah2,b)
+    686 do j=-mah1,mah2; b(:,j)=d(:)*a(:,j); enddo
+    687 forall(j=-mah1:mah2)b(:,j)=d(:)*a(:,j)
+    688 end function muldb_d
+
+
+ENTRY POINTS
+
+  Name                         
+                               
+ pmat3_mp_muldb_d_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  677      R(8)            8     2     0        ARG,IN           686,687                           
+ B                          Local  683      R(8)            8     2     0                         685,686,687                       
+ CLIB_D                     Subr   685                                           PRIV             685                               
+ CLIPB                      Local  679                                  scalar                    679,685                           
+ D                          Dummy  677      R(8)            8     1     0        ARG,IN           686,687                           
+ J                          Local  684      I(4)            4           scalar                    686                               
+ J                          Local  687      I(4)            4           scalar                    687                               
+ M1                         Dummy  677      I(4)            4           scalar   ARG,IN           681,682,683,685                   
+ M2                         Dummy  677      I(4)            4           scalar   ARG,IN           685                               
+ MAH1                       Dummy  677      I(4)            4           scalar   ARG,IN           682,683,685,686,687               
+ MAH2                       Dummy  677      I(4)            4           scalar   ARG,IN           682,683,685,686,687               
+ MULDB_D                    Func   677      R(8)            8     2     0        PRIV                                               
+ PMAT2                      Module 679                                                            679                               
+
+Page 58          Source Listing                  MULDB_D
+2017-04-18 11:09                                 pmat3.f90
+
+    689 
+    690 !=============================================================================
+    691 pure function mulbv_d(m1,m2,mah1,mah2,a,v1)result(v2)!                 [mulbv]
+    692 !=============================================================================
+    693 integer,  intent(IN   ) :: m1, m2, mah1, mah2
+    694 real(dp),dimension(m1,-mah1:mah2),intent(in):: a
+    695 real(dp),dimension(m2),           intent(in):: v1
+    696 real(dp),dimension(m1)                      :: v2
+    697 integer                 :: j, i1,i2 
+    698 v2=0
+    699 do j=-mah1,mah2; i1=max(1,1-j); i2=min(m1,m2-j)
+    700    v2(i1:i2) = v2(i1:i2) + a(i1:i2,j)*v1(j+i1:j+i2)
+    701 enddo
+    702 end function mulbv_d
+
+
+ENTRY POINTS
+
+  Name                         
+                               
+ pmat3_mp_mulbv_d_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  691      R(8)            8     2     0        ARG,IN           700                               
+ I1                         Local  697      I(4)            4           scalar                    699,700                           
+ I2                         Local  697      I(4)            4           scalar                    699,700                           
+ J                          Local  697      I(4)            4           scalar                    699,700                           
+ M1                         Dummy  691      I(4)            4           scalar   ARG,IN           694,696,699                       
+ M2                         Dummy  691      I(4)            4           scalar   ARG,IN           695,699                           
+ MAH1                       Dummy  691      I(4)            4           scalar   ARG,IN           694,699                           
+ MAH2                       Dummy  691      I(4)            4           scalar   ARG,IN           694,699                           
+ MAX                        Func   699                                  scalar                    699                               
+ MIN                        Func   699                                  scalar                    699                               
+ MULBV_D                    Func   691      R(8)            8     1     0        PRIV                                               
+ V1                         Dummy  691      R(8)            8     1     0        ARG,IN           700                               
+ V2                         Local  696      R(8)            8     1     0                         698,700                           
+
+Page 59          Source Listing                  MULBV_D
+2017-04-18 11:09                                 pmat3.f90
+
+    703 
+    704 !=============================================================================
+    705 pure function mulbx_d(m1,m2,mah1,mah2,my,a,v1)result(v2)!              [mulbx]
+    706 !=============================================================================
+    707 integer,                          intent(IN) :: m1, m2, mah1, mah2, my
+    708 real(dp),dimension(m1,-mah1:mah2),intent(in):: a
+    709 real(dp),dimension(m2,my),        intent(in):: v1
+    710 real(dp),dimension(m1,my)                   :: v2
+    711 integer                                     :: i,j
+    712 v2=0
+    713 do j=-mah1,mah2
+    714    do i=max(1,1-j),min(m1,m2-j); v2(i,:)=v2(i,:)+a(i,j)*v1(i+j,:); enddo
+    715    forall(i=max(1,1-j):min(m1,m2-j))v2(i,:)=v2(i,:)+a(i,j)*v1(i+j,:)
+    716 enddo
+    717 end function mulbx_d
+
+
+ENTRY POINTS
+
+  Name                         
+                               
+ pmat3_mp_mulbx_d_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  705      R(8)            8     2     0        ARG,IN           714,715                           
+ I                          Local  711      I(4)            4           scalar                    714                               
+ I                          Local  715      I(4)            4           scalar                    715                               
+ J                          Local  711      I(4)            4           scalar                    713,714,715                       
+ M1                         Dummy  705      I(4)            4           scalar   ARG,IN           708,710,714,715                   
+ M2                         Dummy  705      I(4)            4           scalar   ARG,IN           709,714,715                       
+ MAH1                       Dummy  705      I(4)            4           scalar   ARG,IN           708,713                           
+ MAH2                       Dummy  705      I(4)            4           scalar   ARG,IN           708,713                           
+ MAX                        Func   714                                  scalar                    714,715                           
+ MIN                        Func   714                                  scalar                    714,715                           
+ MULBX_D                    Func   705      R(8)            8     2     0        PRIV                                               
+ MY                         Dummy  705      I(4)            4           scalar   ARG,IN           709,710                           
+ V1                         Dummy  705      R(8)            8     2     0        ARG,IN           714,715                           
+ V2                         Local  710      R(8)            8     2     0                         712,714,715                       
+
+Page 60          Source Listing                  MULBX_D
+2017-04-18 11:09                                 pmat3.f90
+
+    718 
+    719 !=============================================================================
+    720 pure function mulby_d(m1,m2,mah1,mah2,mx,a,v1)result(v2)!              [mulby]
+    721 !=============================================================================
+    722 integer,  intent(IN   ) :: m1, m2, mah1, mah2, mx
+    723 real(dp),dimension(m1,-mah1:mah2),intent(in):: a
+    724 real(dp),dimension(mx,m2),        intent(in):: v1
+    725 real(dp),dimension(mx,m1)                   :: v2
+    726 integer                                     :: i,j
+    727 v2=0
+    728 do j=-mah1,mah2
+    729    forall(i=max(1,1-j):min(m1,m2-j))v2(:,i)=v2(:,i)+a(i,j)*v1(:,i+j)
+    730 enddo
+    731 end function mulby_d
+
+
+ENTRY POINTS
+
+  Name                         
+                               
+ pmat3_mp_mulby_d_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  720      R(8)            8     2     0        ARG,IN           729                               
+ I                          Local  726      I(4)            4           scalar                                                      
+ I                          Local  729      I(4)            4           scalar                    729                               
+ J                          Local  726      I(4)            4           scalar                    728,729                           
+ M1                         Dummy  720      I(4)            4           scalar   ARG,IN           723,725,729                       
+ M2                         Dummy  720      I(4)            4           scalar   ARG,IN           724,729                           
+ MAH1                       Dummy  720      I(4)            4           scalar   ARG,IN           723,728                           
+ MAH2                       Dummy  720      I(4)            4           scalar   ARG,IN           723,728                           
+ MAX                        Func   729                                  scalar                    729                               
+ MIN                        Func   729                                  scalar                    729                               
+ MULBY_D                    Func   720      R(8)            8     2     0        PRIV                                               
+ MX                         Dummy  720      I(4)            4           scalar   ARG,IN           724,725                           
+ V1                         Dummy  720      R(8)            8     2     0        ARG,IN           729                               
+ V2                         Local  725      R(8)            8     2     0                         727,729                           
+
+Page 61          Source Listing                  MULBY_D
+2017-04-18 11:09                                 pmat3.f90
+
+    732 
+    733 !=============================================================================
+    734 pure function mulvb_d(m1,m2,mah1,mah2,v1,a)result(v2)!                 [mulvb]
+    735 !=============================================================================
+    736 integer,                          intent(IN) :: m1, m2, mah1, mah2
+    737 real(dp),dimension(m1),           intent(in):: v1
+    738 real(dp),dimension(m1,-mah1:mah2),intent(in):: a
+    739 real(dp),dimension(m2)                      :: v2
+    740 integer                                     :: j, i1,i2
+    741 v2=0
+    742 do j=-mah1,mah2; i1=max(1,1-j); i2=min(m1,m2-j)
+    743    v2(j+i1:j+i2)=v2(j+i1:j+i2)+v1(i1:i2)*a(i1:i2,j)
+    744 enddo
+    745 end function mulvb_d
+
+
+ENTRY POINTS
+
+  Name                         
+                               
+ pmat3_mp_mulvb_d_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  734      R(8)            8     2     0        ARG,IN           743                               
+ I1                         Local  740      I(4)            4           scalar                    742,743                           
+ I2                         Local  740      I(4)            4           scalar                    742,743                           
+ J                          Local  740      I(4)            4           scalar                    742,743                           
+ M1                         Dummy  734      I(4)            4           scalar   ARG,IN           737,738,742                       
+ M2                         Dummy  734      I(4)            4           scalar   ARG,IN           739,742                           
+ MAH1                       Dummy  734      I(4)            4           scalar   ARG,IN           738,742                           
+ MAH2                       Dummy  734      I(4)            4           scalar   ARG,IN           738,742                           
+ MAX                        Func   742                                  scalar                    742                               
+ MIN                        Func   742                                  scalar                    742                               
+ MULVB_D                    Func   734      R(8)            8     1     0        PRIV                                               
+ V1                         Dummy  734      R(8)            8     1     0        ARG,IN           743                               
+ V2                         Local  739      R(8)            8     1     0                         741,743                           
+
+Page 62          Source Listing                  MULVB_D
+2017-04-18 11:09                                 pmat3.f90
+
+    746 
+    747 !=============================================================================
+    748 pure function mulxb_d(m1,m2,mah1,mah2,my,v1,a)result(v2)!              [mulxb]
+    749 !=============================================================================
+    750 integer,                          intent(IN) :: m1, m2, mah1, mah2, my
+    751 real(dp),dimension(m1,my),        intent(in):: v1
+    752 real(dp),dimension(m1,-mah1:mah2),intent(in):: a
+    753 real(dp),dimension(m2,my)                   :: v2
+    754 integer                                     :: i,j
+    755 v2=0
+    756 do j=-mah1,mah2
+    757    forall(i=max(1,1-j):min(m1,m2-j))v2(j+i,:)=v2(j+i,:)+v1(i,:)*a(i,j)
+    758 enddo
+    759 end function mulxb_d
+
+
+ENTRY POINTS
+
+  Name                         
+                               
+ pmat3_mp_mulxb_d_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  748      R(8)            8     2     0        ARG,IN           757                               
+ I                          Local  754      I(4)            4           scalar                                                      
+ I                          Local  757      I(4)            4           scalar                    757                               
+ J                          Local  754      I(4)            4           scalar                    756,757                           
+ M1                         Dummy  748      I(4)            4           scalar   ARG,IN           751,752,757                       
+ M2                         Dummy  748      I(4)            4           scalar   ARG,IN           753,757                           
+ MAH1                       Dummy  748      I(4)            4           scalar   ARG,IN           752,756                           
+ MAH2                       Dummy  748      I(4)            4           scalar   ARG,IN           752,756                           
+ MAX                        Func   757                                  scalar                    757                               
+ MIN                        Func   757                                  scalar                    757                               
+ MULXB_D                    Func   748      R(8)            8     2     0        PRIV                                               
+ MY                         Dummy  748      I(4)            4           scalar   ARG,IN           751,753                           
+ V1                         Dummy  748      R(8)            8     2     0        ARG,IN           757                               
+ V2                         Local  753      R(8)            8     2     0                         755,757                           
+
+Page 63          Source Listing                  MULXB_D
+2017-04-18 11:09                                 pmat3.f90
+
+    760 
+    761 !=============================================================================
+    762 pure function mulyb_d(m1,m2,mah1,mah2,mx,v1,a)result(v2)!              [mulyb]
+    763 !=============================================================================
+    764 integer,                          intent(IN):: m1, m2, mah1, mah2, mx
+    765 real(dp),dimension(mx,m1),        intent(in):: v1
+    766 real(dp),dimension(m1,-mah1:mah2),intent(in):: a
+    767 real(dp),dimension(mx,m2)                   :: v2
+    768 integer                                     :: i,j
+    769 v2=0
+    770 do j=-mah1,mah2
+    771    forall(i=max(1,1-j):min(m1,m2-j))v2(:,j+i)=v2(:,j+i)+v1(:,i)*a(i,j)
+    772 enddo
+    773 end function mulyb_d
+
+
+ENTRY POINTS
+
+  Name                         
+                               
+ pmat3_mp_mulyb_d_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  762      R(8)            8     2     0        ARG,IN           771                               
+ I                          Local  768      I(4)            4           scalar                                                      
+ I                          Local  771      I(4)            4           scalar                    771                               
+ J                          Local  768      I(4)            4           scalar                    770,771                           
+ M1                         Dummy  762      I(4)            4           scalar   ARG,IN           765,766,771                       
+ M2                         Dummy  762      I(4)            4           scalar   ARG,IN           767,771                           
+ MAH1                       Dummy  762      I(4)            4           scalar   ARG,IN           766,770                           
+ MAH2                       Dummy  762      I(4)            4           scalar   ARG,IN           766,770                           
+ MAX                        Func   771                                  scalar                    771                               
+ MIN                        Func   771                                  scalar                    771                               
+ MULYB_D                    Func   762      R(8)            8     2     0        PRIV                                               
+ MX                         Dummy  762      I(4)            4           scalar   ARG,IN           765,767                           
+ V1                         Dummy  762      R(8)            8     2     0        ARG,IN           771                               
+ V2                         Local  767      R(8)            8     2     0                         769,771                           
+
+Page 64          Source Listing                  MULYB_D
+2017-04-18 11:09                                 pmat3.f90
+
+    774 
+    775 !=============================================================================
+    776 function L1Lb_d(m,mah,a)result(b)!                                      [L1Lb]
+    777 !=============================================================================
+    778 integer,                        intent(IN ):: m, mah
+    779 real(dp),dimension(m,-mah:mah), intent(IN ):: a
+    780 real(dp),dimension(m,-mah:0)               :: b
+    781 logical                                    :: ff
+    782 b=fL1Lb_d(m,mah,a,ff)
+    783 if(ff)stop 'In L1Lb_d; matrix non-positive, cannot continue'
+    784 end function L1Lb_d
+
+
+ENTRY POINTS
+
+  Name                        
+                              
+ pmat3_mp_l1lb_d_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  776      R(8)            8     2     0        ARG,IN           782                               
+ B                          Local  780      R(8)            8     2     0                         782                               
+ FF                         Local  781      L(4)            4           scalar                    782,783                           
+ L1LB_D                     Func   776      R(8)            8     2     0        PRIV             822                               
+ M                          Dummy  776      I(4)            4           scalar   ARG,IN           779,780,782                       
+ MAH                        Dummy  776      I(4)            4           scalar   ARG,IN           779,780,782                       
+
+Page 65          Source Listing                  L1LB_D
+2017-04-18 11:09                                 pmat3.f90
+
+    785 !=============================================================================
+    786 function fL1Lb_d(m,mah,a,ff)result(b)!                                  [L1Lb]
+    787 !=============================================================================
+    788 use pietc, only: T,F
+    789 use pmat2, only: clipb
+    790 integer,                        intent(IN ):: m, mah
+    791 real(dp),dimension(m,-mah:mah), intent(IN ):: a
+    792 logical,                        intent(out):: ff ! <- failure flag
+    793 real(dp),dimension(m,-mah:0)               :: b
+    794 integer                                    :: i, j,jmi
+    795 real(dp)                                   :: s
+    796 !=============================================================================
+    797 ff=F
+    798 call CLIPB(m,m,mah,0,b)
+    799 do j=1,m
+    800    s=a(j,0)-dot_product(b(j,-mah:-1),b(j,-mah:-1))
+    801    if(s <= 0)then
+    802       ff=T
+    803       write(41,'("In fL1LB_d; non-positivity at diagonal index",i5)'),j
+    804       return
+    805    endif
+    806    s=sqrt(s); b(j,0)=s; s=1/s
+    807    do i=j+1,min(m,j+mah); jmi=j-i
+    808       b(i,jmi)=s*(a(i,jmi)-dot_product(b(i,-mah:jmi-1),b(j,-mah-jmi:-1)))
+    809    enddo
+    810 enddo
+    811 end function fL1Lb_d
+
+
+ENTRY POINTS
+
+  Name                         
+                               
+ pmat3_mp_fl1lb_d_             
+
+Page 66          Source Listing                  FL1LB_D
+2017-04-18 11:09 Symbol Table                    pmat3.f90
+
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  786      R(8)            8     2     0        ARG,IN           800,808                           
+ B                          Local  793      R(8)            8     2     0                         798,800,806,808                   
+ CLIB_D                     Subr   798                                           PRIV             798                               
+ CLIPB                      Local  789                                  scalar                    789,798                           
+ DOT_PRODUCT                Func   800                                  scalar                    800,808                           
+ F                          Param  788      L(4)            4           scalar                    788,797                           
+ FF                         Dummy  786      L(4)            4           scalar   ARG,OUT          797,802                           
+ FL1LB_D                    Func   786      R(8)            8     2     0        PRIV             782,834                           
+ I                          Local  794      I(4)            4           scalar                    807,808                           
+ J                          Local  794      I(4)            4           scalar                    799,800,803,806,807,808           
+ JMI                        Local  794      I(4)            4           scalar                    807,808                           
+ M                          Dummy  786      I(4)            4           scalar   ARG,IN           791,793,798,799,807               
+ MAH                        Dummy  786      I(4)            4           scalar   ARG,IN           791,793,798,800,807,808           
+ MIN                        Func   807                                  scalar                    807                               
+ PIETC                      Module 788                                                            788                               
+ PMAT2                      Module 789                                                            789                               
+ S                          Local  795      R(8)            8           scalar                    800,801,806,808                   
+ SQRT                       Func   806                                  scalar                    806                               
+ T                          Param  788      L(4)            4           scalar                    788,802                           
+
+Page 67          Source Listing                  FL1LB_D
+2017-04-18 11:09                                 pmat3.f90
+
+    812 
+    813 !=============================================================================
+    814 function u1ub_d(m,mah,a)result(b)!                                      [u1ub]
+    815 !=============================================================================
+    816 integer,                        intent(IN ):: m, mah
+    817 real(dp),dimension(m,-mah:mah), intent(IN ):: a
+    818 real(dp),dimension(m,-mah:0)               :: b
+    819 real(dp),dimension(m,-mah:mah)             :: at
+    820 real(dp),dimension(m,-mah:0  )             :: bt
+    821 !=============================================================================
+    822 at=a(m:1:-1,mah:-mah:-1); bt=l1lb_d(m,mah,at); b=bt(m:1:-1,0:-mah:-1)
+    823 end function u1ub_d
+
+
+ENTRY POINTS
+
+  Name                        
+                              
+ pmat3_mp_u1ub_d_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  814      R(8)            8     2     0        ARG,IN           822                               
+ AT                         Local  819      R(8)            8     2     0                         822                               
+ B                          Local  818      R(8)            8     2     0                         822                               
+ BT                         Local  820      R(8)            8     2     0                         822                               
+ M                          Dummy  814      I(4)            4           scalar   ARG,IN           817,818,819,820,822               
+ MAH                        Dummy  814      I(4)            4           scalar   ARG,IN           817,818,819,820,822               
+ U1UB_D                     Func   814      R(8)            8     2     0        PRIV                                               
+
+Page 68          Source Listing                  U1UB_D
+2017-04-18 11:09                                 pmat3.f90
+
+    824 !=============================================================================
+    825 function fu1ub_d(m,mah,a,ff)result(b)!                                  [u1ub]
+    826 !=============================================================================
+    827 integer,                        intent(IN ):: m, mah
+    828 real(dp),dimension(m,-mah:mah), intent(IN ):: a
+    829 logical,                        intent(out):: ff ! <- failure flag
+    830 real(dp),dimension(m,-mah:0)               :: b
+    831 real(dp),dimension(m,-mah:mah)             :: at
+    832 real(dp),dimension(m,-mah:0  )             :: bt
+    833 !=============================================================================
+    834 at=a(m:1:-1,mah:-mah:-1); bt=fl1lb_d(m,mah,at,ff)
+    835 if(ff)then; write(41,'("In fulub_d; non-positive matrix")'); return; endif
+    836 b=bt(m:1:-1,0:-mah:-1)
+    837 end function fu1ub_d
+
+
+ENTRY POINTS
+
+  Name                         
+                               
+ pmat3_mp_fu1ub_d_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  825      R(8)            8     2     0        ARG,IN           834                               
+ AT                         Local  831      R(8)            8     2     0                         834                               
+ B                          Local  830      R(8)            8     2     0                         836                               
+ BT                         Local  832      R(8)            8     2     0                         834,836                           
+ FF                         Dummy  825      L(4)            4           scalar   ARG,OUT          834,835                           
+ FU1UB_D                    Func   825      R(8)            8     2     0        PRIV                                               
+ M                          Dummy  825      I(4)            4           scalar   ARG,IN           828,830,831,832,834,836           
+ MAH                        Dummy  825      I(4)            4           scalar   ARG,IN           828,830,831,832,834,836           
+
+Page 69          Source Listing                  FU1UB_D
+2017-04-18 11:09                                 pmat3.f90
+
+    838 
+    839 !=============================================================================
+    840 function LdLb_d(m,mah,a)result(b)!                                      [LdLb]
+    841 !=============================================================================
+    842 integer,                       intent(IN):: m, mah
+    843 real(dp),dimension(m,-mah:mah),intent(IN):: a
+    844 real(dp),dimension(m,-mah:0)             :: b
+    845 logical                                  :: ff
+    846 b=fLdLb_d(m,mah,a,ff)
+    847 if(ff)stop 'In LdLb_d; matrix non-positive, unable to continue'
+    848 end function LdLb_d
+
+
+ENTRY POINTS
+
+  Name                        
+                              
+ pmat3_mp_ldlb_d_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  840      R(8)            8     2     0        ARG,IN           846                               
+ B                          Local  844      R(8)            8     2     0                         846                               
+ FF                         Local  845      L(4)            4           scalar                    846,847                           
+ LDLB_D                     Func   840      R(8)            8     2     0        PRIV             895                               
+ M                          Dummy  840      I(4)            4           scalar   ARG,IN           843,844,846                       
+ MAH                        Dummy  840      I(4)            4           scalar   ARG,IN           843,844,846                       
+
+Page 70          Source Listing                  LDLB_D
+2017-04-18 11:09                                 pmat3.f90
+
+    849 !=============================================================================
+    850 function fLdLb_d(m,mah,a,ff)result(b)!                                   [LdLb]
+    851 !=============================================================================
+    852 use pietc, only: T,F
+    853 use pmat2, only: clipb
+    854 integer,                       intent(IN ):: m, mah
+    855 real(dp),dimension(m,-mah:mah),intent(IN ):: a
+    856 logical,                       intent(out):: ff ! <- failure flag
+    857 real(dp),dimension(m,-mah:0)              :: b
+    858 integer                                   :: i, j,k,jmi,lj,li
+    859 real(dp)                                  :: s,te
+    860 !=============================================================================
+    861 ff=F
+    862 call clipb(m,m,mah,0,b); b(:,0)=1
+    863 do j=1,m; lj=max(-mah,1-j)
+    864    s=a(j,0)
+    865    do k=lj,-1
+    866       s=s-b(j,k)**2*b(k+j,0)
+    867    enddo
+    868    if(s <= 0)then
+    869       ff=T
+    870       write(41,'(" In fLDLB_d; non-positivity at diagonal index",i5)'),j
+    871       return
+    872    endif
+    873    b(j,0)=s; s=1/s
+    874    do i=j+1,min(m,j+mah); jmi=j-i  
+    875       li=max(-mah,1-i); 
+    876       lj=li-jmi; 
+    877       te=a(i,jmi)
+    878       do k=li,jmi-1
+    879          te=te-b(i,k)*b(j,k-jmi)*b(i+k,0)
+    880       enddo
+    881       b(i,jmi)=s*te
+    882    enddo
+    883 enddo
+    884 b(:,0)=1/b(:,0)
+    885 end function fLdLb_d
+
+Page 71          Source Listing                  FLDLB_D
+2017-04-18 11:09 Entry Points                    pmat3.f90
+
+
+
+ENTRY POINTS
+
+  Name                         
+                               
+ pmat3_mp_fldlb_d_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  850      R(8)            8     2     0        ARG,IN           864,877                           
+ B                          Local  857      R(8)            8     2     0                         862,866,873,879,881,884           
+ CLIB_D                     Subr   862                                           PRIV             862                               
+ CLIPB                      Local  853                                  scalar                    853,862                           
+ F                          Param  852      L(4)            4           scalar                    852,861                           
+ FF                         Dummy  850      L(4)            4           scalar   ARG,OUT          861,869                           
+ FLDLB_D                    Func   850      R(8)            8     2     0        PRIV             846,906                           
+ I                          Local  858      I(4)            4           scalar                    874,875,877,879,881               
+ J                          Local  858      I(4)            4           scalar                    863,864,866,870,873,874,879       
+ JMI                        Local  858      I(4)            4           scalar                    874,876,877,878,879,881           
+ K                          Local  858      I(4)            4           scalar                    865,866,878,879                   
+ LI                         Local  858      I(4)            4           scalar                    875,876,878                       
+ LJ                         Local  858      I(4)            4           scalar                    863,865,876                       
+ M                          Dummy  850      I(4)            4           scalar   ARG,IN           855,857,862,863,874               
+ MAH                        Dummy  850      I(4)            4           scalar   ARG,IN           855,857,862,863,874,875           
+ MAX                        Func   863                                  scalar                    863,875                           
+ MIN                        Func   874                                  scalar                    874                               
+ PIETC                      Module 852                                                            852                               
+ PMAT2                      Module 853                                                            853                               
+ S                          Local  859      R(8)            8           scalar                    864,866,868,873,881               
+ T                          Param  852      L(4)            4           scalar                    852,869                           
+ TE                         Local  859      R(8)            8           scalar                    877,879,881                       
+
+Page 72          Source Listing                  FLDLB_D
+2017-04-18 11:09                                 pmat3.f90
+
+    886 
+    887 !=============================================================================
+    888 function udub_d(m,mah,a)result(b)!                                      [udub]
+    889 !=============================================================================
+    890 integer,                       intent(in):: m, mah
+    891 real(dp),dimension(m,-mah:mah),intent(in):: a
+    892 real(dp),dimension(m,0:mah)              :: b
+    893 real(dp),dimension(m,-mah:mah)           :: at
+    894 real(dp),dimension(m,-mah:0)             :: bt
+    895 at=a(m:1:-1,mah:-mah:-1);bt=LdLb_d(m,mah,at); b=bt(m:1:-1, 0:-mah:-1)
+    896 end function udub_d
+
+
+ENTRY POINTS
+
+  Name                        
+                              
+ pmat3_mp_udub_d_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  888      R(8)            8     2     0        ARG,IN           895                               
+ AT                         Local  893      R(8)            8     2     0                         895                               
+ B                          Local  892      R(8)            8     2     0                         895                               
+ BT                         Local  894      R(8)            8     2     0                         895                               
+ M                          Dummy  888      I(4)            4           scalar   ARG,IN           891,892,893,894,895               
+ MAH                        Dummy  888      I(4)            4           scalar   ARG,IN           891,892,893,894,895               
+ UDUB_D                     Func   888      R(8)            8     2     0        PRIV                                               
+
+Page 73          Source Listing                  UDUB_D
+2017-04-18 11:09                                 pmat3.f90
+
+    897 !=============================================================================
+    898 function fudub_d(m,mah,a,ff)result(b)!                                  [udub]
+    899 !=============================================================================
+    900 integer,                       intent(in ):: m, mah
+    901 real(dp),dimension(m,-mah:mah),intent(in ):: a
+    902 logical,                       intent(out):: ff ! <- failure flag
+    903 real(dp),dimension(m,0:mah)               :: b
+    904 real(dp),dimension(m,-mah:mah)            :: at
+    905 real(dp),dimension(m,-mah:0)              :: bt
+    906 at=a(m:1:-1,mah:-mah:-1);bt=fLdLb_d(m,mah,at,ff)
+    907 if(ff)then; write(41,'("In fudub_d; matrix non-positive")'); return; endif
+    908 b=bt(m:1:-1, 0:-mah:-1)
+    909 end function fudub_d
+
+
+ENTRY POINTS
+
+  Name                         
+                               
+ pmat3_mp_fudub_d_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  898      R(8)            8     2     0        ARG,IN           906                               
+ AT                         Local  904      R(8)            8     2     0                         906                               
+ B                          Local  903      R(8)            8     2     0                         908                               
+ BT                         Local  905      R(8)            8     2     0                         906,908                           
+ FF                         Dummy  898      L(4)            4           scalar   ARG,OUT          906,907                           
+ FUDUB_D                    Func   898      R(8)            8     2     0        PRIV                                               
+ M                          Dummy  898      I(4)            4           scalar   ARG,IN           901,903,904,905,906,908           
+ MAH                        Dummy  898      I(4)            4           scalar   ARG,IN           901,903,904,905,906,908           
+
+Page 74          Source Listing                  FUDUB_D
+2017-04-18 11:09 Symbol Table                    pmat3.f90
+
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ COPBM                      Local  57                                   scalar                    34                                
+ COPMB                      Local  58                                   scalar                    34                                
+ DIAG                       Local  40                                   scalar                    33                                
+ DIFP                       Local  48                                   scalar                    33                                
+ INTP                       Local  49                                   scalar                    33                                
+ INV                        Local  44                                   scalar                    33                                
+ INVP                       Local  50                                   scalar                    33                                
+ L1LB                       Local  69                                   scalar                    35                                
+ LDLB                       Local  71                                   scalar                    35                                
+ MULBB                      Local  60                                   scalar                    34                                
+ MULBD                      Local  61                                   scalar                    34                                
+ MULBV                      Local  63                                   scalar                    34                                
+ MULBX                      Local  64                                   scalar                    34                                
+ MULBY                      Local  65                                   scalar                    34                                
+ MULDB                      Local  62                                   scalar                    34                                
+ MULDM                      Local  39                                   scalar                    33                                
+ MULMD                      Local  38                                   scalar                    33                                
+ MULPP                      Local  47                                   scalar                    33                                
+ MULVB                      Local  66                                   scalar                    35                                
+ MULXB                      Local  67                                   scalar                    35                                
+ MULYB                      Local  68                                   scalar                    35                                
+ NORV                       Local  37                                   scalar                    33                                
+ PKIND                      Module 30                                                             30                                
+ PMAT3                      Module 28                                                                                               
+ POLPP                      Local  54                                   scalar                    33                                
+ POLPS                      Local  52                                   scalar                    33                                
+ POWP                       Local  51                                   scalar                    33                                
+ TRANSPOSEB                 Local  59                                   scalar                    34                                
+ U1UB                       Local  70                                   scalar                    35                                
+ UDUB                       Local  72                                   scalar                    35                                
+
+Page 75          Source Listing                  FUDUB_D
+2017-04-18 11:09                                 pmat3.f90
+
+    910 
+    911 
+    912 end module pmat3
+
+Page 76          Source Listing                  FUDUB_D
+2017-04-18 11:09 Subprograms/Common Blocks       pmat3.f90
+
+
+
+SUBPROGRAMS/COMMON BLOCKS
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ COPBM_C                    Func   575      C(16)           16    2     0        PRIV                                               
+ COPBM_D                    Func   562      R(8)            8     2     0        PRIV                                               
+ COPMB_C                    Func   603      C(16)           16    2     0        PRIV                                               
+ COPMB_D                    Func   589      R(8)            8     2     0        PRIV                                               
+ DIAGDOFM_C                 Func   214      C(16)           16    1     0        PRIV                                               
+ DIAGDOFM_D                 Func   204      R(8)            8     1     0        PRIV                                               
+ DIAGDOFM_I                 Func   194      I(4)            4     1     0        PRIV                                               
+ DIAGMOFD_C                 Func   183      C(16)           16    2     0        PRIV                                               
+ DIAGMOFD_D                 Func   173      R(8)            8     2     0        PRIV                                               
+ DIAGMOFD_I                 Func   163      I(4)            4     2     0        PRIV                                               
+ DIFP_C                     Func   391      C(16)           16    1     0        PRIV                                               
+ DIFP_D                     Func   381      R(8)            8     1     0        PRIV                                               
+ FINVMV_C                   Func   302      C(16)           16    1     0        PRIV                                               
+ FINVMV_D                   Func   290      R(8)            8     1     0        PRIV                                               
+ FINVM_C                    Func   255      C(16)           16    2     0        PRIV                                               
+ FINVM_D                    Func   245      R(8)            8     2     0        PRIV                                               
+ FL1LB_D                    Func   786      R(8)            8     2     0        PRIV             782,834                           
+ FLDLB_D                    Func   850      R(8)            8     2     0        PRIV             846,906                           
+ FU1UB_D                    Func   825      R(8)            8     2     0        PRIV                                               
+ FUDUB_D                    Func   898      R(8)            8     2     0        PRIV                                               
+ INTP_C                     Func   430      C(16)           16    1     0        PRIV                                               
+ INTP_D                     Func   420      R(8)            8     1     0        PRIV                                               
+ INVMV_C                    Func   278      C(16)           16    1     0        PRIV                                               
+ INVMV_D                    Func   266      R(8)            8     1     0        PRIV                                               
+ INVM_C                     Func   235      C(16)           16    2     0        PRIV                                               
+ INVM_D                     Func   225      R(8)            8     2     0        PRIV                                               
+ L1LB_D                     Func   776      R(8)            8     2     0        PRIV             822                               
+ LDLB_D                     Func   840      R(8)            8     2     0        PRIV             895                               
+ MULBB_D                    Func   647      R(8)            8     2     0        PRIV                                               
+ MULBD_D                    Func   661      R(8)            8     2     0        PRIV                                               
+ MULBV_D                    Func   691      R(8)            8     1     0        PRIV                                               
+ MULBX_D                    Func   705      R(8)            8     2     0        PRIV                                               
+ MULBY_D                    Func   720      R(8)            8     2     0        PRIV                                               
+ MULDB_D                    Func   677      R(8)            8     2     0        PRIV                                               
+ MULDM_C                    Func   151      C(16)           16    2     0        PRIV                                               
+ MULDM_D                    Func   140      R(8)            8     2     0        PRIV                                               
+ MULDM_I                    Func   129      I(4)            4     2     0        PRIV                                               
+ MULMD_C                    Func   117      C(16)           16    2     0        PRIV                                               
+ MULMD_D                    Func   106      R(8)            8     2     0        PRIV                                               
+ MULMD_I                    Func   95       I(4)            4     2     0        PRIV                                               
+ MULPP_C                    Func   336      C(16)           16    1     0        PRIV                                               
+ MULPP_D                    Func   327      R(8)            8     1     0        PRIV                                               
+ MULPP_I                    Func   315      I(4)            4     1     0        PRIV                                               
+ MULVB_D                    Func   734      R(8)            8     1     0        PRIV                                               
+ MULXB_D                    Func   748      R(8)            8     2     0        PRIV                                               
+ MULYB_D                    Func   762      R(8)            8     2     0        PRIV                                               
+ NDIFP_C                    Func   410      C(16)           16    1     0        PRIV                                               
+ NDIFP_D                    Func   399      R(8)            8     1     0        PRIV                                               
+ NINTP_C                    Func   449      C(16)           16    1     0        PRIV                                               
+ NINTP_D                    Func   438      R(8)            8     1     0        PRIV                                               
+ NINVP_C                    Func   469      C(16)           16    1     0        PRIV                                               
+
+Page 77          Source Listing                  FUDUB_D
+2017-04-18 11:09 Subprograms/Common Blocks       pmat3.f90
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ NINVP_D                    Func   459      R(8)            8     1     0        PRIV                                               
+ NMULPP_C                   Func   370      C(16)           16    1     0        PRIV             495,555                           
+ NMULPP_D                   Func   360      R(8)            8     1     0        PRIV             486,546                           
+ NMULPP_I                   Func   346      I(4)            4     1     0        PRIV                                               
+ NORV_C                     Func   85       R(8)            8           scalar   PRIV                                               
+ NORV_D                     Func   76       R(8)            8           scalar   PRIV                                               
+ NPOLPP_C                   Func   549      C(16)           16    1     0        PRIV                                               
+ NPOLPP_D                   Func   538      R(8)            8     1     0        PRIV                                               
+ NPOLPS_C                   Func   527      C(16)           16          scalar   PRIV                                               
+ NPOLPS_D                   Func   517      R(8)            8           scalar   PRIV                                               
+ NPOWP_C                    Func   489      C(16)           16    1     0        PRIV                                               
+ NPOWP_D                    Func   480      R(8)            8     1     0        PRIV                                               
+ PMAT3                      Module 28                                                                                               
+ POLPS_C                    Func   508      C(16)           16          scalar   PRIV                                               
+ POLPS_D                    Func   499      R(8)            8           scalar   PRIV                                               
+ TRANSPOSEB_C               Func   632      C(16)           16    2     0        PRIV                                               
+ TRANSPOSEB_D               Func   618      R(8)            8     2     0        PRIV                                               
+ U1UB_D                     Func   814      R(8)            8     2     0        PRIV                                               
+ UDUB_D                     Func   888      R(8)            8     2     0        PRIV                                               
+
+COMPILER OPTIONS BEING USED
+
+       -align noall                          -align nonone
+       -align nocommons                      -align nodcommons
+       -align noqcommons                     -align nozcommons
+       -align records                        -align nosequence
+       -align norec1byte                     -align norec2byte
+       -align norec4byte                     -align norec8byte
+       -align norec16byte                    -align norec32byte
+       -align norec64byte                    -align noarray8byte
+       -align noarray16byte                  -align noarray32byte
+       -align noarray64byte                  -align noarray128byte
+       -align noarray256byte                 -altparam
+       -assume accuracy_sensitive            -assume nobscc
+       -assume nobuffered_io                 -assume nobuffered_stdout
+       -assume nobyterecl                    -assume nocc_omp
+       -assume nocstring                     -assume nodummy_aliases
+       -assume nofpe_summary                 -assume noieee_fpe_flags
+       -assume nominus0                      -assume noold_boz
+       -assume old_complex_align             -assume old_unit_star
+       -assume noold_ldout_format            -assume noold_logical_ldio
+       -assume old_maxminloc                 -assume old_xor
+       -assume noprotect_allocates           -assume protect_constants
+       -assume noprotect_parens              -assume split_common
+       -assume source_include                -assume nostd_intent_in
+       -assume std_minus0_rounding           -assume nostd_mod_proc_name
+       -assume std_value                     -assume norealloc_lhs
+       -assume underscore                    -assume no2underscores
+  no   -auto                                 -auto_scalar
+  no   -bintext                              -ccdefault default
+       -check noargs                         -check noarg_temp_created
+       -check noassume                       -check nobounds
+       -check noformat                       -check nooutput_conversion
+       -check nooverflow                     -check nopointers
+       -check power                          -check noshape
+
+Page 78          Source Listing                  FUDUB_D
+2017-04-18 11:09                                 pmat3.f90
+
+       -check nostack                        -check nounderflow
+       -check nouninitialized                -coarray-num-procs 0
+  no   -coarray-config-file                  -convert big_endian
+       -cross_reference                      -D __INTEL_COMPILER=1600
+       -D __INTEL_COMPILER_UPDATE=3          -D __unix__
+       -D __unix                             -D __linux__
+       -D __linux                            -D __gnu_linux__
+       -D unix                               -D linux
+       -D __ELF__                            -D __x86_64
+       -D __x86_64__                         -D __amd64
+       -D __amd64__                          -D __INTEL_COMPILER_BUILD_DATE=20160415
+       -D __INTEL_OFFLOAD                    -D __i686
+       -D __i686__                           -D __pentiumpro
+       -D __pentiumpro__                     -D __pentium4
+       -D __pentium4__                       -D __tune_pentium4__
+       -D __SSE2__                           -D __SSE2_MATH__
+       -D __SSE__                            -D __SSE_MATH__
+       -D __MMX__                            -double_size 64
+  no   -d_lines                         no   -Qdyncom
+       -error_limit 30                  no   -f66
+  no   -f77rtl                          no   -fast
+       -fpscomp nofilesfromcmd               -fpscomp nogeneral
+       -fpscomp noioformat                   -fpscomp noldio_spacing
+       -fpscomp nologicals              no   -fpconstant
+       -fpe3                                 -fprm nearest
+  no   -ftz                                  -fp_model noprecise
+       -fp_model fast                        -fp_model nostrict
+       -fp_model nosource                    -fp_model nodouble
+       -fp_model noextended                  -fp_model novery_fast
+       -fp_model noexcept                    -fp_model nono_except
+       -heap_arrays 0                   no   -threadprivate_compat
+       -free                                 -g2
+       -iface nomixed_str_len_arg            -iface nono_mixed_str_len_arg
+       -init noarrays                        -init noinf
+       -init nonan                           -init nosnan
+       -init nozero                     no   -intconstant
+       -integer_size 32                 no   -mixed_str_len_arg
+  no   -module                               -names lowercase
+  no   -noinclude                            -offload-build=host
+       -O2                              no   -pad_source
+       -real_size 32                    no   -recursive
+       -reentrancy none                 no   -sharable_localsaves
+       -vec=simd                             -show noinclude
+       -show map                             -show options
+  no   -syntax_only                     no   -threadcom
+  no   -U                               no   -vms
+       -w noall                              -w nonone
+       -w alignments                         -w noargument_checking
+       -w nodeclarations                     -w general
+       -w noignore_bounds                    -w noignore_loc
+       -w nointerfaces                       -w notruncated_source
+       -w uncalled                           -w uninitialized
+       -w nounused                           -w usage
+  no   -wrap-margins
+
+       -includepath : /usrx/local/intel/2016SP3/daal/include/,/usr/include/,.FOR,./.FOR,/usrx/local/intel/2016SP3/ipp/include/.FOR,
+           /usrx/local/intel/2016SP3/mkl/include/.FOR,/usrx/local/intel/2016SP3/tbb/include/.FOR,/usrx/local/intel/2016SP3/daal/include/.FOR,
+
+Page 79          Source Listing                  FUDUB_D
+2017-04-18 11:09                                 pmat3.f90
+
+           /gpfs/tp1/usrx/local/intel/2016SP3/compilers_and_libraries_2016.3.210/linux/compiler/include/intel64/.FOR,
+           /gpfs/tp1/usrx/local/intel/2016SP3/compilers_and_libraries_2016.3.210/linux/compiler/include/.FOR,/usr/local/include/.FOR,
+           /usr/lib/gcc/x86_64-redhat-linux/4.4.7/include/.FOR,/usr/include/.FOR,/usr/include/.FOR,/usr/include/.FOR
+       -list filename : pmat3.lst
+       -o    filename : none
+
+COMPILER: Intel(R) Fortran 16.0-1633

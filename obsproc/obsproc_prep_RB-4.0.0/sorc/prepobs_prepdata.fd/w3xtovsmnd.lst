@@ -1,0 +1,586 @@
+Page 1           Source Listing                  W3XTOVSMND
+2017-04-18 11:09                                 w3xtovsmnd.f
+
+      1       SUBROUTINE W3XTOVSMND (IBUFTN,JFLAG)
+      2 C$$$  SUBPROGRAM DOCUMENTATION BLOCK
+      3 C
+      4 C SUBPROGRAM:  W3XTOVSMND
+      5 C   PRGMMR: KEYSER           ORG: NP22        DATE: 2013-02-14
+      6 C
+      7 C ABSTRACT: COMPUTES MANDATORY LEVEL HEIGHTS (ACTUALLY THICKNESSES TO
+      8 C   1000 MB) AND TEMPERATURES FROM RTOVS OR ATOVS MEAN-LAYER VIRTUAL
+      9 C   TEMPERATURE INFORMATION FOR A REPORT PRESENTED IN UNPACKED NMCEDS
+     10 C   FORMAT. THE UNPACKED NMCEDS FORMAT IS FILLED ONLY WITH THOSE
+     11 C   VALUES NEEDED FOR RTOVS OR ATOVS PROCESSING BY THE PREPDATA
+     12 C   PROGRAM.
+     13 C
+     14 C PROGRAM HISTORY LOG:
+     15 C 1979-05-01  D. G. MARKS ---- W/NMC421
+     16 C 1988-11-16  R. A. PETERSEN - W/NMC22 - CORRECTED AN ERROR WHICH LED
+     17 C        TO SYSTEMATIC WARM BIAS IN LAYERS BETWEEN 300 AND 100 MB.
+     18 C 1988-11-23  M. FARLEY      - W/NMC42 - INCORPORATED PETERSEN CHANGES
+     19 C        INTO FORTRAN77 VERSION OF W3FA07.
+     20 C 1990-01-16  D. A. KEYSER --- W/NMC22 - STREAMLINED; CORRECTED ERRORS
+     21 C        IN DO-LOOP INDEXING IN FORTRAN77; GENERALIZED FOR DMSP.
+     22 C 1992-05-01  D. A. KEYSER --- W/NMC22 - CONVERT TO CRAY CFT77 FORTRAN
+     23 C 1998-02-17  D. A. KEYSER --- NP22 ---- INPUT ARGUMENT CONTAINING
+     24 C        UNPACKED NMCEDS FORMAT FOR A REPORT NOW FULL INTEGER WORDS
+     25 C        RATHER THAN PACKED 16-BIT WORDS (THIS HAD BEEN NEEDED TO
+     26 C        ALLOW THIS SUBR. TO BE HDS/CRAY PORTABLE)
+     27 C 1998-06-15  D. A. KEYSER -- RENAMED FROM W3FA07 TO AVOID CONFUSION
+     28 C        WITH EXISTING W3LIB ROUTINE; ADAPTED FOR USE ONLY WITH RTOVS
+     29 C        DATA (AFTER TOVS DEMISE) (I.E., NO TROP DATA PROCESSED);
+     30 C        OTHERWISE STREAMLINED
+     31 C 1998-09-21  D. A. KEYSER -- SUBROUTINE NOW Y2K AND FORTRAN 90
+     32 C        COMPLIANT
+     33 C 1999-01-20 D. A. KEYSER -- INCORPORATED BOB KISTLER'S CHANGES NEEDED
+     34 C        TO PORT THE CODE TO THE IBM SP
+     35 C 1999-11-19  D. A. KEYSER -- INCLUDES NOAA-15 ATOVS DATA (AS WELL AS
+     36 C        RTOVS DATA); RENAMED SUBROUTINE
+     37 C 2012-11-30  J. WOOLLEN  INITIAL PORT TO WCOSS 
+     38 C 2013-02-14  D. A. KEYSER -- FINAL CHANGES TO RUN ON WCOSS
+     39 C
+     40 C USAGE:    CALL W3XTOVSMND(IBUFTN,JFLAG)
+     41 C   INPUT ARGUMENT LIST:
+     42 C     IBUFTN   - ADDRESS HOLDING A SINGLE RTOVS OR ATOVS REPORT
+     43 C              - (140 FULL - INTEGER WORDS) IN UNPACKED NMCEDS FORMAT 
+     44 C              - (THE - UNPACKED NMCEDS FORMAT IS FILLED ONLY WITH THOSE
+     45 C              - VALUES NEEDED FOR RTOVS OR ATOVS PROCESSING BY THE
+     46 C              - PREPDATA PROGRAM)
+     47 C
+     48 C   OUTPUT ARGUMENT LIST:
+     49 C     JFLAG    - INTEGER RETURN CODE:
+     50 C                  = 0 ==> REPORT PROCESSED
+     51 C                  > 0 ==> REPORT NOT PROCESSED DUE TO:
+     52 C                     = 1 ==> ALL PRESSURE VALUES ARE MISSING
+     53 C                     = 2 ==> THERE ARE NO VALID PRESSURE LAYERS
+     54 C                     = 3 ==> A PRESSURE VALUE FAILED GROSS CHECK
+     55 C                     = 4 ==> A MEAN LAYER V. TEMP FAILED GROSS CHECK
+     56 C                     = 5 ==> FIRST VALID PRESS. LVL ON OR ABOVE 10 MB
+     57 C                     = 6 ==> THERE ARE NO VALID PRESSURE LEVELS
+
+Page 2           Source Listing                  W3XTOVSMND
+2017-04-18 11:09                                 w3xtovsmnd.f
+
+     58 C                     = 7 ==> AT LEAST 1 MISSING OR INCONSISTENT LAYER
+     59 C                             BETWEEN THE BOTTOM & TOP SPANNING P-LVLS
+     60 C
+     61 C REMARKS: CURRENTLY CALLED ONLY BY PROGRAM PREPDATA.
+     62 C
+     63 C ATTRIBUTES:
+     64 C   LANGUAGE: FORTRAN 90
+     65 C   MACHINE:  NCEP WCOSS
+     66 C
+     67 C$$$
+     68 C
+     69       REAL  SLNP(20),EXNS(20),XLVLS(21),EXNER(20),XLNP(20),Q(15),
+     70      $ TXXX(20),ZZ(20),TBARX(19),TBAR(15),SPMID(15),PMID(19)
+     71 C
+     72       INTEGER  IP1(15),IP2(15),LVLS(15),IZFX(5),ISLRPT(20),IBUFTN(140)
+     73 C
+     74       COMMON/FA07AA/TM(20),Z(20),MLVLS
+     75 C
+     76       SAVE
+     77 C
+     78       DATA XLVLS/1000.,850.,700.,500.,400.,300.,250.,200.,150.,100.,70.,
+     79      $             50., 30., 20., 10.,  7.,  5.,  3.,  2.,  1., 0.4/
+     80       DATA  LVLS/1000,850,700,500,400,300,200,100,70,50,30,10,5,2,1/
+     81       DATA  ISLRPT/1,1,1,1,1,2,0,2,0,1,1,1,2,0,2,0,2,0,2,0/
+     82       DATA  XMISS/99999./,IZFX/6,8,13,15,17/
+     83 C
+     84 C FUNCTION...
+     85       XTM(T1,T2,XM,XP1,XP2)=(T2*(ALOG(XP1/XM))+T1*(ALOG(XM/XP2)))
+     86      $        /(ALOG(XP1/XP2))
+     87 
+     88       G     = 9.80655
+     89       R     = 287.055
+     90       ROG   = R/G
+     91       CP    = 1005.0
+     92       XKAP  = R/CP
+     93       XKAPR = 1.0/XKAP
+     94       ROG   = R/G
+     95       JFLAG = 0
+     96 C TSFC IS THE SKIN TEMPERATURE
+     97       TSFC  = IBUFTN(9)/10.0
+     98 C SFCEL IS Z(SFC) MINUS Z(1000), WHERE Z(1000) IS SET TO 111.0 METERS
+     99       SFCEL = IBUFTN(8) - 111.0
+    100 C ENTER MEAN LAYER VIRT. TEMP (TBAR), BOTTOM PRESSURE (IP1) AND TOP
+    101 C  PRESSURE (IP2) VALUES FOR THE LAYER, AND TEMPERATURE QUALITY MARK (Q)
+    102       IP1  = IBUFTN(23:79:4)/10
+    103       IP2  = IBUFTN(24:80:4)/10
+    104       TBAR = IBUFTN(25:81:4)/10.
+    105       Q    = IBUFTN(26:82:4)/10.
+    106 C-----------------------------------------------------------------------
+    107 C DETERMINE THE LOWEST AND HIGHEST VALID PRESSURE LAYERS FOR THE REPORT
+    108 C LL IS FIRST VALID PRESSURE LAYER (0=SFC-850 MB, 1=850-700 MB, ETC.)
+    109 C MM IS LAST  VALID PRESSURE LAYER (15=1-.4 MB, 14=2-1 MB, ETC.)
+    110       LL = 0
+    111       DO I = 1,15
+    112          IF(IP1(I).NE.777.AND.IP2(I).NE.777)  GO TO 112
+    113             LL = LL + 1
+    114       ENDDO
+
+Page 3           Source Listing                  W3XTOVSMND
+2017-04-18 11:09                                 w3xtovsmnd.f
+
+    115 C THERE ARE NO VALID PRESSURE LEVELS IN THE REPORT, EXIT WITH JFLAG=1
+    116       JFLAG = 1
+    117       RETURN
+    118   112 CONTINUE
+    119       DO I = 1,15
+    120          MM = 16 - I
+    121          IF(IP1(MM).NE.777.AND.IP2(MM).NE.777)  GO TO 114
+    122       ENDDO
+    123 C THERE ARE NO VALID PRESSURE LEVELS IN THE REPORT, EXIT WITH JFLAG=1
+    124       JFLAG = 1
+    125       RETURN
+    126   114 CONTINUE
+    127 C-----------------------------------------------------------------------
+    128 C ISLP IS THE NUMBER OF VALID PRESSURE LAYERS FOR THE REPORT
+    129       ISLP = MM - LL
+    130       IF(ISLP.GE.1)  GO TO 101
+    131 C THERE ARE VALID LAYERS IN THE REPORT, EXIT WITH JFLAG=2
+    132       JFLAG = 2
+    133       RETURN
+    134   101 CONTINUE
+    135       IF(LL.LE.0)  GO TO 78
+    136 C IF FIRST VALID LAYER IS ABOVE BASE LAYER (SFC-850 MB), RESET ARRAY
+    137 C  ELEMENTS IN IP1, IP2, TBAR, & Q SUCH THAT LVL1 IS THE FIRST VALID LVL
+    138       DO I = 1,ISLP
+    139          IP1(I) = IP1(LL+I)
+    140          IP2(I) = IP2(LL+I)
+    141          TBAR(I) = TBAR(LL+I)
+    142          Q(I) = Q(LL+I)
+    143       ENDDO
+    144    78 CONTINUE
+    145 C GROSS CHECK THE PRESSURE AND TEMP, IF FAILS EXIT WITH JFLAG=3 OR 4
+    146       DO I = 1,ISLP
+    147               IF((IP1(I).GT.1000.OR.IP1(I).LT.0).OR.
+    148      $           (IP2(I).GT.1000.OR.IP2(I).LT.0))  JFLAG = 3
+    149               IF(JFLAG.EQ.3)  RETURN
+    150               IF(TBAR(I).GT.500..OR.TBAR(I).LT.100.)  JFLAG = 4
+    151               IF(JFLAG.EQ.4)  RETURN
+    152       ENDDO
+    153 C-----------------------------------------------------------------------
+    154 C DETERMINE LOWEST (BOTTOM) & HIGHEST (TOP) MAND. PRESS. LVLS FOR WHICH
+    155 C  A VALID PRESSURE LAYER WITH V. TEMP EXIST IN THE REPORT
+    156 C NL INDEX IS 1ST VALID MAND. PRESSURE LVL (1-SFC/1000 MB,2-850 MB,ETC.)
+    157 C MLVLS IS LAST VALID MAND. PRESSURE LEVEL (20-1 MB, 19-2 MB, ETC.)
+    158       DO L = 1,15
+    159          IF(IP1(1).GT.INT(XLVLS(L)))  GO TO 200
+    160       ENDDO
+    161 C IF FIRST VALID PRESSURE LEVEL IS AT OR ABOVE 10 MB EXIT WITH JFLAG=5
+    162       JFLAG = 5
+    163       RETURN
+    164   200 CONTINUE
+    165       NL = L - 1
+    166       IF(L.EQ.1)  NL = 1
+    167 C KLVLS IS NO. OF MAND. PRESS LVLS UP TO 1 MB BEGINNING AT LVL NL
+    168 C  (MAX. IS 20 IF 1000/SFC MB LEVEL IS VALID)
+    169       KLVLS = 21 - NL
+    170       LLVLS = KLVLS - 1
+    171 C NLVLS IS NO. OF VALID LAYERS IN RPT (MAX IS 14,1-.4 MB LAYER NOT USED)
+
+Page 4           Source Listing                  W3XTOVSMND
+2017-04-18 11:09                                 w3xtovsmnd.f
+
+    172       NLVLS = ISLP
+    173       IF(MM.EQ.15)  NLVLS = NLVLS - 1
+    174       MLVLS = 0
+    175       DO MLV = 1,20
+    176          MLVLS = MLVLS + 1
+    177          IF(IP2(NLVLS).GE.INT(XLVLS(MLV)))  GO TO 210
+    178       ENDDO
+    179 C IF NO VALID PRESSURE LEVELS FOUND, EXIT WITH JFLAG=6
+    180       JFLAG = 6
+    181       RETURN
+    182   210 CONTINUE
+    183       JLVLS = MLVLS - 1
+    184 C-----------------------------------------------------------------------
+    185 C VERIFY THAT ALL LVLS BETWEEN THE TWO VALID SPANNING LEVELS ARE PRESENT
+    186       DO I = 2,NLVLS
+    187          J = I + LL
+    188          ICK = IP1(I) - LVLS(J)
+    189          JCK = IP2(I) - LVLS(J+1)
+    190 C IF THERE ARE ANY MISSING LEVELS IN HERE, EXIT WITH JFLAG=7
+    191          IF(ICK.EQ.0.AND.JCK.EQ.0)  CYCLE
+    192          JFLAG = 7
+    193          RETURN
+    194       ENDDO
+    195 C-----------------------------------------------------------------------
+    196 C COMPUTE THE EXNER FUNCTION AND ALOG (HIGHER PRESSURE/LOWER PRESSURE)
+    197 C  AT THE MANDATORY LEVELS -- DEFINE LOWEST LEVEL FIRST
+    198       EXNER(1)  = (IP1(1)/1000.)**XKAP
+    199       EXNER(20) = (    1./1000.)** XKAP
+    200       XLNP(1) = ALOG(REAL(IP1(1))/XLVLS(NL+1))
+    201       DO K = 2,KLVLS
+    202          I = (NL - 1) + K
+    203          EXNER(K) = (XLVLS(I)/1000.)**XKAP
+    204          XLNP(K)  = ALOG(XLVLS(I)/XLVLS(I+1))
+    205       ENDDO
+    206 C COMPUTE THE MID-LAYER EXNER FUNCTION AND 'COLLINS PRESSURE'
+    207       DO K = 1,LLVLS
+    208          XMID = XKAPR * ((EXNER(K+1) - EXNER(K))/(-XLNP(K)))
+    209          XPON = XKAPR * ALOG(XMID) + ALOG(1000.)
+    210          PMID(K) = EXP(XPON)
+    211       ENDDO
+    212 C-----------------------------------------------------------------------
+    213 C CHECK TO SEE IF SKIN TEMP IS GOOD; CORRECT IF NECESSARY
+    214 
+    215 C  Note: For previous TOVS processing, the obsolete subr. W3TOVEDS
+    216 C        could never return a value greater than 64 -- thus the test
+    217 C        .NOT.(BTEST(ITEMP,7)) was always be true since the bit in the
+    218 C        7'th position of IBUFTN(11) was always 0 (7'th pos. is from
+    219 C        right, where rightmost bit is in position 0)
+    220 C        This may not have been the case in the old HDS/true NMCEDS
+    221 C        file days - NMCEDS documentation, however, appears to support
+    222 C        the fact that bit 7 can ONLY have the value of ZERO.
+    223 C        For current RTOVS/ATOVS processing, IBUFTN(11) is set to 7777
+    224 C        (missing) in subr. W3XTOVSEDS, while IBUFTN(9) is also set to
+    225 C        7777.  This should allow the logic to be the same as for
+    226 C        TOVS - as to whether the logic is correct, I do not know
+    227 C        (Keyser - 5/7/98)
+    228 
+
+Page 5           Source Listing                  W3XTOVSMND
+2017-04-18 11:09                                 w3xtovsmnd.f
+
+    229       ITEMP = IBUFTN(11)
+    230       IF(.NOT.(BTEST(ITEMP,7)).OR.IBUFTN(9).EQ.7777)
+    231      $ TSFC = TBAR(1) + (.0555 * (IP1(1) - PMID(1)))
+    232       TSFC = (TSFC + TBAR(1) + (.0555 * (IP1(1) - PMID(1))))/2
+    233 C ESTIMATE MEAN TEMP IN SFC TO 1000 MB LAYER
+    234       TMEAN = TSFC + ((0.0065 * SFCEL)/2.0)
+    235 C ESTIMATE SFC PRESSURE USING HYPSOMETRIC EQN. (1000 HGHT SET TO 111 M)
+    236 C           Z(1000) - Z(SFC) = - (R/G) * T * (LN(P1000) - LN(PSFC))
+    237       ALNP = ALOG(1000.) - (SFCEL/(ROG * TMEAN))
+    238       PSFC = EXP(ALNP)
+    239 C-----------------------------------------------------------------------
+    240 C INITIALIZE MANDATORY LEVEL TEMPS AND HEIGHTS(THICKNESSES) TO MISSING
+    241       XVAL = (XMISS/10.) + 273.16
+    242       TM = XVAL
+    243       Z  = XMISS
+    244       ZZ = XMISS
+    245 C COMPUTE PRESSURES FOR SATELLITE LEVELS
+    246       SLNP(1:NLVLS) = ALOG(REAL(IP1(1:NLVLS))/IP2(1:NLVLS))
+    247       EXNS(1:NLVLS) = (IP1(1:NLVLS)/1000.)**XKAP
+    248       EXNS(NLVLS+1) = (IP2(NLVLS)/1000.)**XKAP
+    249       DO I = 1,NLVLS
+    250          XMID = XKAPR * ((EXNS(I+1) - EXNS(I))/(-SLNP(I)))
+    251          XPON = (XKAPR * ALOG(XMID)) + ALOG(1000.)
+    252          SPMID(I) = EXP(XPON)
+    253       ENDDO
+    254       ISL = 1
+    255 C-----------------------------------------------------------------------
+    256 C NOW COMPUTE LAYER TEMPERATURES FOR MANDATORY LAYERS (TBARX)
+    257       LOOP1: DO K = 1,LLVLS
+    258          LOOP1n1: DO JJ = ISL,ISLP
+    259             J = JJ
+    260             IF((PMID(K)-SPMID(J)).GT.-0.001)  EXIT LOOP1n1
+    261          ENDDO LOOP1n1
+    262          ISL = J
+    263       IF(J.EQ.1.OR.(ABS(PMID(K)-SPMID(J)).LE.0.001))  TBARX(K) = TBAR(J)
+    264          IF(J.EQ.1.OR.(ABS(PMID(K)-SPMID(J)).LE.0.001))  CYCLE LOOP1
+    265          TBARX(K) = XTM(TBAR(J-1),TBAR(J),PMID(K),SPMID(J-1),SPMID(J))
+    266       ENDDO LOOP1
+    267       J = 1 - LL
+    268       DO I = 1,JLVLS
+    269          JJ = J
+    270          IF(JJ.LT.1)  JJ = 1
+    271          IF(ISLRPT(I).EQ.0)  CYCLE
+    272          TXXX(I) = TBAR(JJ)
+    273          IF(ISLRPT(I).EQ.2)  TXXX(I+1) = TBAR(JJ)
+    274          J = J + 1
+    275          J = MIN(J,MM-LL)
+    276       ENDDO
+    277 C-----------------------------------------------------------------------
+    278 C COMPUTE TEMPERATURE AT MANDATORY LEVELS ABOVE GROUND
+    279       ML = NL + 1
+    280       K = 0
+    281       DO I = ML,JLVLS
+    282          K = K + 1
+    283          TM(I) = (TBARX(K+1) * (ALOG(PMID(K) / XLVLS(I)))
+    284      $         + TBARX(K) * (ALOG(XLVLS(I) / PMID(K+1))))
+    285      $         / (ALOG(PMID(K) / PMID(K+1)))
+
+Page 6           Source Listing                  W3XTOVSMND
+2017-04-18 11:09                                 w3xtovsmnd.f
+
+    286       ENDDO
+    287 C-----------------------------------------------------------------------
+    288 C HEIGHTS(THICKNESSES TO 1000 MB) WILL NOT BE CALCULATED IF FIRST
+    289 C  VALID PRESSURE IS TOO HIGH ABOVE THE SURFACE
+    290       IF(ABS(PSFC-IP1(1)).GT.100.)  GO TO 900
+    291       T1000 = TSFC + (0.0065 * SFCEL)
+    292 C SINCE HGHT REALLY THICKNESS TO 1000 MB, 1000 MB HGHT ALWAYS = 0
+    293       Z(1) = 0.0
+    294       IF(NL.LE.1)  GO TO 750
+    295 C COMPUTE Z UNDERGROUND USING HYPSOMETRIC EQUATION, ASSUMING STD TEMP
+    296 C  LAPSE UNDERGROUND (.0065DEG/M) -- NL = NO. OF MAND. LVLS UNDER GROUND
+    297 C  (IF SFC AT OR BELOW 1000 MB, NL = 1 AND NO LEVELS ARE UNDERGROUND)
+    298       Z(2:NL) = ROG * (T1000 * ALOG(1000./XLVLS(2:NL)))/
+    299      $          (1. + (ROG * .0065/2.) * ALOG(1000./XLVLS(2:NL)))
+    300   750 CONTINUE
+    301 C ELEVATION IS 0 METERS (OVER WATER), THEN 1000 MB TEMP DETERMINED
+    302       IF(SFCEL.LE.0.0)  TM(1) = T1000
+    303 C COMPUTE THE HEIGHTS AT MANDATORY LEVELS
+    304       J = 1
+    305       Z(NL+1) = ROG * TBARX(1) * XLNP(1)
+    306       IF(IP1(1).EQ.1000)  GO TO 755
+    307       Z(NL+1) = Z(NL+1) + SFCEL + ROG * TSFC * ALOG(PSFC/REAL(IP1(1)))
+    308      $ /(1 + (ROG * .0065/2.) * ALOG(PSFC/REAL(IP1(1))))
+    309   755 CONTINUE
+    310       ZZ = Z
+    311       DO I = ML,JLVLS
+    312          J = J + 1
+    313          ZLY = ROG * TBARX(J) * XLNP(J)
+    314          Z(I+1) = Z(I) + ZLY
+    315          ZLYX = ROG * TXXX(I) * XLNP(J)
+    316          ZZ(I+1) = ZZ(I) + ZLYX
+    317       ENDDO
+    318       DO II = 1,5
+    319          I = IZFX(II)
+    320          IF(I+1.LE.JLVLS)  ZZ(I+1) = ZZ(I) + (ZZ(I+2) - ZZ(I)) *
+    321      $    (Z(I+1) - Z(I))/(Z(I+2) - Z(I))
+    322       ENDDO
+    323       Z = ZZ
+    324   900 CONTINUE
+    325       RETURN
+    326       END
+
+Page 7           Source Listing                  W3XTOVSMND
+2017-04-18 11:09 Entry Points                    w3xtovsmnd.f
+
+
+
+ENTRY POINTS
+
+  Name                   
+                         
+ w3xtovsmnd_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ 101                        Label  134                                                            130                               
+ 112                        Label  118                                                            112                               
+ 114                        Label  126                                                            121                               
+ 200                        Label  164                                                            159                               
+ 210                        Label  182                                                            177                               
+ 750                        Label  300                                                            294                               
+ 755                        Label  309                                                            306                               
+ 78                         Label  144                                                            135                               
+ 900                        Label  324                                                            290                               
+ ABS                        Func   263                                  scalar                    263,264,290                       
+ ALNP                       Local  237      R(4)            4           scalar   SAVE             237,238                           
+ ALOG                       Func   85                                   scalar                    85,86,200,204,209,237,246,251,283,
+                                                                                                  284,285,298,299,307,308           
+ BTEST                      Func   230                                  scalar                    230                               
+ CP                         Local  91       R(4)            4           scalar   SAVE             91,92                             
+ EXNER                      Local  69       R(4)            4     1     20       SAVE             198,199,203,208                   
+ EXNS                       Local  69       R(4)            4     1     20       SAVE             247,248,250                       
+ EXP                        Func   210                                  scalar                    210,238,252                       
+ FA07AA                     Common 74                                   164      SAVE                                               
+ G                          Local  88       R(4)            4           scalar   SAVE             88,90,94                          
+ I                          Local  111      I(4)            4           scalar   SAVE             111,112,119,120,138,139,140,141,14
+                                                                                                  2,146,147,148,150,186,187,188,189,
+                                                                                                  202,203,204,249,250,252,268,271,27
+                                                                                                  2,273,281,283,284,311,314,315,316,
+                                                                                                  319,320,321                       
+ IBUFTN                     Dummy  1        I(4)            4     1     140      ARG,INOUT        97,99,102,103,104,105,229,230     
+ ICK                        Local  188      I(4)            4           scalar   SAVE             188,191                           
+ II                         Local  318      I(4)            4           scalar   SAVE             318,319                           
+ INT                        Func   159                                  scalar                    159,177                           
+ IP1                        Local  72       I(4)            4     1     15       SAVE             102,112,121,139,147,159,188,198,20
+                                                                                                  0,231,232,246,247,290,306,307,308 
+ IP2                        Local  72       I(4)            4     1     15       SAVE             103,112,121,140,148,177,189,246,24
+                                                                                                  8                                 
+ ISL                        Local  254      I(4)            4           scalar   SAVE             254,258,262                       
+ ISLP                       Local  129      I(4)            4           scalar   SAVE             129,130,138,146,172,258           
+ ISLRPT                     Local  72       I(4)            4     1     20       SAVE             81,271,273                        
+ ITEMP                      Local  229      I(4)            4           scalar   SAVE             229,230                           
+ IZFX                       Local  72       I(4)            4     1     5        SAVE             82,319                            
+ J                          Local  187      I(4)            4           scalar   SAVE             187,188,189,259,260,262,263,264,26
+                                                                                                  5,267,269,274,275,304,312,313,315 
+ JCK                        Local  189      I(4)            4           scalar   SAVE             189,191                           
+ JFLAG                      Dummy  1        I(4)            4           scalar   ARG,INOUT        95,116,124,132,148,149,150,151,162
+                                                                                                  ,180,192                          
+ JJ                         Local  258      I(4)            4           scalar   SAVE             258,259,269,270,272,273           
+
+Page 8           Source Listing                  W3XTOVSMND
+2017-04-18 11:09 Symbol Table                    w3xtovsmnd.f
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ JLVLS                      Local  183      I(4)            4           scalar   SAVE             183,268,281,311,320               
+ K                          Local  201      I(4)            4           scalar   SAVE             201,202,203,204,207,208,210,257,26
+                                                                                                  0,263,264,265,280,282,283,284,285 
+ KLVLS                      Local  169      I(4)            4           scalar   SAVE             169,170,201                       
+ L                          Local  158      I(4)            4           scalar   SAVE             158,159,165,166                   
+ LL                         Local  110      I(4)            4           scalar   SAVE             110,113,129,135,139,140,141,142,18
+                                                                                                  7,267,275                         
+ LLVLS                      Local  170      I(4)            4           scalar   SAVE             170,207,257                       
+ LOOP1                      Label  257                                  scalar                    264,266                           
+ LOOP1N1                    Label  258                                  scalar                    260,261                           
+ LVLS                       Local  72       I(4)            4     1     15       SAVE             80,188,189                        
+ MIN                        Func   275                                  scalar                    275                               
+ ML                         Local  279      I(4)            4           scalar   SAVE             279,281,311                       
+ MLV                        Local  175      I(4)            4           scalar   SAVE             175,177                           
+ MLVLS                      Scalar 74       I(4)            4           scalar   COM              174,176,183                       
+ MM                         Local  120      I(4)            4           scalar   SAVE             120,121,129,173,275               
+ NL                         Local  165      I(4)            4           scalar   SAVE             165,166,169,200,202,279,294,298,29
+                                                                                                  9,305,307                         
+ NLVLS                      Local  172      I(4)            4           scalar   SAVE             172,173,177,186,246,247,248,249   
+ PMID                       Local  70       R(4)            4     1     19       SAVE             210,231,232,260,263,264,265,283,28
+                                                                                                  4,285                             
+ PSFC                       Local  238      R(4)            4           scalar   SAVE             238,290,307,308                   
+ Q                          Local  69       R(4)            4     1     15       SAVE             105,142                           
+ R                          Local  89       R(4)            4           scalar   SAVE             89,90,92,94                       
+ REAL                       Func   200                                  scalar                    200,246,307,308                   
+ ROG                        Local  90       R(4)            4           scalar   SAVE             90,94,237,298,299,305,307,308,313,
+                                                                                                  315                               
+ SFCEL                      Local  99       R(4)            4           scalar   SAVE             99,234,237,291,302,307            
+ SLNP                       Local  69       R(4)            4     1     20       SAVE             246,250                           
+ SPMID                      Local  70       R(4)            4     1     15       SAVE             252,260,263,264,265               
+ T1000                      Local  291      R(4)            4           scalar   SAVE             291,298,302                       
+ TBAR                       Local  70       R(4)            4     1     15       SAVE             104,141,150,231,232,263,265,272,27
+                                                                                                  3                                 
+ TBARX                      Local  70       R(4)            4     1     19       SAVE             263,265,283,284,305,313           
+ TM                         Scalar 74       R(4)            4     1     20       COM              242,283,302                       
+ TMEAN                      Local  234      R(4)            4           scalar   SAVE             234,237                           
+ TSFC                       Local  97       R(4)            4           scalar   SAVE             97,231,232,234,291,307            
+ TXXX                       Local  70       R(4)            4     1     20       SAVE             272,273,315                       
+ W3XTOVSMND                 Subr   1                                                                                                
+ XKAP                       Local  92       R(4)            4           scalar   SAVE             92,93,198,199,203,247,248         
+ XKAPR                      Local  93       R(4)            4           scalar   SAVE             93,208,209,250,251                
+ XLNP                       Local  69       R(4)            4     1     20       SAVE             200,204,208,305,313,315           
+ XLVLS                      Local  69       R(4)            4     1     21       SAVE             78,159,177,200,203,204,283,284,298
+                                                                                                  ,299                              
+ XMID                       Local  208      R(4)            4           scalar   SAVE             208,209,250,251                   
+ XMISS                      Local  82       R(4)            4           scalar   SAVE             82,241,243,244                    
+ XPON                       Local  209      R(4)            4           scalar   SAVE             209,210,251,252                   
+ XTM                        Local  85       R(4)            4           scalar                    265                               
+ XVAL                       Local  241      R(4)            4           scalar   SAVE             241,242                           
+ Z                          Scalar 74       R(4)            4     1     20       COM              243,293,298,305,307,310,314,321,32
+                                                                                                  3                                 
+ ZLY                        Local  313      R(4)            4           scalar   SAVE             313,314                           
+ ZLYX                       Local  315      R(4)            4           scalar   SAVE             315,316                           
+ ZZ                         Local  70       R(4)            4     1     20       SAVE             244,310,316,320,323               
+
+Page 9           Source Listing                  W3XTOVSMND
+2017-04-18 11:09 Subprograms/Common Blocks       w3xtovsmnd.f
+
+
+
+SUBPROGRAMS/COMMON BLOCKS
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ FA07AA                     Common 74                                   164      SAVE                                               
+ W3XTOVSMND                 Subr   1                                                                                                
+
+COMPILER OPTIONS BEING USED
+
+       -align noall                          -align nonone
+       -align nocommons                      -align nodcommons
+       -align noqcommons                     -align nozcommons
+       -align records                        -align nosequence
+       -align norec1byte                     -align norec2byte
+       -align norec4byte                     -align norec8byte
+       -align norec16byte                    -align norec32byte
+       -align norec64byte                    -align noarray8byte
+       -align noarray16byte                  -align noarray32byte
+       -align noarray64byte                  -align noarray128byte
+       -align noarray256byte                 -altparam
+       -assume accuracy_sensitive            -assume nobscc
+       -assume nobuffered_io                 -assume nobuffered_stdout
+       -assume nobyterecl                    -assume nocc_omp
+       -assume nocstring                     -assume nodummy_aliases
+       -assume nofpe_summary                 -assume noieee_fpe_flags
+       -assume nominus0                      -assume noold_boz
+       -assume old_complex_align             -assume old_unit_star
+       -assume noold_ldout_format            -assume noold_logical_ldio
+       -assume old_maxminloc                 -assume old_xor
+       -assume noprotect_allocates           -assume protect_constants
+       -assume noprotect_parens              -assume split_common
+       -assume source_include                -assume nostd_intent_in
+       -assume std_minus0_rounding           -assume nostd_mod_proc_name
+       -assume std_value                     -assume norealloc_lhs
+       -assume underscore                    -assume no2underscores
+       -auto                            no   -auto_scalar
+  no   -bintext                              -ccdefault default
+       -check noargs                         -check noarg_temp_created
+       -check noassume                       -check nobounds
+       -check noformat                       -check nooutput_conversion
+       -check nooverflow                     -check nopointers
+       -check power                          -check noshape
+       -check nostack                        -check nounderflow
+       -check nouninitialized                -coarray-num-procs 0
+  no   -coarray-config-file                  -convert big_endian
+       -cross_reference                      -D __INTEL_COMPILER=1600
+       -D __INTEL_COMPILER_UPDATE=3          -D __unix__
+       -D __unix                             -D __linux__
+       -D __linux                            -D __gnu_linux__
+       -D unix                               -D linux
+       -D __ELF__                            -D __x86_64
+       -D __x86_64__                         -D __amd64
+       -D __amd64__                          -D __INTEL_COMPILER_BUILD_DATE=20160415
+       -D __INTEL_OFFLOAD                    -D __i686
+       -D __i686__                           -D __pentiumpro
+
+Page 10          Source Listing                  W3XTOVSMND
+2017-04-18 11:09                                 w3xtovsmnd.f
+
+       -D __pentiumpro__                     -D __pentium4
+       -D __pentium4__                       -D __tune_pentium4__
+       -D __SSE2__                           -D __SSE2_MATH__
+       -D __SSE__                            -D __SSE_MATH__
+       -D __MMX__                            -double_size 64
+  no   -d_lines                         no   -Qdyncom
+       -error_limit 30                  no   -f66
+  no   -f77rtl                          no   -fast
+       -fpscomp nofilesfromcmd               -fpscomp nogeneral
+       -fpscomp noioformat                   -fpscomp noldio_spacing
+       -fpscomp nologicals                   -fixed
+  no   -fpconstant                           -fpe3
+       -fprm nearest                    no   -ftz
+       -fp_model noprecise                   -fp_model fast
+       -fp_model nostrict                    -fp_model nosource
+       -fp_model nodouble                    -fp_model noextended
+       -fp_model novery_fast                 -fp_model noexcept
+       -fp_model nono_except                 -heap_arrays 0
+  no   -threadprivate_compat                 -g2
+       -iface nomixed_str_len_arg            -iface nono_mixed_str_len_arg
+       -init noarrays                        -init noinf
+       -init nonan                           -init nosnan
+       -init nozero                     no   -intconstant
+       -integer_size 32                 no   -mixed_str_len_arg
+  no   -module                               -names lowercase
+  no   -noinclude                            -offload-build=host
+       -O2                              no   -pad_source
+       -real_size 32                    no   -recursive
+       -reentrancy none                 no   -sharable_localsaves
+       -vec=simd                             -show noinclude
+       -show map                             -show options
+  no   -syntax_only                     no   -threadcom
+  no   -U                               no   -vms
+       -w noall                              -w nonone
+       -w alignments                         -w noargument_checking
+       -w nodeclarations                     -w general
+       -w noignore_bounds                    -w noignore_loc
+       -w nointerfaces                       -w notruncated_source
+       -w uncalled                           -w uninitialized
+       -w nounused                           -w usage
+  no   -wrap-margins
+
+       -includepath : /usrx/local/intel/2016SP3/daal/include/,/usr/include/,.FOR,./.FOR,/usrx/local/intel/2016SP3/ipp/include/.FOR,
+           /usrx/local/intel/2016SP3/mkl/include/.FOR,/usrx/local/intel/2016SP3/tbb/include/.FOR,/usrx/local/intel/2016SP3/daal/include/.FOR,
+           /gpfs/tp1/usrx/local/intel/2016SP3/compilers_and_libraries_2016.3.210/linux/compiler/include/intel64/.FOR,
+           /gpfs/tp1/usrx/local/intel/2016SP3/compilers_and_libraries_2016.3.210/linux/compiler/include/.FOR,/usr/local/include/.FOR,
+           /usr/lib/gcc/x86_64-redhat-linux/4.4.7/include/.FOR,/usr/include/.FOR,/usr/include/.FOR,/usr/include/.FOR
+       -list filename : w3xtovsmnd.lst
+       -o    filename : none
+
+COMPILER: Intel(R) Fortran 16.0-1633

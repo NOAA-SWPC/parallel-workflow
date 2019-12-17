@@ -1,0 +1,2863 @@
+Page 1           Source Listing                  AVCO
+2017-04-18 11:09                                 pmat2.f90
+
+      1 !
+      2 !                                **********************************************
+      3 !                                *             MODULE pmat2                   *
+      4 !                                *  R. J. Purser, NOAA/NCEP/EMC  1994/1999    *
+      5 !                                *  jim.purser@noaa.gov                       *
+      6 !                                *  Tsukasa Fujita (JMA)             1999     *
+      7 !                                *                                            *
+      8 !                                **********************************************
+      9 !
+     10 ! Routines dealing with the operations of banded matrices
+     11 ! The three special routines allow the construction of compact or
+     12 ! conventional interpolation and differencing stencils to a general
+     13 ! order of accuracy. These are:
+     14 ! AVCO:  Averaging, or interpolating;
+     15 ! DFCO:  Differentiating (once);
+     16 ! DFCO2: Differentiating (twice).
+     17 !
+     18 ! Other routines provide the tools for applying compact schemes, and for
+     19 ! the construction and application of recursive filters.
+     20 !
+     21 ! Programmers:  R. J. Purser and T. Fujita
+     22 !               National Centers for Environmental Prediction.
+     23 ! Last modified (Purser):                              January 6th 2005
+     24 !  added nonredundant ldltb and ltdlbv routines for symmetric matrices,
+     25 !  and remove obsolescent routines.
+     26 !  Keyser (2014-12-12) - print written to unit 41 rather than stdout (for use in
+     27 !                        prepobs_prepacqc program - limits amount of stdout)
+     28 !
+     29 ! DIRECT DEPENDENCIES
+     30 ! Libraries[their modules]: pmat[pmat]
+     31 ! Additional Modules      : pkind
+     32 !
+     33 !=============================================================================
+     34 module pmat2
+     35 !============================================================================
+     36 use    pkind
+     37 implicit none
+     38 private
+     39 public:: avco,dfco,dfco2, clipb,cad1b,csb1b,cad2b,csb2b,                    &
+     40          ldub,ldltb,udlb,l1ubb,l1ueb,ltdlbv,                                &
+     41          udlbv,udlbx,udlby,udlvb,udlxb,udlyb,u1lbv,u1lbx,u1lby,u1lvb,u1lxb, &
+     42          u1lyb,linbv,wrtb
+     43 real(dp),parameter:: zero=0
+     44 
+     45 interface AVCO;   module procedure AVCO,  DAVCO,  TAVCO;   end interface
+     46 interface DFCO;   module procedure DFCO,  DDFCO,  TDFCO;   end interface
+     47 interface DFCO2;  module procedure DFCO2, DDFCO2, TDFCO2;  end interface
+     48 interface CLIPB;  module procedure clib,  clib_d, clib_c;  end interface
+     49 interface CAD1B;  module procedure CAD1B;                  end interface
+     50 interface CSB1B;  module procedure CSB1B;                  end interface
+     51 interface CAD2B;  module procedure CAD2B;                  end interface
+     52 interface CSB2B;  module procedure CSB2B;                  end interface
+     53 interface LDUB;   module procedure LDUB,  DLDUB;           end interface
+     54 interface LDLTB;  module procedure LDLTB, DLDLTB;          end interface
+     55 interface L1UBB;  module procedure L1UBB, DL1UBB;          end interface
+     56 interface L1UEB;  module procedure L1UEB, DL1UEB;          end interface
+     57 interface ltDLBV; module procedure ltdlbv,dltdlbv;         end interface
+
+Page 2           Source Listing                  AVCO
+2017-04-18 11:09                                 pmat2.f90
+
+     58 interface UDLB;   module procedure UDLB,  DUDLB;           end interface
+     59 interface UDLBV;  module procedure UDLBV, dudlbv;          end interface
+     60 interface UDLBX;  module procedure UDLBX;                  end interface
+     61 interface UDLBY;  module procedure UDLBY;                  end interface
+     62 interface UDLVB;  module procedure UDLVB;                  end interface
+     63 interface UDLXB;  module procedure UDLXB;                  end interface
+     64 interface UDLYB;  module procedure UDLYB;                  end interface
+     65 interface U1LBV;  module procedure U1LBV;                  end interface
+     66 interface U1LBX;  module procedure U1LBX;                  end interface
+     67 interface U1LBY;  module procedure U1LBY;                  end interface
+     68 interface U1LVB;  module procedure U1LVB;                  end interface
+     69 interface U1LXB;  module procedure U1LXB;                  end interface
+     70 interface U1LYB;  module procedure U1LYB;                  end interface
+     71 interface LINBV;  module procedure LINBV;                  end interface
+     72 interface WRTB;   module procedure WRTB;                   end interface
+     73 contains
+     74 
+     75 !=============================================================================
+     76 subroutine AVCO(na,nb,za,zb,z0,a,b) !                                   [AVCO]
+     77 !=============================================================================
+     78 !		    SUBROUTINE AVCO
+     79 !   R.J.Purser, National Centers for Environmental Prediction, Washington D.C.
+     80 !   jim.purser@noaa.gov					      1999
+     81 !
+     82 !  Compute one row of the coefficients for the compact mid-interval
+     83 !  interpolation scheme characterized by matrix equation of the form,
+     84 !			 A.t = B.s			       (*)
+     85 !  Where s is the vector of "source" values, t the staggered "target" values.
+     86 !
+     87 ! --> NA:   number of t-points operated on by this row of the A of (*)
+     88 ! --> NB:   number of s-points operated on by this row of the B of (*)
+     89 ! --> ZA:   coordinates of t-points used in this row of (*)
+     90 ! --> ZB:   coordinates of s-points used in this row of (*)
+     91 ! --> Z0:   nominal point of application of this row of (*)
+     92 ! <-- A:    the NA coefficients A for this scheme
+     93 ! <-- B:    the NB coefficients B for this scheme
+     94 !=============================================================================
+     95 use pmat, only: inv
+     96 integer, intent(IN )        :: na,nb
+     97 real,    intent(IN )        :: za(na),zb(nb),z0
+     98 real,    intent(OUT)        :: a(na),b(nb)
+     99 !-----------------------------------------------------------------------------
+    100 integer                     :: na1,nab,i
+    101 real, dimension(na+nb,na+nb):: w
+    102 real, dimension(na)         :: za0,pa
+    103 real, dimension(nb)         :: zb0,pb
+    104 real, dimension(na+nb)      :: ab
+    105 !=============================================================================
+    106 na1=na+1; nab=na+nb
+    107 za0=za-z0; zb0=zb-z0
+    108 pa=1.;     pb=-1.
+    109 w=0.;         ab=0.
+    110 w(1,1:na)=1.; ab(1)=1.
+    111 do i=2,nab; w(i,1:na)=pa;    pa=pa*za0; w(i,na1:nab)=pb; pb=pb*zb0; enddo
+    112 call INV(w,ab)
+    113 a=ab(1:na); b=ab(na1:nab)
+    114 end subroutine AVCO 
+
+Page 3           Source Listing                  AVCO
+2017-04-18 11:09 Entry Points                    pmat2.f90
+
+
+
+ENTRY POINTS
+
+  Name                      
+                            
+ pmat2_mp_avco_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  76       R(4)            4     1     0        ARG,OUT          113                               
+ AB                         Local  104      R(4)            4     1     0        TGT              109,110,112,113                   
+ AVCO                       Subr   76                                                                                               
+ B                          Dummy  76       R(4)            4     1     0        ARG,OUT          113                               
+ I                          Local  100      I(4)            4           scalar                    111                               
+ INV                        Local  95                                   scalar                    95,112                            
+ NA                         Dummy  76       I(4)            4           scalar   ARG,IN           97,98,101,102,104,106,110,111,113 
+ NA1                        Local  100      I(4)            4           scalar                    106,111,113                       
+ NAB                        Local  100      I(4)            4           scalar                    106,111,113                       
+ NB                         Dummy  76       I(4)            4           scalar   ARG,IN           97,98,101,103,104,106             
+ PA                         Local  102      R(4)            4     1     0                         108,111                           
+ PB                         Local  103      R(4)            4     1     0                         108,111                           
+ PMAT                       Module 95                                                             95                                
+ SLINMVT                    Subr   112                                           PRIV             112                               
+ W                          Local  101      R(4)            4     2     0        TGT              109,110,111,112                   
+ Z0                         Dummy  76       R(4)            4           scalar   ARG,IN           107                               
+ ZA                         Dummy  76       R(4)            4     1     0        ARG,IN           107                               
+ ZA0                        Local  102      R(4)            4     1     0                         107,111                           
+ ZB                         Dummy  76       R(4)            4     1     0        ARG,IN           107                               
+ ZB0                        Local  103      R(4)            4     1     0                         107,111                           
+
+Page 4           Source Listing                  AVCO
+2017-04-18 11:09                                 pmat2.f90
+
+    115 !=============================================================================
+    116 subroutine DAVCO(na,nb,za,zb,z0,a,b) !                                  [AVCO]
+    117 !=============================================================================
+    118 use pmat, only: inv
+    119 integer,  intent(IN )          :: na,nb
+    120 real(dp), intent(IN )          :: za(na),zb(nb),z0
+    121 real(dp), intent(OUT)          :: a(na),b(nb)
+    122 !-----------------------------------------------------------------------------
+    123 integer                        :: na1,nab,i
+    124 real(dp),dimension(na+nb,na+nb):: w
+    125 real(dp),dimension(na)         :: za0,pa
+    126 real(dp),dimension(nb)         :: zb0,pb
+    127 real(dp),dimension(na+nb)      :: ab
+    128 !=============================================================================
+    129 na1=na+1; nab=na+nb
+    130 za0=za-z0; zb0=zb-z0
+    131 pa=1.;     pb=-1.
+    132 w=0.;         ab=0.
+    133 w(1,1:na)=1.; ab(1)=1.
+    134 do i=2,nab; w(i,1:na)=pa;    pa=pa*za0; w(i,na1:nab)=pb; pb=pb*zb0; enddo
+    135 call INV(w,ab)
+    136 a=ab(1:na); b=ab(na1:nab)
+    137 end subroutine DAVCO
+
+
+ENTRY POINTS
+
+  Name                       
+                             
+ pmat2_mp_davco_             
+
+Page 5           Source Listing                  DAVCO
+2017-04-18 11:09 Symbol Table                    pmat2.f90
+
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  116      R(8)            8     1     0        ARG,OUT          136                               
+ AB                         Local  127      R(8)            8     1     0        TGT              132,133,135,136                   
+ B                          Dummy  116      R(8)            8     1     0        ARG,OUT          136                               
+ DAVCO                      Subr   116                                           PRIV             148                               
+ DLINMVT                    Subr   135                                           PRIV             135                               
+ DP                         Param  120      I(4)            4           scalar                    43,120,121,124,125,126,127,141,142
+                                                                                                  ,197,198,201,202,203,204,219,220,2
+                                                                                                  76,277,280,281,282,283,298,299,322
+                                                                                                  ,492,495,549,552,590,592,644,647,7
+                                                                                                  17,720,775,776,779,820,821,824    
+ I                          Local  123      I(4)            4           scalar                    134                               
+ INV                        Local  118                                  scalar                    118,135                           
+ NA                         Dummy  116      I(4)            4           scalar   ARG,IN           120,121,124,125,127,129,133,134,13
+                                                                                                  6                                 
+ NA1                        Local  123      I(4)            4           scalar                    129,134,136                       
+ NAB                        Local  123      I(4)            4           scalar                    129,134,136                       
+ NB                         Dummy  116      I(4)            4           scalar   ARG,IN           120,121,124,126,127,129           
+ PA                         Local  125      R(8)            8     1     0                         131,134                           
+ PB                         Local  126      R(8)            8     1     0                         131,134                           
+ PMAT                       Module 118                                                            118                               
+ W                          Local  124      R(8)            8     2     0        TGT              132,133,134,135                   
+ Z0                         Dummy  116      R(8)            8           scalar   ARG,IN           130                               
+ ZA                         Dummy  116      R(8)            8     1     0        ARG,IN           130                               
+ ZA0                        Local  125      R(8)            8     1     0                         130,134                           
+ ZB                         Dummy  116      R(8)            8     1     0        ARG,IN           130                               
+ ZB0                        Local  126      R(8)            8     1     0                         130,134                           
+
+Page 6           Source Listing                  DAVCO
+2017-04-18 11:09                                 pmat2.f90
+
+    138 !=============================================================================
+    139 subroutine TAVCO(xa,xb,a,b)!                                            [AVCO]
+    140 !=============================================================================
+    141 real(dp),dimension(:),intent(IN ):: xa,xb
+    142 real(dp),dimension(:),intent(OUT):: a,b
+    143 !-----------------------------------------------------------------------------
+    144 integer:: na,nb
+    145 !=============================================================================
+    146 na=size(xa); if(na /= size(a))stop 'In tavco; sizes of a and xa different'
+    147 nb=size(xb); if(nb /= size(b))stop 'In tavco; sizes of b and xb different'
+    148 call DAVCO(na,nb,xa,xb,zero,a,b)
+    149 end subroutine TAVCO
+
+
+ENTRY POINTS
+
+  Name                       
+                             
+ pmat2_mp_tavco_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  139      R(8)            8     1     1        ARG,OUT          146,148                           
+ B                          Dummy  139      R(8)            8     1     1        ARG,OUT          147,148                           
+ NA                         Local  144      I(4)            4           scalar                    146,148                           
+ NB                         Local  144      I(4)            4           scalar                    147,148                           
+ SIZE                       Func   146                                  scalar                    146,147                           
+ TAVCO                      Subr   139                                           PRIV                                               
+ XA                         Dummy  139      R(8)            8     1     1        ARG,IN           146,148                           
+ XB                         Dummy  139      R(8)            8     1     1        ARG,IN           147,148                           
+ ZERO                       Param  148      R(8)            8           scalar   PRIV             148,226,305                       
+
+Page 7           Source Listing                  TAVCO
+2017-04-18 11:09                                 pmat2.f90
+
+    150 
+    151 !=============================================================================
+    152 subroutine DFCO(na,nb,za,zb,z0,a,b)!                                    [DFCO]
+    153 !=============================================================================
+    154 !   R.J.Purser, National Centers for Environmental Prediction, Washington D.C.
+    155 !   jim.purser@noaa.gov					      1999
+    156 !		    SUBROUTINE DFCO
+    157 !
+    158 !  Compute one row of the coefficients for either the compact differencing or
+    159 !  quadrature scheme characterized by matrix equation of the form,
+    160 !			 A.d = B.c			       (*)
+    161 !  In either case, d is the derivative of c.
+    162 !
+    163 ! --> NA:   number of d-points operated on by this row of the A of (*)
+    164 ! --> NB:   number of c-points operated on by this row of the B of (*)
+    165 ! --> ZA:   coordinates of d-points used in this row of (*)
+    166 ! --> ZB:   coordinates of c-points used in this row of (*)
+    167 ! --> Z0:   nominal point of application of this row of (*)
+    168 ! <-- A:    the A-coefficients for this scheme
+    169 ! <-- B:    the B-coefficients for this scheme
+    170 !=============================================================================
+    171 use pmat, only: inv
+    172 integer, intent(IN )        :: na,nb
+    173 real,    intent(IN )        :: za(na),zb(nb),z0
+    174 real,    intent(OUT)        :: a(na),b(nb)
+    175 !-----------------------------------------------------------------------------
+    176 integer:: na1,nab,i
+    177 real, dimension(na+nb,na+nb):: w
+    178 real, dimension(na)         :: za0,pa
+    179 real, dimension(nb)         :: zb0,pb
+    180 real, dimension(na+nb)      :: ab
+    181 !=============================================================================
+    182 na1=na+1; nab=na+nb
+    183 za0=za-z0; zb0=zb-z0
+    184 pa=1.;     pb=-1.
+    185 w=0.;         ab=0.
+    186 w(1,1:na)=1.; ab(1)=1.
+    187 do i=3,nab; w(i,1:na)   =pa*(i-2); pa=pa*za0; enddo
+    188 do i=2,nab; w(i,na1:nab)=pb;       pb=pb*zb0; enddo
+    189 call INV(w,ab)
+    190 a=ab(1:na); b=ab(na1:nab)
+    191 end subroutine DFCO 
+
+Page 8           Source Listing                  DFCO
+2017-04-18 11:09 Entry Points                    pmat2.f90
+
+
+
+ENTRY POINTS
+
+  Name                      
+                            
+ pmat2_mp_dfco_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  152      R(4)            4     1     0        ARG,OUT          190                               
+ AB                         Local  180      R(4)            4     1     0        TGT              185,186,189,190                   
+ B                          Dummy  152      R(4)            4     1     0        ARG,OUT          190                               
+ DFCO                       Subr   152                                                                                              
+ I                          Local  176      I(4)            4           scalar                    187,188                           
+ INV                        Local  171                                  scalar                    171,189                           
+ NA                         Dummy  152      I(4)            4           scalar   ARG,IN           173,174,177,178,180,182,186,187,19
+                                                                                                  0                                 
+ NA1                        Local  176      I(4)            4           scalar                    182,188,190                       
+ NAB                        Local  176      I(4)            4           scalar                    182,187,188,190                   
+ NB                         Dummy  152      I(4)            4           scalar   ARG,IN           173,174,177,179,180,182           
+ PA                         Local  178      R(4)            4     1     0                         184,187                           
+ PB                         Local  179      R(4)            4     1     0                         184,188                           
+ PMAT                       Module 171                                                            171                               
+ SLINMVT                    Subr   189                                           PRIV             189                               
+ W                          Local  177      R(4)            4     2     0        TGT              185,186,187,188,189               
+ Z0                         Dummy  152      R(4)            4           scalar   ARG,IN           183                               
+ ZA                         Dummy  152      R(4)            4     1     0        ARG,IN           183                               
+ ZA0                        Local  178      R(4)            4     1     0                         183,187                           
+ ZB                         Dummy  152      R(4)            4     1     0        ARG,IN           183                               
+ ZB0                        Local  179      R(4)            4     1     0                         183,188                           
+
+Page 9           Source Listing                  DFCO
+2017-04-18 11:09                                 pmat2.f90
+
+    192 !=============================================================================
+    193 subroutine DDFCO(na,nb,za,zb,z0,a,b) ! Real(dp) version of              [DFCO]
+    194 !=============================================================================
+    195 use pmat, only: inv
+    196 integer,  intent(IN)            :: na,nb
+    197 real(dp), intent(IN)            :: za(na),zb(nb),z0
+    198 real(dp), intent(OUT)           :: a(na),b(nb)
+    199 !-----------------------------------------------------------------------------
+    200 integer                         :: na1,nab,i
+    201 real(dp), dimension(na+nb,na+nb):: w
+    202 real(dp), dimension(na)         :: za0,pa
+    203 real(dp), dimension(nb)         :: zb0,pb
+    204 real(dp), dimension(na+nb)      :: ab
+    205 !=============================================================================
+    206 na1=na+1; nab=na+nb
+    207 za0=za-z0; zb0=zb-z0
+    208 pa=1.;     pb=-1.
+    209 w=0.;         ab=0.
+    210 w(1,1:na)=1.; ab(1)=1.
+    211 do i=3,nab; w(i,1:na)   =pa*(i-2); pa=pa*za0; enddo
+    212 do i=2,nab; w(i,na1:nab)=pb;       pb=pb*zb0; enddo
+    213 call INV(w,ab)
+    214 a=ab(1:na); b=ab(na1:nab)
+    215 end subroutine DDFCO 
+
+
+ENTRY POINTS
+
+  Name                       
+                             
+ pmat2_mp_ddfco_             
+
+Page 10          Source Listing                  DDFCO
+2017-04-18 11:09 Symbol Table                    pmat2.f90
+
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  193      R(8)            8     1     0        ARG,OUT          214                               
+ AB                         Local  204      R(8)            8     1     0        TGT              209,210,213,214                   
+ B                          Dummy  193      R(8)            8     1     0        ARG,OUT          214                               
+ DDFCO                      Subr   193                                           PRIV             226                               
+ DLINMVT                    Subr   213                                           PRIV             213                               
+ I                          Local  200      I(4)            4           scalar                    211,212                           
+ INV                        Local  195                                  scalar                    195,213                           
+ NA                         Dummy  193      I(4)            4           scalar   ARG,IN           197,198,201,202,204,206,210,211,21
+                                                                                                  4                                 
+ NA1                        Local  200      I(4)            4           scalar                    206,212,214                       
+ NAB                        Local  200      I(4)            4           scalar                    206,211,212,214                   
+ NB                         Dummy  193      I(4)            4           scalar   ARG,IN           197,198,201,203,204,206           
+ PA                         Local  202      R(8)            8     1     0                         208,211                           
+ PB                         Local  203      R(8)            8     1     0                         208,212                           
+ PMAT                       Module 195                                                            195                               
+ W                          Local  201      R(8)            8     2     0        TGT              209,210,211,212,213               
+ Z0                         Dummy  193      R(8)            8           scalar   ARG,IN           207                               
+ ZA                         Dummy  193      R(8)            8     1     0        ARG,IN           207                               
+ ZA0                        Local  202      R(8)            8     1     0                         207,211                           
+ ZB                         Dummy  193      R(8)            8     1     0        ARG,IN           207                               
+ ZB0                        Local  203      R(8)            8     1     0                         207,212                           
+
+Page 11          Source Listing                  DDFCO
+2017-04-18 11:09                                 pmat2.f90
+
+    216 !=============================================================================
+    217 subroutine TDFCO(xa,xb,a,b)!                                            [DFCO]
+    218 !=============================================================================
+    219 real(dp),dimension(:),intent(IN ):: xa,xb
+    220 real(dp),dimension(:),intent(OUT):: a,b
+    221 !-----------------------------------------------------------------------------
+    222 integer:: na,nb
+    223 !=============================================================================
+    224 na=size(xa); if(na /= size(a))stop 'In tdfco; sizes of a and xa different'
+    225 nb=size(xb); if(nb /= size(b))stop 'In tdfco; sizes of b and xb different'
+    226 call DDFCO(na,nb,xa,xb,zero,a,b)
+    227 end subroutine TDFCO
+
+
+ENTRY POINTS
+
+  Name                       
+                             
+ pmat2_mp_tdfco_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  217      R(8)            8     1     1        ARG,OUT          224,226                           
+ B                          Dummy  217      R(8)            8     1     1        ARG,OUT          225,226                           
+ NA                         Local  222      I(4)            4           scalar                    224,226                           
+ NB                         Local  222      I(4)            4           scalar                    225,226                           
+ SIZE                       Func   224                                  scalar                    224,225                           
+ TDFCO                      Subr   217                                           PRIV                                               
+ XA                         Dummy  217      R(8)            8     1     1        ARG,IN           224,226                           
+ XB                         Dummy  217      R(8)            8     1     1        ARG,IN           225,226                           
+
+Page 12          Source Listing                  TDFCO
+2017-04-18 11:09                                 pmat2.f90
+
+    228 
+    229 
+    230 !=============================================================================
+    231 subroutine DFCO2(na,nb,za,zb,z0,a,b)!                                  [DFCO2] 
+    232 !=============================================================================
+    233 !		    SUBROUTINE DFCO2
+    234 !   R.J.Purser, National Centers for Environmental Prediction, Washington D.C.
+    235 !   jim.purser@noaa.gov					      1999
+    236 !
+    237 !  Compute one row of the coefficients for either the compact second-
+    238 !  differencing scheme characterized by matrix equation of the form,
+    239 !			 A.d = B.c			       (*)
+    240 !  Where d is the second-derivative of c.
+    241 !
+    242 ! --> NA:   number of d-points operated on by this row of the A of (*)
+    243 ! --> NB:   number of c-points operated on by this row of the B of (*)
+    244 ! --> ZA:   coordinates of d-points used in this row of (*)
+    245 ! --> ZB:   coordinates of c-points used in this row of (*)
+    246 ! --> Z0:   nominal point of application of this row of (*)
+    247 ! <-- A:    the NA coefficients A for this scheme
+    248 ! <-- B:    the NB coefficients B for this scheme
+    249 !=============================================================================
+    250 use pmat, only: inv
+    251 integer, intent(IN )        :: na,nb
+    252 real,    intent(IN )        :: za(na),zb(nb),z0
+    253 real,    intent(OUT)        :: a(na),b(nb)
+    254 !-----------------------------------------------------------------------------
+    255 integer:: na1,nab,i
+    256 real, dimension(na+nb,na+nb):: w
+    257 real, dimension(na)         :: za0,pa
+    258 real, dimension(nb)         :: zb0,pb
+    259 real, dimension(na+nb)      :: ab
+    260 !=============================================================================
+    261 na1=na+1; nab=na+nb
+    262 za0=za-z0; zb0=zb-z0
+    263 pa=1.;     pb=-1.
+    264 w=0.;         ab=0.
+    265 w(1,1:na)=1.; ab(1)=1.
+    266 do i=4,nab; w(i,1:na)   =pa*(i-2)*(i-3); pa=pa*za0; enddo
+    267 do i=2,nab; w(i,na1:nab)=pb;             pb=pb*zb0; enddo
+    268 call INV(w,ab)
+    269 a=ab(1:na); b=ab(na1:nab)
+    270 end subroutine DFCO2 
+
+Page 13          Source Listing                  DFCO2
+2017-04-18 11:09 Entry Points                    pmat2.f90
+
+
+
+ENTRY POINTS
+
+  Name                       
+                             
+ pmat2_mp_dfco2_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  231      R(4)            4     1     0        ARG,OUT          269                               
+ AB                         Local  259      R(4)            4     1     0        TGT              264,265,268,269                   
+ B                          Dummy  231      R(4)            4     1     0        ARG,OUT          269                               
+ DFCO2                      Subr   231                                                                                              
+ I                          Local  255      I(4)            4           scalar                    266,267                           
+ INV                        Local  250                                  scalar                    250,268                           
+ NA                         Dummy  231      I(4)            4           scalar   ARG,IN           252,253,256,257,259,261,265,266,26
+                                                                                                  9                                 
+ NA1                        Local  255      I(4)            4           scalar                    261,267,269                       
+ NAB                        Local  255      I(4)            4           scalar                    261,266,267,269                   
+ NB                         Dummy  231      I(4)            4           scalar   ARG,IN           252,253,256,258,259,261           
+ PA                         Local  257      R(4)            4     1     0                         263,266                           
+ PB                         Local  258      R(4)            4     1     0                         263,267                           
+ PMAT                       Module 250                                                            250                               
+ SLINMVT                    Subr   268                                           PRIV             268                               
+ W                          Local  256      R(4)            4     2     0        TGT              264,265,266,267,268               
+ Z0                         Dummy  231      R(4)            4           scalar   ARG,IN           262                               
+ ZA                         Dummy  231      R(4)            4     1     0        ARG,IN           262                               
+ ZA0                        Local  257      R(4)            4     1     0                         262,266                           
+ ZB                         Dummy  231      R(4)            4     1     0        ARG,IN           262                               
+ ZB0                        Local  258      R(4)            4     1     0                         262,267                           
+
+Page 14          Source Listing                  DFCO2
+2017-04-18 11:09                                 pmat2.f90
+
+    271 !=============================================================================
+    272 subroutine DDFCO2(na,nb,za,zb,z0,a,b) ! Real(dp) version of            [DFCO2]
+    273 !=============================================================================
+    274 use pmat, only: inv
+    275 integer,  intent(IN )           :: na,nb
+    276 real(dp), intent(IN )           :: za(na),zb(nb),z0
+    277 real(dp), intent(OUT)           :: a(na),b(nb)
+    278 !-----------------------------------------------------------------------------
+    279 integer                         :: na1,nab,i
+    280 real(dp), dimension(na+nb,na+nb):: w
+    281 real(dp), dimension(na)         :: za0,pa
+    282 real(dp), dimension(nb)         :: zb0,pb
+    283 real(dp), dimension(na+nb)      :: ab
+    284 !=============================================================================
+    285 na1=na+1; nab=na+nb
+    286 za0=za-z0; zb0=zb-z0
+    287 pa=1.;     pb=-1.
+    288 w=0.;         ab=0.
+    289 w(1,1:na)=1.; ab(1)=1.
+    290 do i=4,nab; w(i,1:na)   =pa*(i-2)*(i-3); pa=pa*za0; enddo
+    291 do i=2,nab; w(i,na1:nab)=pb;             pb=pb*zb0; enddo
+    292 call INV(w,ab)
+    293 a=ab(1:na); b=ab(na1:nab)
+    294 end subroutine ddfco2 
+
+
+ENTRY POINTS
+
+  Name                        
+                              
+ pmat2_mp_ddfco2_             
+
+Page 15          Source Listing                  DDFCO2
+2017-04-18 11:09 Symbol Table                    pmat2.f90
+
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  272      R(8)            8     1     0        ARG,OUT          293                               
+ AB                         Local  283      R(8)            8     1     0        TGT              288,289,292,293                   
+ B                          Dummy  272      R(8)            8     1     0        ARG,OUT          293                               
+ DDFCO2                     Subr   272                                           PRIV             305                               
+ DLINMVT                    Subr   292                                           PRIV             292                               
+ I                          Local  279      I(4)            4           scalar                    290,291                           
+ INV                        Local  274                                  scalar                    274,292                           
+ NA                         Dummy  272      I(4)            4           scalar   ARG,IN           276,277,280,281,283,285,289,290,29
+                                                                                                  3                                 
+ NA1                        Local  279      I(4)            4           scalar                    285,291,293                       
+ NAB                        Local  279      I(4)            4           scalar                    285,290,291,293                   
+ NB                         Dummy  272      I(4)            4           scalar   ARG,IN           276,277,280,282,283,285           
+ PA                         Local  281      R(8)            8     1     0                         287,290                           
+ PB                         Local  282      R(8)            8     1     0                         287,291                           
+ PMAT                       Module 274                                                            274                               
+ W                          Local  280      R(8)            8     2     0        TGT              288,289,290,291,292               
+ Z0                         Dummy  272      R(8)            8           scalar   ARG,IN           286                               
+ ZA                         Dummy  272      R(8)            8     1     0        ARG,IN           286                               
+ ZA0                        Local  281      R(8)            8     1     0                         286,290                           
+ ZB                         Dummy  272      R(8)            8     1     0        ARG,IN           286                               
+ ZB0                        Local  282      R(8)            8     1     0                         286,291                           
+
+Page 16          Source Listing                  DDFCO2
+2017-04-18 11:09                                 pmat2.f90
+
+    295 !=============================================================================
+    296 subroutine TDFCO2(xa,xb,a,b)!                                          [DFCO2]
+    297 !=============================================================================
+    298 real(dp),dimension(:),intent(IN ):: xa,xb
+    299 real(dp),dimension(:),intent(OUT):: a,b
+    300 !-----------------------------------------------------------------------------
+    301 integer:: na,nb
+    302 !=============================================================================
+    303 na=size(xa); if(na /= size(a))stop 'In tdfco2; sizes of a and xa different'
+    304 nb=size(xb); if(nb /= size(b))stop 'In tdfco2; sizes of b and xb different'
+    305 call DDFCO2(na,nb,xa,xb,zero,a,b)
+    306 end subroutine TDFCO2
+
+
+ENTRY POINTS
+
+  Name                        
+                              
+ pmat2_mp_tdfco2_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  296      R(8)            8     1     1        ARG,OUT          303,305                           
+ B                          Dummy  296      R(8)            8     1     1        ARG,OUT          304,305                           
+ NA                         Local  301      I(4)            4           scalar                    303,305                           
+ NB                         Local  301      I(4)            4           scalar                    304,305                           
+ SIZE                       Func   303                                  scalar                    303,304                           
+ TDFCO2                     Subr   296                                           PRIV                                               
+ XA                         Dummy  296      R(8)            8     1     1        ARG,IN           303,305                           
+ XB                         Dummy  296      R(8)            8     1     1        ARG,IN           304,305                           
+
+Page 17          Source Listing                  TDFCO2
+2017-04-18 11:09                                 pmat2.f90
+
+    307 
+    308 
+    309 !=============================================================================
+    310 pure subroutine CLIB(m1,m2,mah1,mah2,a)!                               [CLIPB]
+    311 !=============================================================================
+    312 integer, intent(IN   ) :: m1, m2, mah1, mah2
+    313 real,    intent(INOUT) :: a(m1,-mah1:mah2)
+    314 integer                :: j
+    315 do j=1,mah1; a(1:min(m1,j),-j)=0.; enddo
+    316 do j=m2-m1+1,mah2; a(max(1,m2-j+1):m1,j)=0.; enddo
+    317 end subroutine CLIB
+
+
+ENTRY POINTS
+
+  Name                      
+                            
+ pmat2_mp_clib_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  310      R(4)            4     2     0        ARG,INOUT        315,316                           
+ CLIB                       Subr   310                                           PRIV                                               
+ J                          Local  314      I(4)            4           scalar                    315,316                           
+ M1                         Dummy  310      I(4)            4           scalar   ARG,IN           313,315,316                       
+ M2                         Dummy  310      I(4)            4           scalar   ARG,IN           316                               
+ MAH1                       Dummy  310      I(4)            4           scalar   ARG,IN           313,315                           
+ MAH2                       Dummy  310      I(4)            4           scalar   ARG,IN           313,316                           
+ MAX                        Func   316                                  scalar                    316                               
+ MIN                        Func   315                                  scalar                    315                               
+
+Page 18          Source Listing                  CLIB
+2017-04-18 11:09                                 pmat2.f90
+
+    318 !=============================================================================
+    319 pure subroutine clib_d(m1,m2,mah1,mah2,a)!                             [CLIPB]
+    320 !=============================================================================
+    321 integer,  intent(IN   ) :: m1, m2, mah1, mah2
+    322 real(dp), intent(INOUT) :: a(m1,-mah1:mah2)
+    323 integer                 :: j
+    324 do j=1,mah1; a(1:min(m1,j),-j)=0; enddo
+    325 do j=m2-m1+1,mah2; a(max(1,m2-j+1):m1,j)=0; enddo
+    326 end subroutine clib_d
+
+
+ENTRY POINTS
+
+  Name                        
+                              
+ pmat2_mp_clib_d_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  319      R(8)            8     2     0        ARG,INOUT        324,325                           
+ CLIB_D                     Subr   319                                           PRIV                                               
+ J                          Local  323      I(4)            4           scalar                    324,325                           
+ M1                         Dummy  319      I(4)            4           scalar   ARG,IN           322,324,325                       
+ M2                         Dummy  319      I(4)            4           scalar   ARG,IN           325                               
+ MAH1                       Dummy  319      I(4)            4           scalar   ARG,IN           322,324                           
+ MAH2                       Dummy  319      I(4)            4           scalar   ARG,IN           322,325                           
+ MAX                        Func   325                                  scalar                    325                               
+ MIN                        Func   324                                  scalar                    324                               
+
+Page 19          Source Listing                  CLIB_D
+2017-04-18 11:09                                 pmat2.f90
+
+    327 !=============================================================================
+    328 pure subroutine clib_c(m1,m2,mah1,mah2,a)!                              [CLIPB]
+    329 !=============================================================================
+    330 integer,  intent(IN   ) :: m1, m2, mah1, mah2
+    331 complex(dpc), intent(INOUT) :: a(m1,-mah1:mah2)
+    332 integer                 :: j
+    333 do j=1,mah1; a(1:min(m1,j),-j)=0; enddo
+    334 do j=m2-m1+1,mah2; a(max(1,m2-j+1):m1,j)=0; enddo
+    335 end subroutine clib_c
+
+
+ENTRY POINTS
+
+  Name                        
+                              
+ pmat2_mp_clib_c_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  328      C(16)           16    2     0        ARG,INOUT        333,334                           
+ CLIB_C                     Subr   328                                           PRIV                                               
+ DPC                        Param  331      I(4)            4           scalar                    331                               
+ J                          Local  332      I(4)            4           scalar                    333,334                           
+ M1                         Dummy  328      I(4)            4           scalar   ARG,IN           331,333,334                       
+ M2                         Dummy  328      I(4)            4           scalar   ARG,IN           334                               
+ MAH1                       Dummy  328      I(4)            4           scalar   ARG,IN           331,333                           
+ MAH2                       Dummy  328      I(4)            4           scalar   ARG,IN           331,334                           
+ MAX                        Func   334                                  scalar                    334                               
+ MIN                        Func   333                                  scalar                    333                               
+
+Page 20          Source Listing                  CLIB_C
+2017-04-18 11:09                                 pmat2.f90
+
+    336 
+    337 !=============================================================================
+    338 subroutine CAD1B(m1,mah1,mah2,mirror2,a)!                              [CAD1B]
+    339 !=============================================================================
+    340 ! Incorporate operand symmetry near end-1 of a band matrix operator
+    341 !
+    342 ! <-> A:      Input as unclipped operator, output as symmetrized and clipped.
+    343 ! m1, m2:     Sizes of implied full matrix
+    344 ! mah1, mah2: Left and right semi-bandwidths of A.
+    345 ! mirror2:    2*location of symmetry axis relative to end-1 operand element.
+    346 !      Note: although m2 is not used here, it IS used in companion routines
+    347 !            cad2b and csb2b; it is retained in the interests of uniformity.
+    348 !=============================================================================
+    349 integer,  intent(IN   ):: m1,mah1,mah2,mirror2
+    350 real,     intent(INOUT):: a(0:m1-1,-mah1:mah2)
+    351 !-----------------------------------------------------------------------------
+    352 integer                :: i,i2,jm,jp,jpmax
+    353 !=============================================================================
+    354 if(mirror2+mah1 > mah2)stop 'In CAD1B; mah2 insufficient'
+    355 do i=0,m1-1; i2=i*2; jpmax=mirror2+mah1-i2; if(jpmax <= -mah1)exit
+    356    do jm=-mah1,mah2; jp=mirror2-jm-i2; if(jp <= jm)exit
+    357       a(i,jp)=a(i,jp)+a(i,jm) ! Reflect and add
+    358       a(i,jm)=0.              ! zero the exterior part
+    359    enddo
+    360 enddo
+    361 end subroutine CAD1B
+
+
+ENTRY POINTS
+
+  Name                       
+                             
+ pmat2_mp_cad1b_             
+
+Page 21          Source Listing                  CAD1B
+2017-04-18 11:09 Symbol Table                    pmat2.f90
+
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  338      R(4)            4     2     0        ARG,INOUT        357,358                           
+ CAD1B                      Subr   338                                                                                              
+ I                          Local  352      I(4)            4           scalar                    355,357,358                       
+ I2                         Local  352      I(4)            4           scalar                    355,356                           
+ JM                         Local  352      I(4)            4           scalar                    356,357,358                       
+ JP                         Local  352      I(4)            4           scalar                    356,357                           
+ JPMAX                      Local  352      I(4)            4           scalar                    355                               
+ M1                         Dummy  338      I(4)            4           scalar   ARG,IN           350,355                           
+ MAH1                       Dummy  338      I(4)            4           scalar   ARG,IN           350,354,355,356                   
+ MAH2                       Dummy  338      I(4)            4           scalar   ARG,IN           350,354,356                       
+ MIRROR2                    Dummy  338      I(4)            4           scalar   ARG,IN           354,355,356                       
+
+Page 22          Source Listing                  CAD1B
+2017-04-18 11:09                                 pmat2.f90
+
+    362 
+    363 !=============================================================================
+    364 subroutine CSB1B(m1,mah1,mah2,mirror2,a)!                              [CSB1B]
+    365 !=============================================================================
+    366 ! Like cad1b, but for antisymmetric operand
+    367 !=============================================================================
+    368 integer,  intent(IN   ):: m1,mah1,mah2,mirror2
+    369 real,     intent(INOUT):: a(0:m1-1,-mah1:mah2)
+    370 !-----------------------------------------------------------------------------
+    371 integer                :: i,i2,jm,jp,jpmax
+    372 !=============================================================================
+    373 if(mirror2+mah1 > mah2)stop 'In CSB1B; mah2 insufficient'
+    374 do i=0,m1-1; i2=i*2; jpmax=mirror2+mah1-i2; if(jpmax < -mah1)exit
+    375    do jm=-mah1,mah2; jp=mirror2-jm-i2; if(jp < jm)exit
+    376       a(i,jp)=a(i,jp)-a(i,jm) ! Reflect and subtract
+    377       a(i,jm)=0.              ! zero the exterior part
+    378    enddo
+    379 enddo
+    380 end subroutine CSB1B
+
+
+ENTRY POINTS
+
+  Name                       
+                             
+ pmat2_mp_csb1b_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  364      R(4)            4     2     0        ARG,INOUT        376,377                           
+ CSB1B                      Subr   364                                                                                              
+ I                          Local  371      I(4)            4           scalar                    374,376,377                       
+ I2                         Local  371      I(4)            4           scalar                    374,375                           
+ JM                         Local  371      I(4)            4           scalar                    375,376,377                       
+ JP                         Local  371      I(4)            4           scalar                    375,376                           
+ JPMAX                      Local  371      I(4)            4           scalar                    374                               
+ M1                         Dummy  364      I(4)            4           scalar   ARG,IN           369,374                           
+ MAH1                       Dummy  364      I(4)            4           scalar   ARG,IN           369,373,374,375                   
+ MAH2                       Dummy  364      I(4)            4           scalar   ARG,IN           369,373,375                       
+ MIRROR2                    Dummy  364      I(4)            4           scalar   ARG,IN           373,374,375                       
+
+Page 23          Source Listing                  CSB1B
+2017-04-18 11:09                                 pmat2.f90
+
+    381 
+    382 !=============================================================================
+    383 subroutine CAD2B(m1,m2,mah1,mah2,mirror2,a)!                           [CAD2B]
+    384 !=============================================================================
+    385 ! Incorporate operand symmetry near end-2 of a band matrix operator
+    386 !
+    387 ! <-> A:      Input as unclipped operator, output as symmetrized and clipped.
+    388 ! m1, m2:     Sizes of implied full matrix
+    389 ! mah1, mah2: Left and right semi-bandwidths of A.
+    390 ! mirror2:    2*location of symmetry axis relative to end-2 operand element.
+    391 !=============================================================================
+    392 integer,  intent(IN   ):: m1,m2,mah1,mah2,mirror2
+    393 real,     intent(INOUT):: a(1-m1:0,m1-m2-mah1:m1-m2+mah2)
+    394 !-----------------------------------------------------------------------------
+    395 integer                :: i,i2,jm,jp,jmmin,nah1,nah2
+    396 !=============================================================================
+    397 nah1=mah1+m2-m1; nah2=mah2+m1-m2 ! Effective 2nd-index bounds of A
+    398 if(mirror2-nah1 > -nah2)stop 'In CAD2B; mah1 insufficient'
+    399 do i=0,1-m1,-1; i2=i*2; jmmin=mirror2-nah2-i2; if(jmmin >= nah2)exit
+    400    do jp=nah2,nah1,-1; jm=mirror2-jp-i2; if(jm >= jp)exit
+    401       a(i,jm)=a(i,jm)+a(i,jp) ! Reflect and add
+    402       a(i,jp)=0.              ! zero the exterior part
+    403    enddo
+    404 enddo
+    405 end subroutine CAD2B
+
+
+ENTRY POINTS
+
+  Name                       
+                             
+ pmat2_mp_cad2b_             
+
+Page 24          Source Listing                  CAD2B
+2017-04-18 11:09 Symbol Table                    pmat2.f90
+
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  383      R(4)            4     2     0        ARG,INOUT        401,402                           
+ CAD2B                      Subr   383                                                                                              
+ I                          Local  395      I(4)            4           scalar                    399,401,402                       
+ I2                         Local  395      I(4)            4           scalar                    399,400                           
+ JM                         Local  395      I(4)            4           scalar                    400,401                           
+ JMMIN                      Local  395      I(4)            4           scalar                    399                               
+ JP                         Local  395      I(4)            4           scalar                    400,401,402                       
+ M1                         Dummy  383      I(4)            4           scalar   ARG,IN           393,397,399                       
+ M2                         Dummy  383      I(4)            4           scalar   ARG,IN           393,397                           
+ MAH1                       Dummy  383      I(4)            4           scalar   ARG,IN           393,397                           
+ MAH2                       Dummy  383      I(4)            4           scalar   ARG,IN           393,397                           
+ MIRROR2                    Dummy  383      I(4)            4           scalar   ARG,IN           398,399,400                       
+ NAH1                       Local  395      I(4)            4           scalar                    397,398,400                       
+ NAH2                       Local  395      I(4)            4           scalar                    397,398,399,400                   
+
+Page 25          Source Listing                  CAD2B
+2017-04-18 11:09                                 pmat2.f90
+
+    406 
+    407 !=============================================================================
+    408 subroutine CSB2B(m1,m2,mah1,mah2,mirror2,a)!                           [CSB2B]
+    409 !=============================================================================
+    410 integer,  intent(IN   ):: m1,m2,mah1,mah2,mirror2
+    411 real,     intent(INOUT):: a(1-m1:0,m1-m2-mah1:m1-m2+mah2)
+    412 !-----------------------------------------------------------------------------
+    413 integer                :: i,i2,jm,jp,jmmin,nah1,nah2
+    414 !=============================================================================
+    415 nah1=mah1+m2-m1; nah2=mah2+m1-m2 ! Effective 2nd-index bounds of A
+    416 if(mirror2-nah1 > -nah2)stop 'In CSB2B; mah1 insufficient'
+    417 do i=0,1-m1,-1; i2=i*2; jmmin=mirror2-nah2-i2; if(jmmin > nah2)exit
+    418    do jp=nah2,nah1,-1; jm=mirror2-jp-i2; if(jm > jp)exit
+    419       a(i,jm)=a(i,jm)-a(i,jp) ! Reflect and subtract
+    420       a(i,jp)=0.              ! zero the exterior part
+    421    enddo
+    422 enddo
+    423 end subroutine CSB2B
+
+
+ENTRY POINTS
+
+  Name                       
+                             
+ pmat2_mp_csb2b_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  408      R(4)            4     2     0        ARG,INOUT        419,420                           
+ CSB2B                      Subr   408                                                                                              
+ I                          Local  413      I(4)            4           scalar                    417,419,420                       
+ I2                         Local  413      I(4)            4           scalar                    417,418                           
+ JM                         Local  413      I(4)            4           scalar                    418,419                           
+ JMMIN                      Local  413      I(4)            4           scalar                    417                               
+ JP                         Local  413      I(4)            4           scalar                    418,419,420                       
+ M1                         Dummy  408      I(4)            4           scalar   ARG,IN           411,415,417                       
+ M2                         Dummy  408      I(4)            4           scalar   ARG,IN           411,415                           
+ MAH1                       Dummy  408      I(4)            4           scalar   ARG,IN           411,415                           
+ MAH2                       Dummy  408      I(4)            4           scalar   ARG,IN           411,415                           
+ MIRROR2                    Dummy  408      I(4)            4           scalar   ARG,IN           416,417,418                       
+ NAH1                       Local  413      I(4)            4           scalar                    415,416,418                       
+ NAH2                       Local  413      I(4)            4           scalar                    415,416,417,418                   
+
+Page 26          Source Listing                  CSB2B
+2017-04-18 11:09                                 pmat2.f90
+
+    424 
+    425 !=============================================================================
+    426 !SUBROUTINE CEX2B(a,m1,m2,mah1,mah2,mirror2)
+    427 !=============================================================================
+    428 !INTEGER,  INTENT(IN)   :: m1,m2,mah1,mah2,mirror2
+    429 !REAL,     INTENT(INOUT):: a(1-m1:0,m1-m2-mah1:m1-m2+mah2)
+    430 !-----------------------------------------------------------------------------
+    431 !INTEGER                :: i,i2,jm,jp,jmmin,nah1,nah2,mirror,j0
+    432 !=============================================================================
+    433 !nah1=mah1+m2-m1; nah2=mah2+m1-m2 ! Effective 2nd-index bounds of A
+    434 !IF(mirror2-nah1 > -nah2)STOP 'In CEX2B; mah1 insufficient'
+    435 !mirror=mirror2/2
+    436 !IF(mirror*2 /= mirror2)STOP 'In CEX2B; mirror2 is not even'
+    437 !DO i=0,1-m1,-1; i2=i*2; jmmin=mirror2-nah2-i2; IF(jmmin >= nah2)EXIT
+    438 !   j0=mirror-i
+    439 !   DO jp=nah2,nah1,-1; jm=mirror2-jp-i2; IF(jm >= jp)EXIT
+    440 !      a(i,jm)=a(i,jm)-a(i,jp)    ! Reflect and subtract
+    441 !      a(i,j0)=a(i,j0)+2.*a(i,jp) ! Apply double the coefficient to end
+    442 !      a(i,jp)=0.                 ! zero the exterior part
+    443 !   ENDDO
+    444 !ENDDO
+    445 !END SUBROUTINE CEX2B
+    446 
+    447 !=============================================================================
+    448 subroutine LDUB(m,mah1,mah2,a)!                                         [LDUB]
+    449 !=============================================================================
+    450 !   R.J.Purser, National Meteorological Center, Washington D.C.  1994
+    451 !		    SUBROUTINE LDUB
+    452 !  Compute [L]*[D**-1]*[U] decomposition of asymmetric band-matrix
+    453 !
+    454 ! <-> A: input as the asymmetric band matrix. On output, it contains
+    455 !     the [L]*[D**-1]*[U] factorization of the input matrix, where
+    456 !     [L] is lower triangular with unit main diagonal
+    457 !     [D] is a diagonal matrix
+    458 !     [U] is upper triangular with unit main diagonal
+    459 ! --> M:    The number of rows of array A
+    460 ! --> MAH1: the left half-bandwidth of fortran array A
+    461 ! --> MAH2: the right half-bandwidth of fortran array A
+    462 !=============================================================================
+    463 integer, intent(IN   ) :: m,mah1, mah2 
+    464 real,    intent(INOUT) :: a(m,-mah1:mah2) 
+    465 !-----------------------------------------------------------------------------
+    466 integer                :: j, imost, jmost, jp, i
+    467 real                   :: ajj, ajji, aij
+    468 !=============================================================================
+    469 do j=1,m
+    470   imost=min(m,j+mah1)
+    471   jmost=min(m,j+mah2)
+    472   jp=j+1
+    473   ajj=a(j,0)
+    474   if(ajj == 0.)then
+    475     write(41,'(" Failure in LDUB:"/" Matrix requires pivoting or is singular")')
+    476     stop
+    477   endif
+    478   ajji=1./ajj
+    479   a(j,0)=ajji
+    480   do i=jp,imost
+
+Page 27          Source Listing                  LDUB
+2017-04-18 11:09                                 pmat2.f90
+
+    481     aij=ajji*a(i,j-i)
+    482     a(i,j-i)=aij
+    483     a(i,jp-i:jmost-i)=a(i,jp-i:jmost-i)-aij*a(j,1:jmost-j)
+    484   enddo
+    485   a(j,1:jmost-j)=ajji*a(j,1:jmost-j)
+    486 enddo
+    487 end subroutine LDUB
+
+
+ENTRY POINTS
+
+  Name                      
+                            
+ pmat2_mp_ldub_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  448      R(4)            4     2     0        ARG,INOUT        473,479,481,482,483,485           
+ AIJ                        Local  467      R(4)            4           scalar                    481,482,483                       
+ AJJ                        Local  467      R(4)            4           scalar                    473,474,478                       
+ AJJI                       Local  467      R(4)            4           scalar                    478,479,481,485                   
+ I                          Local  466      I(4)            4           scalar                    480,481,482,483                   
+ IMOST                      Local  466      I(4)            4           scalar                    470,480                           
+ J                          Local  466      I(4)            4           scalar                    469,470,471,472,473,479,481,482,48
+                                                                                                  3,485                             
+ JMOST                      Local  466      I(4)            4           scalar                    471,483,485                       
+ JP                         Local  466      I(4)            4           scalar                    472,480,483                       
+ LDUB                       Subr   448                                                                                              
+ M                          Dummy  448      I(4)            4           scalar   ARG,IN           464,469,470,471                   
+ MAH1                       Dummy  448      I(4)            4           scalar   ARG,IN           464,470                           
+ MAH2                       Dummy  448      I(4)            4           scalar   ARG,IN           464,471                           
+ MIN                        Func   470                                  scalar                    470,471                           
+
+Page 28          Source Listing                  LDUB
+2017-04-18 11:09                                 pmat2.f90
+
+    488 !=============================================================================
+    489 subroutine DLDUB(m,mah1,mah2,a) ! Real(dp) version of                   [LDUB]
+    490 !=============================================================================
+    491 integer,   intent(IN   ) :: m,mah1, mah2 
+    492 real(dp),  intent(INOUT) :: a(m,-mah1:mah2) 
+    493 !-----------------------------------------------------------------------------
+    494 integer                  :: j, imost, jmost, jp, i
+    495 real(dp)                 :: ajj, ajji, aij
+    496 !=============================================================================
+    497 do j=1,m
+    498   imost=min(m,j+mah1)
+    499   jmost=min(m,j+mah2)
+    500   jp=j+1
+    501   ajj=a(j,0)
+    502   if(ajj == 0)then
+    503     write(41,'(" Fails in LDUB_d:"/" Matrix requires pivoting or is singular")')
+    504     stop
+    505   endif
+    506   ajji=1./ajj
+    507   a(j,0)=ajji
+    508   do i=jp,imost
+    509     aij=ajji*a(i,j-i)
+    510     a(i,j-i)=aij
+    511     a(i,jp-i:jmost-i)=a(i,jp-i:jmost-i)-aij*a(j,1:jmost-j)
+    512   enddo
+    513   a(j,1:jmost-j)=ajji*a(j,1:jmost-j)
+    514 enddo
+    515 end subroutine DLDUB
+
+Page 29          Source Listing                  DLDUB
+2017-04-18 11:09 Entry Points                    pmat2.f90
+
+
+
+ENTRY POINTS
+
+  Name                       
+                             
+ pmat2_mp_dldub_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  489      R(8)            8     2     0        ARG,INOUT        501,507,509,510,511,513           
+ AIJ                        Local  495      R(8)            8           scalar                    509,510,511                       
+ AJJ                        Local  495      R(8)            8           scalar                    501,502,506                       
+ AJJI                       Local  495      R(8)            8           scalar                    506,507,509,513                   
+ DLDUB                      Subr   489                                           PRIV             594                               
+ I                          Local  494      I(4)            4           scalar                    508,509,510,511                   
+ IMOST                      Local  494      I(4)            4           scalar                    498,508                           
+ J                          Local  494      I(4)            4           scalar                    497,498,499,500,501,507,509,510,51
+                                                                                                  1,513                             
+ JMOST                      Local  494      I(4)            4           scalar                    499,511,513                       
+ JP                         Local  494      I(4)            4           scalar                    500,508,511                       
+ M                          Dummy  489      I(4)            4           scalar   ARG,IN           492,497,498,499                   
+ MAH1                       Dummy  489      I(4)            4           scalar   ARG,IN           492,498                           
+ MAH2                       Dummy  489      I(4)            4           scalar   ARG,IN           492,499                           
+ MIN                        Func   498                                  scalar                    498,499                           
+
+Page 30          Source Listing                  DLDUB
+2017-04-18 11:09                                 pmat2.f90
+
+    516 
+    517 !=============================================================================
+    518 subroutine LDLTB(m,mah1,a) ! Real(sp) version of                       [LDLTB]
+    519 !=============================================================================
+    520 integer,   intent(IN   ) :: m,mah1
+    521 real(sp),  intent(INOUT) :: a(m,-mah1:0) 
+    522 !-----------------------------------------------------------------------------
+    523 integer                  :: j, imost, jp, i,k
+    524 real(sp)                 :: ajj, ajji, aij
+    525 !=============================================================================
+    526 do j=1,m
+    527   imost=min(m,j+mah1)
+    528   jp=j+1
+    529   ajj=a(j,0)
+    530   if(ajj == 0)then
+    531     write(41,'(" Fails in LDLTB:"/" Matrix requires pivoting or is singular")')
+    532     stop
+    533   endif
+    534   ajji=1./ajj
+    535   a(j,0)=ajji
+    536   do i=jp,imost
+    537     aij=a(i,j-i)
+    538     a(i,j-i)=ajji*aij
+    539     do k=jp,i
+    540        a(i,k-i)=a(i,k-i)-aij*a(k,j-k)
+    541     enddo
+    542   enddo
+    543 enddo
+    544 end subroutine LDLTB
+
+Page 31          Source Listing                  LDLTB
+2017-04-18 11:09 Entry Points                    pmat2.f90
+
+
+
+ENTRY POINTS
+
+  Name                       
+                             
+ pmat2_mp_ldltb_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  518      R(4)            4     2     0        ARG,INOUT        529,535,537,538,540               
+ AIJ                        Local  524      R(4)            4           scalar                    537,538,540                       
+ AJJ                        Local  524      R(4)            4           scalar                    529,530,534                       
+ AJJI                       Local  524      R(4)            4           scalar                    534,535,538                       
+ I                          Local  523      I(4)            4           scalar                    536,537,538,539,540               
+ IMOST                      Local  523      I(4)            4           scalar                    527,536                           
+ J                          Local  523      I(4)            4           scalar                    526,527,528,529,535,537,538,540   
+ JP                         Local  523      I(4)            4           scalar                    528,536,539                       
+ K                          Local  523      I(4)            4           scalar                    539,540                           
+ LDLTB                      Subr   518                                                                                              
+ M                          Dummy  518      I(4)            4           scalar   ARG,IN           521,526,527                       
+ MAH1                       Dummy  518      I(4)            4           scalar   ARG,IN           521,527                           
+ MIN                        Func   527                                  scalar                    527                               
+ SP                         Param  521      I(4)            4           scalar                    521,524,798,799,802               
+
+Page 32          Source Listing                  LDLTB
+2017-04-18 11:09                                 pmat2.f90
+
+    545 !=============================================================================
+    546 subroutine DLDLTB(m,mah1,a) ! Real(dp) version of                   [LDLTB]
+    547 !=============================================================================
+    548 integer,   intent(IN   ) :: m,mah1
+    549 real(dp),  intent(INOUT) :: a(m,-mah1:0) 
+    550 !-----------------------------------------------------------------------------
+    551 integer                  :: j, imost, jp, i,k
+    552 real(dp)                 :: ajj, ajji, aij
+    553 !=============================================================================
+    554 do j=1,m
+    555   imost=min(m,j+mah1)
+    556   jp=j+1
+    557   ajj=a(j,0)
+    558   if(ajj == 0)then
+    559     write(41,'(" Fails in LDLTB_d:"/" Matrix requires pivoting or is singular")')
+    560     stop
+    561   endif
+    562   ajji=1./ajj
+    563   a(j,0)=ajji
+    564   do i=jp,imost
+    565     aij=a(i,j-i)
+    566     a(i,j-i)=ajji*aij
+    567     do k=jp,i
+    568        a(i,k-i)=a(i,k-i)-aij*a(k,j-k)
+    569     enddo
+    570   enddo
+    571 enddo
+    572 end subroutine DLDLTB
+
+Page 33          Source Listing                  DLDLTB
+2017-04-18 11:09 Entry Points                    pmat2.f90
+
+
+
+ENTRY POINTS
+
+  Name                        
+                              
+ pmat2_mp_dldltb_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  546      R(8)            8     2     0        ARG,INOUT        557,563,565,566,568               
+ AIJ                        Local  552      R(8)            8           scalar                    565,566,568                       
+ AJJ                        Local  552      R(8)            8           scalar                    557,558,562                       
+ AJJI                       Local  552      R(8)            8           scalar                    562,563,566                       
+ DLDLTB                     Subr   546                                           PRIV                                               
+ I                          Local  551      I(4)            4           scalar                    564,565,566,567,568               
+ IMOST                      Local  551      I(4)            4           scalar                    555,564                           
+ J                          Local  551      I(4)            4           scalar                    554,555,556,557,563,565,566,568   
+ JP                         Local  551      I(4)            4           scalar                    556,564,567                       
+ K                          Local  551      I(4)            4           scalar                    567,568                           
+ M                          Dummy  546      I(4)            4           scalar   ARG,IN           549,554,555                       
+ MAH1                       Dummy  546      I(4)            4           scalar   ARG,IN           549,555                           
+ MIN                        Func   555                                  scalar                    555                               
+
+Page 34          Source Listing                  DLDLTB
+2017-04-18 11:09                                 pmat2.f90
+
+    573 
+    574 
+    575 !=============================================================================
+    576 subroutine UDLB(m,mah1,mah2,a) ! Reversed-index version of ldub        [UDLB]
+    577 !=============================================================================
+    578 integer,                        intent(IN   ) :: m,mah1,mah2
+    579 real,   dimension(m,-mah1:mah2),intent(INOUT) :: a(m,-mah1:mah2)
+    580 !-----------------------------------------------------------------------------
+    581 real,   dimension(m,-mah2:mah1)               :: at
+    582 !=============================================================================
+    583 at=a(m:1:-1,mah2:-mah1:-1); call LDUB(m,mah2,mah1,at)
+    584 a=at(m:1:-1,mah1:-mah2:-1)
+    585 end subroutine UDLB 
+
+
+ENTRY POINTS
+
+  Name                      
+                            
+ pmat2_mp_udlb_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  576      R(4)            4     2     0        ARG,INOUT        583,584                           
+ AT                         Local  581      R(4)            4     2     0                         583,584                           
+ LDUB                       Subr   583                                                            40,583,1201                       
+ M                          Dummy  576      I(4)            4           scalar   ARG,IN           579,581,583,584                   
+ MAH1                       Dummy  576      I(4)            4           scalar   ARG,IN           579,581,583,584                   
+ MAH2                       Dummy  576      I(4)            4           scalar   ARG,IN           579,581,583,584                   
+ UDLB                       Subr   576                                                                                              
+
+Page 35          Source Listing                  UDLB
+2017-04-18 11:09                                 pmat2.f90
+
+    586 !=============================================================================
+    587 subroutine DUDLB(m,mah1,mah2,a) ! real(dp) version of udlb              [UDLB]
+    588 !=============================================================================
+    589 integer,                         intent(IN   ) :: m,mah1,mah2
+    590 real(dp),dimension(m,-mah1:mah2),intent(INOUT) :: a(m,-mah1:mah2)
+    591 !-----------------------------------------------------------------------------
+    592 real(dp),dimension(m,-mah2:mah1)               :: at
+    593 !=============================================================================
+    594 at=a(m:1:-1,mah2:-mah1:-1); call DLDUB(m,mah2,mah1,at)
+    595 a=at(m:1:-1,mah1:-mah2:-1)
+    596 end subroutine DUDLB 
+
+
+ENTRY POINTS
+
+  Name                       
+                             
+ pmat2_mp_dudlb_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  587      R(8)            8     2     0        ARG,INOUT        594,595                           
+ AT                         Local  592      R(8)            8     2     0                         594,595                           
+ DUDLB                      Subr   587                                           PRIV                                               
+ M                          Dummy  587      I(4)            4           scalar   ARG,IN           590,592,594,595                   
+ MAH1                       Dummy  587      I(4)            4           scalar   ARG,IN           590,592,594,595                   
+ MAH2                       Dummy  587      I(4)            4           scalar   ARG,IN           590,592,594,595                   
+
+Page 36          Source Listing                  DUDLB
+2017-04-18 11:09                                 pmat2.f90
+
+    597 
+    598 !=============================================================================
+    599 subroutine L1UBB(m,mah1,mah2,mbh1,mbh2,a,b)!                           [L1UBB] 
+    600 !=============================================================================
+    601 !   R.J.Purser, National Meteorological Center, Washington D.C.  1996
+    602 !		    SUBROUTINE L1UBB
+    603 !  Form the [L]*[D]*[U] decomposition of asymmetric band-matrix  [A] replace
+    604 !  lower triangular elements of [A] by [D**-1]*[L]*[D], the upper by [U],
+    605 !  replace matrix [B] by [D**-1]*[B].
+    606 !
+    607 ! <-> A input as band matrix, output as lower and upper triangulars with 1s
+    608 !     implicitly assumed to lie on the main diagonal. The product of these
+    609 !     triangular matrices is [D**-1]*[A], where [D] is a diagonal matrix.
+    610 ! <-> B in as band matrix, out as same but premultiplied by diagonal [D**-1]
+    611 ! --> M    Number of rows of A and B
+    612 ! --> MAH1 left half-width of fortran array A
+    613 ! --> MAH2 right half-width of fortran array A
+    614 ! --> MBH1 left half-width of fortran array B
+    615 ! --> MBH2 right half-width of fortran array B
+    616 !=============================================================================
+    617 integer, intent(IN   ) ::  m,mah1, mah2, mbh1, mbh2 
+    618 real,    intent(INOUT) :: a(m,-mah1:mah2), b(m,-mbh1:mbh2)
+    619 !-----------------------------------------------------------------------------
+    620 integer                :: j, imost, jmost, jleast, jp, i
+    621 real                   :: ajj, ajji, aij
+    622 !=============================================================================
+    623 do j=1,m
+    624   imost=min(m,j+mah1)
+    625   jmost=min(m,j+mah2)
+    626   jleast=max(1,j-mah1)
+    627   jp=j+1
+    628   ajj=a(j,0)
+    629   if(ajj == 0.)stop 'In L1UBB; zero element found in diagonal factor'
+    630   ajji=1./ajj
+    631   a(j,jleast-j:jmost-j) = ajji * a(j,jleast-j:jmost-j)
+    632   do i=jp,imost
+    633     aij=a(i,j-i)
+    634     a(i,jp-i:jmost-i) = a(i,jp-i:jmost-i) - aij*a(j,jp-j:jmost-j)
+    635   enddo
+    636   a(j,0)=1.
+    637   b(j,-mbh1:mbh2) = ajji * b(j,-mbh1:mbh2)
+    638 enddo
+    639 end subroutine L1UBB
+
+Page 37          Source Listing                  L1UBB
+2017-04-18 11:09 Entry Points                    pmat2.f90
+
+
+
+ENTRY POINTS
+
+  Name                       
+                             
+ pmat2_mp_l1ubb_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  599      R(4)            4     2     0        ARG,INOUT        628,631,633,634,636               
+ AIJ                        Local  621      R(4)            4           scalar                    633,634                           
+ AJJ                        Local  621      R(4)            4           scalar                    628,629,630                       
+ AJJI                       Local  621      R(4)            4           scalar                    630,631,637                       
+ B                          Dummy  599      R(4)            4     2     0        ARG,INOUT        637                               
+ I                          Local  620      I(4)            4           scalar                    632,633,634                       
+ IMOST                      Local  620      I(4)            4           scalar                    624,632                           
+ J                          Local  620      I(4)            4           scalar                    623,624,625,626,627,628,631,633,63
+                                                                                                  4,636,637                         
+ JLEAST                     Local  620      I(4)            4           scalar                    626,631                           
+ JMOST                      Local  620      I(4)            4           scalar                    625,631,634                       
+ JP                         Local  620      I(4)            4           scalar                    627,632,634                       
+ L1UBB                      Subr   599                                                                                              
+ M                          Dummy  599      I(4)            4           scalar   ARG,IN           618,623,624,625                   
+ MAH1                       Dummy  599      I(4)            4           scalar   ARG,IN           618,624,626                       
+ MAH2                       Dummy  599      I(4)            4           scalar   ARG,IN           618,625                           
+ MAX                        Func   626                                  scalar                    626                               
+ MBH1                       Dummy  599      I(4)            4           scalar   ARG,IN           618,637                           
+ MBH2                       Dummy  599      I(4)            4           scalar   ARG,IN           618,637                           
+ MIN                        Func   624                                  scalar                    624,625                           
+
+Page 38          Source Listing                  L1UBB
+2017-04-18 11:09                                 pmat2.f90
+
+    640 !=============================================================================
+    641 subroutine DL1UBB(m,mah1,mah2,mbh1,mbh2,a,b) ! Real(dp) version of     [L1UBB]
+    642 !=============================================================================
+    643 integer,  intent(IN   ) ::  m,mah1, mah2, mbh1, mbh2 
+    644 real(dp), intent(INOUT) :: a(m,-mah1:mah2), b(m,-mbh1:mbh2)
+    645 !-----------------------------------------------------------------------------
+    646 integer                 :: j, imost, jmost, jleast, jp, i
+    647 real(dp)                :: ajj, ajji, aij
+    648 !=============================================================================
+    649 do j=1,m
+    650   imost=min(m,j+mah1)
+    651   jmost=min(m,j+mah2)
+    652   jleast=max(1,j-mah1)
+    653   jp=j+1
+    654   ajj=a(j,0)
+    655   if(ajj == 0)stop 'In L1UBB_d; zero element found in diagonal factor'
+    656   ajji=1./ajj
+    657   a(j,jleast-j:jmost-j) = ajji * a(j,jleast-j:jmost-j)
+    658   do i=jp,imost
+    659     aij=a(i,j-i)
+    660     a(i,jp-i:jmost-i) = a(i,jp-i:jmost-i) - aij*a(j,jp-j:jmost-j)
+    661   enddo
+    662   a(j,0)=1.
+    663   b(j,-mbh1:mbh2) = ajji * b(j,-mbh1:mbh2)
+    664 enddo
+    665 end subroutine DL1UBB
+
+
+ENTRY POINTS
+
+  Name                        
+                              
+ pmat2_mp_dl1ubb_             
+
+Page 39          Source Listing                  DL1UBB
+2017-04-18 11:09 Symbol Table                    pmat2.f90
+
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  641      R(8)            8     2     0        ARG,INOUT        654,657,659,660,662               
+ AIJ                        Local  647      R(8)            8           scalar                    659,660                           
+ AJJ                        Local  647      R(8)            8           scalar                    654,655,656                       
+ AJJI                       Local  647      R(8)            8           scalar                    656,657,663                       
+ B                          Dummy  641      R(8)            8     2     0        ARG,INOUT        663                               
+ DL1UBB                     Subr   641                                           PRIV                                               
+ I                          Local  646      I(4)            4           scalar                    658,659,660                       
+ IMOST                      Local  646      I(4)            4           scalar                    650,658                           
+ J                          Local  646      I(4)            4           scalar                    649,650,651,652,653,654,657,659,66
+                                                                                                  0,662,663                         
+ JLEAST                     Local  646      I(4)            4           scalar                    652,657                           
+ JMOST                      Local  646      I(4)            4           scalar                    651,657,660                       
+ JP                         Local  646      I(4)            4           scalar                    653,658,660                       
+ M                          Dummy  641      I(4)            4           scalar   ARG,IN           644,649,650,651                   
+ MAH1                       Dummy  641      I(4)            4           scalar   ARG,IN           644,650,652                       
+ MAH2                       Dummy  641      I(4)            4           scalar   ARG,IN           644,651                           
+ MAX                        Func   652                                  scalar                    652                               
+ MBH1                       Dummy  641      I(4)            4           scalar   ARG,IN           644,663                           
+ MBH2                       Dummy  641      I(4)            4           scalar   ARG,IN           644,663                           
+ MIN                        Func   650                                  scalar                    650,651                           
+
+Page 40          Source Listing                  DL1UBB
+2017-04-18 11:09                                 pmat2.f90
+
+    666 
+    667 !=============================================================================
+    668 subroutine L1UEB(m,mah1,mah2,mbh1,mbh2,a,b)!                           [L1UEB]
+    669 !=============================================================================
+    670 !   R.J.Purser, National Meteorological Center, Washington D.C.  1998
+    671 !		    SUBROUTINE L1UEB
+    672 !  Form the [L]*[D]*[U] decomposition of asymmetric band-matrix  [A] replace
+    673 !  all but row zero of the
+    674 !  lower triangular elements of [A] by [D**-1]*[L]*[D], the upper by [U],
+    675 !  replace matrix [B] by [D**-1]*[B].
+    676 !  This is a special adaptation of L1UBB used to process quadarature weights
+    677 !  for QEDBV etc in which the initial quadrature value is provided as input
+    678 !  instead of being implicitly assumed zero (which is the case for QZDBV etc).
+    679 !
+    680 ! <-> A input as band matrix, output as lower and upper triangulars with 1s
+    681 !     implicitly assumed to lie on the main diagonal. The product of these
+    682 !     triangular matrices is [D**-1]*[A], where [D] is a diagonal matrix.
+    683 ! <-> B in as band matrix, out as same but premultiplied by diagonal [D**-1]
+    684 ! --> M    number of rows of B, one less than the rows of A (which has "row 0")
+    685 ! --> MAH1 left half-width of fortran array A
+    686 ! --> MAH2 right half-width of fortran array A
+    687 ! --> MBH1 left half-width of fortran array B
+    688 ! --> MBH2 right half-width of fortran array B
+    689 !=============================================================================
+    690 integer, intent(IN   ) :: m,mah1, mah2, mbh1, mbh2 
+    691 real,    intent(INOUT) :: a(0:m,-mah1:mah2), b(m,-mbh1:mbh2)
+    692 !-----------------------------------------------------------------------------
+    693 integer                :: j, imost, jmost, jleast, jp, i
+    694 real                   :: ajj, ajji, aij
+    695 !=============================================================================
+    696 do j=1,m
+    697   imost=min(m,j+mah1)
+    698   jmost=min(m,j+mah2)
+    699   jleast=max(0,j-mah1)
+    700   jp=j+1
+    701   ajj=a(j,0)
+    702   if(ajj == 0.)stop 'In L1UEB; zero element found in diagonal factor'
+    703   ajji=1./ajj
+    704   a(j,jleast-j:jmost-j) = ajji * a(j,jleast-j:jmost-j)
+    705   do i=jp,imost
+    706     aij=a(i,j-i)
+    707     a(i,jp-i:jmost-i) = a(i,jp-i:jmost-i) - aij*a(j,jp-j:jmost-j)
+    708   enddo
+    709   a(j,0)=1.
+    710   b(j,-mbh1:mbh2) = ajji * b(j,-mbh1:mbh2)
+    711 enddo
+    712 end subroutine L1UEB
+
+Page 41          Source Listing                  L1UEB
+2017-04-18 11:09 Entry Points                    pmat2.f90
+
+
+
+ENTRY POINTS
+
+  Name                       
+                             
+ pmat2_mp_l1ueb_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  668      R(4)            4     2     0        ARG,INOUT        701,704,706,707,709               
+ AIJ                        Local  694      R(4)            4           scalar                    706,707                           
+ AJJ                        Local  694      R(4)            4           scalar                    701,702,703                       
+ AJJI                       Local  694      R(4)            4           scalar                    703,704,710                       
+ B                          Dummy  668      R(4)            4     2     0        ARG,INOUT        710                               
+ I                          Local  693      I(4)            4           scalar                    705,706,707                       
+ IMOST                      Local  693      I(4)            4           scalar                    697,705                           
+ J                          Local  693      I(4)            4           scalar                    696,697,698,699,700,701,704,706,70
+                                                                                                  7,709,710                         
+ JLEAST                     Local  693      I(4)            4           scalar                    699,704                           
+ JMOST                      Local  693      I(4)            4           scalar                    698,704,707                       
+ JP                         Local  693      I(4)            4           scalar                    700,705,707                       
+ L1UEB                      Subr   668                                                                                              
+ M                          Dummy  668      I(4)            4           scalar   ARG,IN           691,696,697,698                   
+ MAH1                       Dummy  668      I(4)            4           scalar   ARG,IN           691,697,699                       
+ MAH2                       Dummy  668      I(4)            4           scalar   ARG,IN           691,698                           
+ MAX                        Func   699                                  scalar                    699                               
+ MBH1                       Dummy  668      I(4)            4           scalar   ARG,IN           691,710                           
+ MBH2                       Dummy  668      I(4)            4           scalar   ARG,IN           691,710                           
+ MIN                        Func   697                                  scalar                    697,698                           
+
+Page 42          Source Listing                  L1UEB
+2017-04-18 11:09                                 pmat2.f90
+
+    713 !=============================================================================
+    714 subroutine DL1UEB(m,mah1,mah2,mbh1,mbh2,a,b) ! Real(dp) version of     [L1UEB]
+    715 !=============================================================================
+    716 integer,   intent(IN   ):: m,mah1, mah2, mbh1, mbh2 
+    717 real(dp),  intent(INOUT):: a(0:,-mah1:), b(:,-mbh1:)
+    718 !-----------------------------------------------------------------------------
+    719 integer                 :: j, imost, jmost, jleast, jp, i
+    720 real(dp)                :: ajj, ajji, aij
+    721 !=============================================================================
+    722 do j=1,m
+    723   imost=min(m,j+mah1)
+    724   jmost=min(m,j+mah2)
+    725   jleast=max(0,j-mah1)
+    726   jp=j+1
+    727   ajj=a(j,0)
+    728   if(ajj == 0)stop 'In L1UEB_D; zero element found in diagonal factor'
+    729   ajji=1./ajj
+    730   a(j,jleast-j:jmost-j) = ajji * a(j,jleast-j:jmost-j)
+    731   do i=jp,imost
+    732     aij=a(i,j-i)
+    733     a(i,jp-i:jmost-i) = a(i,jp-i:jmost-i) - aij*a(j,jp-j:jmost-j)
+    734   enddo
+    735   a(j,0)=1.
+    736   b(j,-mbh1:mbh2) = ajji * b(j,-mbh1:mbh2)
+    737 enddo
+    738 end subroutine DL1UEB
+
+
+ENTRY POINTS
+
+  Name                        
+                              
+ pmat2_mp_dl1ueb_             
+
+Page 43          Source Listing                  DL1UEB
+2017-04-18 11:09 Symbol Table                    pmat2.f90
+
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  714      R(8)            8     2     1        ARG,INOUT        727,730,732,733,735               
+ AIJ                        Local  720      R(8)            8           scalar                    732,733                           
+ AJJ                        Local  720      R(8)            8           scalar                    727,728,729                       
+ AJJI                       Local  720      R(8)            8           scalar                    729,730,736                       
+ B                          Dummy  714      R(8)            8     2     1        ARG,INOUT        736                               
+ DL1UEB                     Subr   714                                           PRIV                                               
+ I                          Local  719      I(4)            4           scalar                    731,732,733                       
+ IMOST                      Local  719      I(4)            4           scalar                    723,731                           
+ J                          Local  719      I(4)            4           scalar                    722,723,724,725,726,727,730,732,73
+                                                                                                  3,735,736                         
+ JLEAST                     Local  719      I(4)            4           scalar                    725,730                           
+ JMOST                      Local  719      I(4)            4           scalar                    724,730,733                       
+ JP                         Local  719      I(4)            4           scalar                    726,731,733                       
+ M                          Dummy  714      I(4)            4           scalar   ARG,IN           722,723,724                       
+ MAH1                       Dummy  714      I(4)            4           scalar   ARG,IN           717,723,725                       
+ MAH2                       Dummy  714      I(4)            4           scalar   ARG,IN           724                               
+ MAX                        Func   725                                  scalar                    725                               
+ MBH1                       Dummy  714      I(4)            4           scalar   ARG,IN           717,736                           
+ MBH2                       Dummy  714      I(4)            4           scalar   ARG,IN           736                               
+ MIN                        Func   723                                  scalar                    723,724                           
+
+Page 44          Source Listing                  DL1UEB
+2017-04-18 11:09                                 pmat2.f90
+
+    739 
+    740 !=============================================================================
+    741 subroutine UDLBV(m,mah1,mah2,a,v)!                                    [UDLBV]
+    742 !=============================================================================
+    743 !   R.J.Purser, National Meteorological Center, Washington D.C.  1994
+    744 !		    SUBROUTINE UDLBV
+    745 !  BACk-substitution step of linear inversion involving
+    746 !  Banded matrix and Vector.
+    747 !
+    748 ! --> A encodes the (L)*(D**-1)*(U) factorization of the linear-system
+    749 !     matrix, as supplied by subroutine LDUB
+    750 ! <-> V input as right-hand-side vector, output as solution vector
+    751 ! --> M the number of rows assumed for A and for V
+    752 ! --> MAH1 the left half-bandwidth of fortran array A
+    753 ! --> MAH2 the right half-bandwidth of fortran array A
+    754 !=============================================================================
+    755 integer,  intent(IN   ) :: m, mah1, mah2
+    756 real,     intent(IN   ) :: a(m,-mah1:mah2)
+    757 real,     intent(INOUT) :: v(m)
+    758 !-----------------------------------------------------------------------------
+    759 integer                 :: i, j
+    760 real                    :: vj
+    761 !=============================================================================
+    762 do j=1,m
+    763    vj=v(j)
+    764    do i=j+1,min(m,j+mah1); v(i)=v(i)-a(i,j-i)*vj; enddo; v(j)=a(j,0)*vj
+    765 enddo
+    766 do j=m,2,-1
+    767    vj=v(j)
+    768    do i=max(1,j-mah2),j-1; v(i)=v(i)-a(i,j-i)*vj; enddo
+    769 enddo
+    770 end subroutine UDLBV
+
+Page 45          Source Listing                  UDLBV
+2017-04-18 11:09 Entry Points                    pmat2.f90
+
+
+
+ENTRY POINTS
+
+  Name                       
+                             
+ pmat2_mp_udlbv_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  741      R(4)            4     2     0        ARG,IN           764,768                           
+ I                          Local  759      I(4)            4           scalar                    764,768                           
+ J                          Local  759      I(4)            4           scalar                    762,763,764,766,767,768           
+ M                          Dummy  741      I(4)            4           scalar   ARG,IN           756,757,762,764,766               
+ MAH1                       Dummy  741      I(4)            4           scalar   ARG,IN           756,764                           
+ MAH2                       Dummy  741      I(4)            4           scalar   ARG,IN           756,768                           
+ MAX                        Func   768                                  scalar                    768                               
+ MIN                        Func   764                                  scalar                    764                               
+ UDLBV                      Subr   741                                                                                              
+ V                          Dummy  741      R(4)            4     1     0        ARG,INOUT        763,764,767,768                   
+ VJ                         Local  760      R(4)            4           scalar                    763,764,767,768                   
+
+Page 46          Source Listing                  UDLBV
+2017-04-18 11:09                                 pmat2.f90
+
+    771 !=============================================================================
+    772 subroutine dudlbv(m,mah1,mah2,a,v)!                                    [udlbv]
+    773 !=============================================================================
+    774 integer,  intent(IN   ) :: m, mah1, mah2
+    775 real(dp), intent(IN   ) :: a(m,-mah1:mah2)
+    776 real(dp), intent(INOUT) :: v(m)
+    777 !-----------------------------------------------------------------------------
+    778 integer                 :: i, j
+    779 real(dp)                :: vj
+    780 !=============================================================================
+    781 do j=1,m
+    782    vj=v(j)
+    783    do i=j+1,min(m,j+mah1); v(i)=v(i)-a(i,j-i)*vj; enddo; v(j)=a(j,0)*vj
+    784 enddo
+    785 do j=m,2,-1
+    786    vj=v(j)
+    787    do i=max(1,j-mah2),j-1; v(i)=v(i)-a(i,j-i)*vj; enddo
+    788 enddo
+    789 end subroutine dudlbv
+
+
+ENTRY POINTS
+
+  Name                        
+                              
+ pmat2_mp_dudlbv_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  772      R(8)            8     2     0        ARG,IN           783,787                           
+ DUDLBV                     Subr   772                                           PRIV                                               
+ I                          Local  778      I(4)            4           scalar                    783,787                           
+ J                          Local  778      I(4)            4           scalar                    781,782,783,785,786,787           
+ M                          Dummy  772      I(4)            4           scalar   ARG,IN           775,776,781,783,785               
+ MAH1                       Dummy  772      I(4)            4           scalar   ARG,IN           775,783                           
+ MAH2                       Dummy  772      I(4)            4           scalar   ARG,IN           775,787                           
+ MAX                        Func   787                                  scalar                    787                               
+ MIN                        Func   783                                  scalar                    783                               
+ V                          Dummy  772      R(8)            8     1     0        ARG,INOUT        782,783,786,787                   
+ VJ                         Local  779      R(8)            8           scalar                    782,783,786,787                   
+
+Page 47          Source Listing                  DUDLBV
+2017-04-18 11:09                                 pmat2.f90
+
+    790 
+    791 !=============================================================================
+    792 subroutine ltdlbv(m,mah1,a,v)!                                        [ltdlbv]
+    793 !=============================================================================
+    794 ! Like udlbv, except assuming a is the ltdl decomposition of a SYMMETRIC
+    795 ! banded matrix, with only the non-upper part provided (to avoid redundancy)
+    796 !=============================================================================
+    797 integer,  intent(IN   ) :: m, mah1
+    798 real(sp), intent(IN   ) :: a(m,-mah1:0)
+    799 real(sp), intent(INOUT) :: v(m)
+    800 !-----------------------------------------------------------------------------
+    801 integer                 :: i, j
+    802 real(sp)                :: vj
+    803 !=============================================================================
+    804 do j=1,m
+    805    vj=v(j)
+    806    do i=j+1,min(m,j+mah1); v(i)=v(i)-a(i,j-i)*vj; enddo; v(j)=a(j,0)*vj
+    807 enddo
+    808 do j=m,2,-1
+    809    vj=v(j)
+    810    do i=max(1,j-mah1),j-1; v(i)=v(i)-a(j,i-j)*vj; enddo
+    811 enddo
+    812 end subroutine ltdlbv
+
+
+ENTRY POINTS
+
+  Name                        
+                              
+ pmat2_mp_ltdlbv_             
+
+Page 48          Source Listing                  LTDLBV
+2017-04-18 11:09 Symbol Table                    pmat2.f90
+
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  792      R(4)            4     2     0        ARG,IN           806,810                           
+ I                          Local  801      I(4)            4           scalar                    806,810                           
+ J                          Local  801      I(4)            4           scalar                    804,805,806,808,809,810           
+ LTDLBV                     Subr   792                                                                                              
+ M                          Dummy  792      I(4)            4           scalar   ARG,IN           798,799,804,806,808               
+ MAH1                       Dummy  792      I(4)            4           scalar   ARG,IN           798,806,810                       
+ MAX                        Func   810                                  scalar                    810                               
+ MIN                        Func   806                                  scalar                    806                               
+ V                          Dummy  792      R(4)            4     1     0        ARG,INOUT        805,806,809,810                   
+ VJ                         Local  802      R(4)            4           scalar                    805,806,809,810                   
+
+Page 49          Source Listing                  LTDLBV
+2017-04-18 11:09                                 pmat2.f90
+
+    813 !=============================================================================
+    814 subroutine dltdlbv(m,mah1,a,v)!                                       [ltdlbv]
+    815 !=============================================================================
+    816 ! Like udlbv, except assuming a is the ltdl decomposition of a SYMMETRIC
+    817 ! banded matrix, with only the non-upper part provided (to avoid redundancy)
+    818 !=============================================================================
+    819 integer,  intent(IN   ) :: m, mah1
+    820 real(dp), intent(IN   ) :: a(m,-mah1:0)
+    821 real(dp), intent(INOUT) :: v(m)
+    822 !-----------------------------------------------------------------------------
+    823 integer                 :: i, j
+    824 real(dp)                :: vj
+    825 !=============================================================================
+    826 do j=1,m
+    827    vj=v(j)
+    828    do i=j+1,min(m,j+mah1); v(i)=v(i)-a(i,j-i)*vj; enddo; v(j)=a(j,0)*vj
+    829 enddo
+    830 do j=m,2,-1
+    831    vj=v(j)
+    832    do i=max(1,j-mah1),j-1; v(i)=v(i)-a(j,i-j)*vj; enddo
+    833 enddo
+    834 end subroutine dltdlbv
+
+
+ENTRY POINTS
+
+  Name                         
+                               
+ pmat2_mp_dltdlbv_             
+
+Page 50          Source Listing                  DLTDLBV
+2017-04-18 11:09 Symbol Table                    pmat2.f90
+
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  814      R(8)            8     2     0        ARG,IN           828,832                           
+ DLTDLBV                    Subr   814                                           PRIV                                               
+ I                          Local  823      I(4)            4           scalar                    828,832                           
+ J                          Local  823      I(4)            4           scalar                    826,827,828,830,831,832           
+ M                          Dummy  814      I(4)            4           scalar   ARG,IN           820,821,826,828,830               
+ MAH1                       Dummy  814      I(4)            4           scalar   ARG,IN           820,828,832                       
+ MAX                        Func   832                                  scalar                    832                               
+ MIN                        Func   828                                  scalar                    828                               
+ V                          Dummy  814      R(8)            8     1     0        ARG,INOUT        827,828,831,832                   
+ VJ                         Local  824      R(8)            8           scalar                    827,828,831,832                   
+
+Page 51          Source Listing                  DLTDLBV
+2017-04-18 11:09                                 pmat2.f90
+
+    835 
+    836 !=============================================================================
+    837 subroutine UDLBX(mx,mah1,mah2,my,a,v)!                                [UDLBX]
+    838 !=============================================================================
+    839 !   R.J.Purser, National Meteorological Center, Washington D.C.  1994
+    840 !		    SUBROUTINE UDLBX
+    841 !  BACk-substitution step of parallel linear inversion involving
+    842 !  Banded matrix and X-Vectors.
+    843 !
+    844 ! --> A encodes the (L)*(D**-1)*(U) factorization of the linear-system
+    845 !     matrix, as supplied by subroutine LDUB or, if N=NA, by LDUB
+    846 ! <-> V input as right-hand-side vectors, output as solution vectors
+    847 ! --> MX the number of rows assumed for A and length of
+    848 !     X-vectors stored in V
+    849 ! --> MAH1 the left half-bandwidth of fortran array A
+    850 ! --> MAH2 the right half-bandwidth of fortran array A
+    851 ! --> MY number of parallel X-vectors inverted
+    852 !=============================================================================
+    853 integer,  intent(IN   ) :: mx, mah1, mah2, my
+    854 real,     intent(IN   ) :: a(mx,-mah1:mah2)
+    855 real,     intent(INOUT) :: v(mx,my)
+    856 !-----------------------------------------------------------------------------
+    857 integer                 :: jx, ix
+    858 !=============================================================================
+    859 do jx=1,mx
+    860    do ix=jx+1,min(mx,jx+mah1); v(ix,:) = v(ix,:) - a(ix,jx-ix)*v(jx,:); enddo
+    861    v(jx,:) = a(jx,0) * v(jx,:)
+    862 enddo
+    863 do jx=mx,2,-1
+    864    do ix=max(1,jx-mah2),jx-1; v(ix,:) = v(ix,:) - a(ix,jx-ix)*v(jx,:); enddo
+    865 enddo
+    866 end subroutine UDLBX
+
+Page 52          Source Listing                  UDLBX
+2017-04-18 11:09 Entry Points                    pmat2.f90
+
+
+
+ENTRY POINTS
+
+  Name                       
+                             
+ pmat2_mp_udlbx_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  837      R(4)            4     2     0        ARG,IN           860,861,864                       
+ IX                         Local  857      I(4)            4           scalar                    860,864                           
+ JX                         Local  857      I(4)            4           scalar                    859,860,861,863,864               
+ MAH1                       Dummy  837      I(4)            4           scalar   ARG,IN           854,860                           
+ MAH2                       Dummy  837      I(4)            4           scalar   ARG,IN           854,864                           
+ MAX                        Func   864                                  scalar                    864                               
+ MIN                        Func   860                                  scalar                    860                               
+ MX                         Dummy  837      I(4)            4           scalar   ARG,IN           854,855,859,860,863               
+ MY                         Dummy  837      I(4)            4           scalar   ARG,IN           855                               
+ UDLBX                      Subr   837                                                                                              
+ V                          Dummy  837      R(4)            4     2     0        ARG,INOUT        860,861,864                       
+
+Page 53          Source Listing                  UDLBX
+2017-04-18 11:09                                 pmat2.f90
+
+    867 
+    868 !=============================================================================
+    869 subroutine UDLBY(my,mah1,mah2,mx,a,v)!                                [UDLBY]
+    870 !=============================================================================
+    871 !   R.J.Purser, National Meteorological Center, Washington D.C.  1994
+    872 !		    SUBROUTINE UDLBY
+    873 !  BACk-substitution step of parallel linear inversion involving
+    874 !  Banded matrix and Y-Vectors.
+    875 !
+    876 ! --> A encodes the (L)*(D**-1)*(U) factorization of the linear-system
+    877 !     matrix, as supplied by subroutine LDUB or, if N=NA, by LDUB
+    878 ! <-> V input as right-hand-side vectors, output as solution vectors
+    879 ! --> MY the number of rows assumed for A and length of
+    880 !     Y-vectors stored in V
+    881 ! --> MAH1 the left half-bandwidth of fortran array A
+    882 ! --> MAH2 the right half-bandwidth of fortran array A
+    883 ! --> MX number of parallel Y-vectors inverted
+    884 !=============================================================================
+    885 integer,  intent(IN   ) :: my, mah1, mah2, mx
+    886 real,     intent(IN   ) :: a(my,-mah1:mah2)
+    887 real,     intent(INOUT) :: v(mx,my)
+    888 !-----------------------------------------------------------------------------
+    889 integer                 :: iy, jy
+    890 !=============================================================================
+    891 do jy=1,my
+    892    do iy=jy+1,min(my,jy+mah1); v(:,iy) = v(:,iy)-a(iy,jy-iy)*v(:,jy); enddo
+    893    v(:,jy)=a(jy,0)*v(:,jy)
+    894 enddo
+    895 do jy=my,2,-1
+    896    do iy=max(1,jy-mah2),jy-1; v(:,iy)=v(:,iy)-a(iy,jy-iy)*v(:,jy); enddo
+    897 enddo
+    898 end subroutine UDLBY
+
+Page 54          Source Listing                  UDLBY
+2017-04-18 11:09 Entry Points                    pmat2.f90
+
+
+
+ENTRY POINTS
+
+  Name                       
+                             
+ pmat2_mp_udlby_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  869      R(4)            4     2     0        ARG,IN           892,893,896                       
+ IY                         Local  889      I(4)            4           scalar                    892,896                           
+ JY                         Local  889      I(4)            4           scalar                    891,892,893,895,896               
+ MAH1                       Dummy  869      I(4)            4           scalar   ARG,IN           886,892                           
+ MAH2                       Dummy  869      I(4)            4           scalar   ARG,IN           886,896                           
+ MAX                        Func   896                                  scalar                    896                               
+ MIN                        Func   892                                  scalar                    892                               
+ MX                         Dummy  869      I(4)            4           scalar   ARG,IN           887                               
+ MY                         Dummy  869      I(4)            4           scalar   ARG,IN           886,887,891,892,895               
+ UDLBY                      Subr   869                                                                                              
+ V                          Dummy  869      R(4)            4     2     0        ARG,INOUT        892,893,896                       
+
+Page 55          Source Listing                  UDLBY
+2017-04-18 11:09                                 pmat2.f90
+
+    899 
+    900 !=============================================================================
+    901 subroutine UDLVB(m,mah1,mah2,v,a)!                                    [UDLVB]
+    902 !=============================================================================
+    903 !   R.J.Purser, National Meteorological Center, Washington D.C.  1994
+    904 !		    SUBROUTINE UDLVB
+    905 !  BACk-substitution step of linear inversion involving
+    906 !  row-Vector and Banded matrix.
+    907 !
+    908 ! <-> V input as right-hand-side row-vector, output as solution vector
+    909 ! --> A encodes the (L)*(D**-1)*(U) factorization of the linear-system
+    910 !     matrix, as supplied by subroutine LDUB
+    911 ! --> M the number of rows assumed for A and columns for V
+    912 ! --> MAH1 the left half-bandwidth of fortran array A
+    913 ! --> MAH2 the right half-bandwidth of fortran array A
+    914 !=============================================================================
+    915 integer,  intent(IN   ) :: m, mah1, mah2
+    916 real,     intent(IN   ) :: a(m,-mah1:mah2)
+    917 real,     intent(INOUT) :: v(m)
+    918 !-----------------------------------------------------------------------------
+    919 integer                 :: i, j
+    920 real                    :: vi
+    921 !=============================================================================
+    922 do i=1,m
+    923    vi=v(i)
+    924    do j=i+1,min(m,i+mah2); v(j)=v(j)-vi*a(i,j-i); enddo
+    925    v(i)=vi*a(i,0)
+    926 enddo
+    927 do i=m,2,-1
+    928    vi=v(i)
+    929    do j=max(1,i-mah1),i-1; v(j)=v(j)-vi*a(i,j-i); enddo
+    930 enddo
+    931 end subroutine UDLVB
+
+Page 56          Source Listing                  UDLVB
+2017-04-18 11:09 Entry Points                    pmat2.f90
+
+
+
+ENTRY POINTS
+
+  Name                       
+                             
+ pmat2_mp_udlvb_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  901      R(4)            4     2     0        ARG,IN           924,925,929                       
+ I                          Local  919      I(4)            4           scalar                    922,923,924,925,927,928,929       
+ J                          Local  919      I(4)            4           scalar                    924,929                           
+ M                          Dummy  901      I(4)            4           scalar   ARG,IN           916,917,922,924,927               
+ MAH1                       Dummy  901      I(4)            4           scalar   ARG,IN           916,929                           
+ MAH2                       Dummy  901      I(4)            4           scalar   ARG,IN           916,924                           
+ MAX                        Func   929                                  scalar                    929                               
+ MIN                        Func   924                                  scalar                    924                               
+ UDLVB                      Subr   901                                                                                              
+ V                          Dummy  901      R(4)            4     1     0        ARG,INOUT        923,924,925,928,929               
+ VI                         Local  920      R(4)            4           scalar                    923,924,925,928,929               
+
+Page 57          Source Listing                  UDLVB
+2017-04-18 11:09                                 pmat2.f90
+
+    932 
+    933 !=============================================================================
+    934 subroutine UDLXB(mx,mah1,mah2,my,v,a)!                                [UDLXB]
+    935 !=============================================================================
+    936 !   R.J.Purser, National Meteorological Center, Washington D.C.  1994
+    937 !		    SUBROUTINE UDLXB
+    938 !  BACk-substitution step of parallel linear inversion involving
+    939 !  Banded matrix and row-X-Vectors.
+    940 !
+    941 ! <-> V input as right-hand-side vectors, output as solution vectors
+    942 ! --> A encodes the (L)*(D**-1)*(U) factorization of the linear-system
+    943 !     matrix, as supplied by subroutine LDUB
+    944 ! --> MX the number of rows assumed for A and length of
+    945 !     X-vectors stored in V
+    946 ! --> MAH1 the left half-bandwidth of fortran array A
+    947 ! --> MAH2 the right half-bandwidth of fortran array A
+    948 ! --> MY number of parallel X-vectors inverted
+    949 !=============================================================================
+    950 integer,  intent(IN   ) :: mx, mah1, mah2, my
+    951 real,     intent(IN   ) :: a(mx,-mah1:mah2)
+    952 real,     intent(INOUT) :: v(mx,my)
+    953 !-----------------------------------------------------------------------------
+    954 integer                 :: ix, jx
+    955 !=============================================================================
+    956 do ix=1,mx
+    957    do jx=ix+1,min(mx,ix+mah2); v(jx,:)=v(jx,:)-v(ix,:)*a(ix,jx-ix); enddo
+    958    v(ix,:)=v(ix,:)*a(ix,0)
+    959 enddo
+    960 do ix=mx,2,-1
+    961    do jx=max(1,ix-mah1),ix-1; v(jx,:)=v(jx,:)-v(ix,:)*a(ix,jx-ix); enddo
+    962 enddo
+    963 end subroutine UDLXB
+
+Page 58          Source Listing                  UDLXB
+2017-04-18 11:09 Entry Points                    pmat2.f90
+
+
+
+ENTRY POINTS
+
+  Name                       
+                             
+ pmat2_mp_udlxb_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  934      R(4)            4     2     0        ARG,IN           957,958,961                       
+ IX                         Local  954      I(4)            4           scalar                    956,957,958,960,961               
+ JX                         Local  954      I(4)            4           scalar                    957,961                           
+ MAH1                       Dummy  934      I(4)            4           scalar   ARG,IN           951,961                           
+ MAH2                       Dummy  934      I(4)            4           scalar   ARG,IN           951,957                           
+ MAX                        Func   961                                  scalar                    961                               
+ MIN                        Func   957                                  scalar                    957                               
+ MX                         Dummy  934      I(4)            4           scalar   ARG,IN           951,952,956,957,960               
+ MY                         Dummy  934      I(4)            4           scalar   ARG,IN           952                               
+ UDLXB                      Subr   934                                                                                              
+ V                          Dummy  934      R(4)            4     2     0        ARG,INOUT        957,958,961                       
+
+Page 59          Source Listing                  UDLXB
+2017-04-18 11:09                                 pmat2.f90
+
+    964 
+    965 !=============================================================================
+    966 subroutine UDLYB(my,mah1,mah2,mx,v,a)!                                [UDLYB]
+    967 !=============================================================================
+    968 !   R.J.Purser, National Meteorological Center, Washington D.C.  1994
+    969 !		    SUBROUTINE UDLYB
+    970 !  BACk-substitution step of parallel linear inversion involving
+    971 !  Banded matrix and row-Y-Vectors.
+    972 !
+    973 ! <-> V input as right-hand-side vectors, output as solution vectors
+    974 ! --> A encodes the (L)*(D**-1)*(U) factorization of the linear-system
+    975 !     matrix, as supplied by subroutine LDUB
+    976 ! --> MY the number of rows assumed for A and length of
+    977 !     Y-vectors stored in V
+    978 ! --> MAH1 the left half-bandwidth of fortran array A
+    979 ! --> MAH2 the right half-bandwidth of fortran array A
+    980 ! --> MX number of parallel Y-vectors inverted
+    981 !=============================================================================
+    982 integer,  intent(IN   ) :: my, mah1, mah2, mx
+    983 real,     intent(IN   ) :: a(my,-mah1:mah2)
+    984 real,     intent(INOUT) :: v(mx,my)
+    985 !-----------------------------------------------------------------------------
+    986 integer                 :: iy, jy
+    987 !=============================================================================
+    988 do iy=1,my
+    989    do jy=iy+1,min(my,iy+mah2); v(:,jy)=v(:,jy)-v(:,iy)*a(iy,jy-iy); enddo
+    990    v(:,iy)=v(:,iy)*a(iy,0)
+    991 enddo
+    992 do iy=my,2,-1
+    993    do jy=max(1,iy-mah1),iy-1; v(:,jy)=v(:,jy)-v(:,iy)*a(iy,jy-iy); enddo
+    994 enddo
+    995 end subroutine UDLYB
+
+Page 60          Source Listing                  UDLYB
+2017-04-18 11:09 Entry Points                    pmat2.f90
+
+
+
+ENTRY POINTS
+
+  Name                       
+                             
+ pmat2_mp_udlyb_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  966      R(4)            4     2     0        ARG,IN           989,990,993                       
+ IY                         Local  986      I(4)            4           scalar                    988,989,990,992,993               
+ JY                         Local  986      I(4)            4           scalar                    989,993                           
+ MAH1                       Dummy  966      I(4)            4           scalar   ARG,IN           983,993                           
+ MAH2                       Dummy  966      I(4)            4           scalar   ARG,IN           983,989                           
+ MAX                        Func   993                                  scalar                    993                               
+ MIN                        Func   989                                  scalar                    989                               
+ MX                         Dummy  966      I(4)            4           scalar   ARG,IN           984                               
+ MY                         Dummy  966      I(4)            4           scalar   ARG,IN           983,984,988,989,992               
+ UDLYB                      Subr   966                                                                                              
+ V                          Dummy  966      R(4)            4     2     0        ARG,INOUT        989,990,993                       
+
+Page 61          Source Listing                  UDLYB
+2017-04-18 11:09                                 pmat2.f90
+
+    996 
+    997 !=============================================================================
+    998 subroutine U1LBV(m,mah1,mah2,a,v)!                                    [U1LBV]
+    999 !=============================================================================
+   1000 !   R.J.Purser, National Meteorological Center, Washington D.C.  1996
+   1001 !		    SUBROUTINE U1LBV
+   1002 !  BACk-substitution step ((U**-1)*(L**-1)) of linear inversion involving
+   1003 !  special Banded matrix and right-Vector.
+   1004 !
+   1005 ! --> A encodes the [L]*[U] factorization of the linear-system
+   1006 !     matrix, as supplied by subroutine L1UBB
+   1007 ! <-> V input as right-hand-side vector, output as solution vector
+   1008 ! --> M the number of rows assumed for A and for V
+   1009 ! --> MAH1 the left half-bandwidth of fortran array A
+   1010 ! --> MAH2 the right half-bandwidth of fortran array A
+   1011 !=============================================================================
+   1012 integer,  intent(IN   ) :: m, mah1, mah2
+   1013 real,     intent(IN   ) :: a(m,-mah1:mah2)
+   1014 real,     intent(INOUT) :: v(m)
+   1015 !-----------------------------------------------------------------------------
+   1016 integer                 :: i, j
+   1017 real                    :: vj
+   1018 !=============================================================================
+   1019 do j=1,m
+   1020    vj=v(j)
+   1021    do i=j+1,min(m,j+mah1); v(i)=v(i)-a(i,j-i)*vj; enddo
+   1022 enddo
+   1023 do j=m,2,-1
+   1024    vj=v(j)
+   1025    do i=max(1,j-mah2),j-1; v(i)=v(i)-a(i,j-i)*vj; enddo
+   1026 enddo
+   1027 end subroutine U1LBV
+
+Page 62          Source Listing                  U1LBV
+2017-04-18 11:09 Entry Points                    pmat2.f90
+
+
+
+ENTRY POINTS
+
+  Name                       
+                             
+ pmat2_mp_u1lbv_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  998      R(4)            4     2     0        ARG,IN           1021,1025                         
+ I                          Local  1016     I(4)            4           scalar                    1021,1025                         
+ J                          Local  1016     I(4)            4           scalar                    1019,1020,1021,1023,1024,1025     
+ M                          Dummy  998      I(4)            4           scalar   ARG,IN           1013,1014,1019,1021,1023          
+ MAH1                       Dummy  998      I(4)            4           scalar   ARG,IN           1013,1021                         
+ MAH2                       Dummy  998      I(4)            4           scalar   ARG,IN           1013,1025                         
+ MAX                        Func   1025                                 scalar                    1025                              
+ MIN                        Func   1021                                 scalar                    1021                              
+ U1LBV                      Subr   998                                                                                              
+ V                          Dummy  998      R(4)            4     1     0        ARG,INOUT        1020,1021,1024,1025               
+ VJ                         Local  1017     R(4)            4           scalar                    1020,1021,1024,1025               
+
+Page 63          Source Listing                  U1LBV
+2017-04-18 11:09                                 pmat2.f90
+
+   1028 
+   1029 !=============================================================================
+   1030 subroutine U1LBX(mx,mah1,mah2,my,a,v)!                                [U1LBX]
+   1031 !=============================================================================
+   1032 !   R.J.Purser, National Meteorological Center, Washington D.C.  1996
+   1033 !		    SUBROUTINE U1LBX
+   1034 !  Special BaCk-substitution step of parallel linear inversion involving
+   1035 !  Banded matrix and X-right-Vectors.
+   1036 !
+   1037 ! --> A encodes the [L]*[U] factorization of the linear-system
+   1038 !     matrix, as supplied by subroutine L1UBB
+   1039 ! <-> V input as right-hand-side vectors, output as solution vectors
+   1040 ! --> MX the number of rows assumed for A and length of
+   1041 !     X-vectors stored in V
+   1042 ! --> MAH1 the left half-bandwidth of fortran array A
+   1043 ! --> MAH2 the right half-bandwidth of fortran array A
+   1044 ! --> MY number of parallel X-vectors inverted
+   1045 !=============================================================================
+   1046 integer,  intent(IN   ) :: mx, mah1, mah2, my
+   1047 real,     intent(IN   ) :: a(mx,-mah1:mah2)
+   1048 real,     intent(INOUT) :: v(mx,my)
+   1049 !-----------------------------------------------------------------------------
+   1050 integer                 :: ix, jx
+   1051 !=============================================================================
+   1052 do jx=1,mx
+   1053    do ix=jx+1,min(mx,jx+mah1); v(ix,:)=v(ix,:)-a(ix,jx-ix)*v(jx,:); enddo
+   1054 enddo
+   1055 do jx=mx,2,-1
+   1056    do ix=max(1,jx-mah2),jx-1; v(ix,:)=v(ix,:)-a(ix,jx-ix)*v(jx,:); enddo
+   1057 enddo
+   1058 end subroutine U1LBX
+
+Page 64          Source Listing                  U1LBX
+2017-04-18 11:09 Entry Points                    pmat2.f90
+
+
+
+ENTRY POINTS
+
+  Name                       
+                             
+ pmat2_mp_u1lbx_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  1030     R(4)            4     2     0        ARG,IN           1053,1056                         
+ IX                         Local  1050     I(4)            4           scalar                    1053,1056                         
+ JX                         Local  1050     I(4)            4           scalar                    1052,1053,1055,1056               
+ MAH1                       Dummy  1030     I(4)            4           scalar   ARG,IN           1047,1053                         
+ MAH2                       Dummy  1030     I(4)            4           scalar   ARG,IN           1047,1056                         
+ MAX                        Func   1056                                 scalar                    1056                              
+ MIN                        Func   1053                                 scalar                    1053                              
+ MX                         Dummy  1030     I(4)            4           scalar   ARG,IN           1047,1048,1052,1053,1055          
+ MY                         Dummy  1030     I(4)            4           scalar   ARG,IN           1048                              
+ U1LBX                      Subr   1030                                                                                             
+ V                          Dummy  1030     R(4)            4     2     0        ARG,INOUT        1053,1056                         
+
+Page 65          Source Listing                  U1LBX
+2017-04-18 11:09                                 pmat2.f90
+
+   1059 
+   1060 !=============================================================================
+   1061 subroutine U1LBY(my,mah1,mah2,mx,a,v)!                                [U1LBY]
+   1062 !=============================================================================
+   1063 !   R.J.Purser, National Meteorological Center, Washington D.C.  1996
+   1064 !		    SUBROUTINE U1LBY
+   1065 !  Special BaCk-substitution step of parallel linear inversion involving
+   1066 !  Banded matrix and Y-right-Vectors.
+   1067 !
+   1068 ! --> A encodes the [L]*[U] factorization of the linear-system
+   1069 !     matrix, as supplied by subroutine L1UBB
+   1070 ! <-> V input as right-hand-side vectors, output as solution vectors
+   1071 ! --> MY the number of rows assumed for A and length of
+   1072 !     Y-vectors stored in V
+   1073 ! --> MAH1 the left half-bandwidth of fortran array A
+   1074 ! --> MAH2 the right half-bandwidth of fortran array A
+   1075 ! --> MX number of parallel Y-vectors inverted
+   1076 !=============================================================================
+   1077 integer,  intent(IN   ) :: my, mah1, mah2, mx
+   1078 real,     intent(IN   ) :: a(my,-mah1:mah2)
+   1079 real,     intent(INOUT) :: v(mx,my)
+   1080 !-----------------------------------------------------------------------------
+   1081 integer                 :: iy, jy
+   1082 !=============================================================================
+   1083 do jy=1,my
+   1084    do iy=jy+1,min(my,jy+mah1); v(:,iy)=v(:,iy)-a(iy,jy-iy)*v(:,jy); enddo
+   1085 enddo
+   1086 do jy=my,2,-1
+   1087    do iy=max(1,jy-mah2),jy-1; v(:,iy)=v(:,iy)-a(iy,jy-iy)*v(:,jy); enddo
+   1088 enddo
+   1089 end subroutine U1LBY
+
+Page 66          Source Listing                  U1LBY
+2017-04-18 11:09 Entry Points                    pmat2.f90
+
+
+
+ENTRY POINTS
+
+  Name                       
+                             
+ pmat2_mp_u1lby_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  1061     R(4)            4     2     0        ARG,IN           1084,1087                         
+ IY                         Local  1081     I(4)            4           scalar                    1084,1087                         
+ JY                         Local  1081     I(4)            4           scalar                    1083,1084,1086,1087               
+ MAH1                       Dummy  1061     I(4)            4           scalar   ARG,IN           1078,1084                         
+ MAH2                       Dummy  1061     I(4)            4           scalar   ARG,IN           1078,1087                         
+ MAX                        Func   1087                                 scalar                    1087                              
+ MIN                        Func   1084                                 scalar                    1084                              
+ MX                         Dummy  1061     I(4)            4           scalar   ARG,IN           1079                              
+ MY                         Dummy  1061     I(4)            4           scalar   ARG,IN           1078,1079,1083,1084,1086          
+ U1LBY                      Subr   1061                                                                                             
+ V                          Dummy  1061     R(4)            4     2     0        ARG,INOUT        1084,1087                         
+
+Page 67          Source Listing                  U1LBY
+2017-04-18 11:09                                 pmat2.f90
+
+   1090 
+   1091 !=============================================================================
+   1092 subroutine U1LVB(m,mah1,mah2,v,a)!                                    [U1LVB]
+   1093 !=============================================================================
+   1094 !   R.J.Purser, National Meteorological Center, Washington D.C.  1996
+   1095 !		    SUBROUTINE U1LVB
+   1096 !  Special BaCk-substitution step of linear inversion involving
+   1097 !  left-Vector and Banded matrix.
+   1098 !
+   1099 ! <-> V input as right-hand-side row-vector, output as solution vector
+   1100 ! --> A encodes the special [L]*[U] factorization of the linear-system
+   1101 !     matrix, as supplied by subroutine L1UBB
+   1102 ! --> M the number of rows assumed for A and columns for V
+   1103 ! --> MAH1 the left half-bandwidth of fortran array A
+   1104 ! --> MAH2 the right half-bandwidth of fortran array A
+   1105 !=============================================================================
+   1106 integer, intent(IN   ) :: m, mah1, mah2
+   1107 real,    intent(IN   ) :: a(m,-mah1:mah2)
+   1108 real,    intent(INOUT) :: v(m)
+   1109 !-----------------------------------------------------------------------------
+   1110 integer                :: i, j
+   1111 real                   :: vi
+   1112 !=============================================================================
+   1113 do i=1,m
+   1114    vi=v(i)
+   1115    do j=i+1,min(m,i+mah2); v(j)=v(j)-vi*a(i,j-i); enddo
+   1116 enddo
+   1117 do i=m,2,-1
+   1118    vi=v(i)
+   1119    do j=max(1,i-mah1),i-1; v(j)=v(j)-vi*a(i,j-i); enddo
+   1120 enddo
+   1121 end subroutine U1LVB
+
+Page 68          Source Listing                  U1LVB
+2017-04-18 11:09 Entry Points                    pmat2.f90
+
+
+
+ENTRY POINTS
+
+  Name                       
+                             
+ pmat2_mp_u1lvb_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  1092     R(4)            4     2     0        ARG,IN           1115,1119                         
+ I                          Local  1110     I(4)            4           scalar                    1113,1114,1115,1117,1118,1119     
+ J                          Local  1110     I(4)            4           scalar                    1115,1119                         
+ M                          Dummy  1092     I(4)            4           scalar   ARG,IN           1107,1108,1113,1115,1117          
+ MAH1                       Dummy  1092     I(4)            4           scalar   ARG,IN           1107,1119                         
+ MAH2                       Dummy  1092     I(4)            4           scalar   ARG,IN           1107,1115                         
+ MAX                        Func   1119                                 scalar                    1119                              
+ MIN                        Func   1115                                 scalar                    1115                              
+ U1LVB                      Subr   1092                                                                                             
+ V                          Dummy  1092     R(4)            4     1     0        ARG,INOUT        1114,1115,1118,1119               
+ VI                         Local  1111     R(4)            4           scalar                    1114,1115,1118,1119               
+
+Page 69          Source Listing                  U1LVB
+2017-04-18 11:09                                 pmat2.f90
+
+   1122 
+   1123 !=============================================================================
+   1124 subroutine U1LXB(mx,mah1,mah2,my,v,a)!                                [U1LXB]
+   1125 !=============================================================================
+   1126 !   R.J.Purser, National Meteorological Center, Washington D.C.  1996
+   1127 !		    SUBROUTINE U1LXB
+   1128 !  Special BaCk-substitution step of parallel linear inversion involving
+   1129 !  Banded matrix and X-left-Vectors.
+   1130 !
+   1131 ! <-> V input as right-hand-side vectors, output as solution vectors
+   1132 ! --> A encodes the special [L]*[U] factorization of the linear-system
+   1133 !     matrix, as supplied by subroutine L1UBB
+   1134 ! --> MX the number of rows assumed for A and length of
+   1135 !     X-vectors stored in V
+   1136 ! --> MAH1 the left half-bandwidth of fortran array A
+   1137 ! --> MAH2 the right half-bandwidth of fortran array A
+   1138 ! --> MY number of parallel X-vectors inverted
+   1139 !=============================================================================
+   1140 integer,  intent(IN   ) :: mx, mah1, mah2, my
+   1141 real,     intent(IN   ) :: a(mx,-mah1:mah2)
+   1142 real,     intent(INOUT) :: v(mx,my)
+   1143 !-----------------------------------------------------------------------------
+   1144 integer                 :: ix, jx
+   1145 !=============================================================================
+   1146 do ix=1,mx
+   1147    do jx=ix+1,min(mx,ix+mah2); v(jx,:)=v(jx,:)-v(ix,:)*a(ix,jx-ix); enddo
+   1148 enddo
+   1149 do ix=mx,2,-1
+   1150    do jx=max(1,ix-mah1),ix-1;  v(jx,:)=v(jx,:)-v(ix,:)*a(ix,jx-ix); enddo
+   1151 enddo
+   1152 end subroutine U1LXB
+
+Page 70          Source Listing                  U1LXB
+2017-04-18 11:09 Entry Points                    pmat2.f90
+
+
+
+ENTRY POINTS
+
+  Name                       
+                             
+ pmat2_mp_u1lxb_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  1124     R(4)            4     2     0        ARG,IN           1147,1150                         
+ IX                         Local  1144     I(4)            4           scalar                    1146,1147,1149,1150               
+ JX                         Local  1144     I(4)            4           scalar                    1147,1150                         
+ MAH1                       Dummy  1124     I(4)            4           scalar   ARG,IN           1141,1150                         
+ MAH2                       Dummy  1124     I(4)            4           scalar   ARG,IN           1141,1147                         
+ MAX                        Func   1150                                 scalar                    1150                              
+ MIN                        Func   1147                                 scalar                    1147                              
+ MX                         Dummy  1124     I(4)            4           scalar   ARG,IN           1141,1142,1146,1147,1149          
+ MY                         Dummy  1124     I(4)            4           scalar   ARG,IN           1142                              
+ U1LXB                      Subr   1124                                                                                             
+ V                          Dummy  1124     R(4)            4     2     0        ARG,INOUT        1147,1150                         
+
+Page 71          Source Listing                  U1LXB
+2017-04-18 11:09                                 pmat2.f90
+
+   1153 
+   1154 !=============================================================================
+   1155 subroutine U1LYB(my,mah1,mah2,mx,v,a)!                                [U1LYB]
+   1156 !=============================================================================
+   1157 !   R.J.Purser, National Meteorological Center, Washington D.C.  1996
+   1158 !		    SUBROUTINE U1LYB
+   1159 !  Special BaCk-substitution step of parallel linear inversion involving
+   1160 !  special Banded matrix and Y-left-Vectors.
+   1161 !
+   1162 ! <-> V input as right-hand-side vectors, output as solution vectors
+   1163 ! --> A encodes the [L]*[U] factorization of the linear-system
+   1164 !     matrix, as supplied by subroutine L1UBB
+   1165 ! --> MY the number of rows assumed for A and length of
+   1166 !     Y-vectors stored in V
+   1167 ! --> MAH1 the left half-bandwidth of fortran array A
+   1168 ! --> MAH2 the right half-bandwidth of fortran array A
+   1169 ! --> MX number of parallel Y-vectors inverted
+   1170 !=============================================================================
+   1171 integer,  intent(IN   ) :: my, mah1, mah2, mx
+   1172 real,     intent(IN   ) :: a(my,-mah1:mah2)
+   1173 real,     intent(INOUT) :: v(mx,my)
+   1174 !-----------------------------------------------------------------------------
+   1175 integer                 :: iy, jy
+   1176 !=============================================================================
+   1177 do iy=1,my
+   1178    do jy=iy+1,min(my,iy+mah2); v(:,jy)=v(:,jy)-v(:,iy)*a(iy,jy-iy); enddo
+   1179 enddo
+   1180 do iy=my,2,-1
+   1181    do jy=max(1,iy-mah1),iy-1;  v(:,jy)=v(:,jy)-v(:,iy)*a(iy,jy-iy); enddo
+   1182 enddo
+   1183 end subroutine U1LYB
+
+Page 72          Source Listing                  U1LYB
+2017-04-18 11:09 Entry Points                    pmat2.f90
+
+
+
+ENTRY POINTS
+
+  Name                       
+                             
+ pmat2_mp_u1lyb_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  1155     R(4)            4     2     0        ARG,IN           1178,1181                         
+ IY                         Local  1175     I(4)            4           scalar                    1177,1178,1180,1181               
+ JY                         Local  1175     I(4)            4           scalar                    1178,1181                         
+ MAH1                       Dummy  1155     I(4)            4           scalar   ARG,IN           1172,1181                         
+ MAH2                       Dummy  1155     I(4)            4           scalar   ARG,IN           1172,1178                         
+ MAX                        Func   1181                                 scalar                    1181                              
+ MIN                        Func   1178                                 scalar                    1178                              
+ MX                         Dummy  1155     I(4)            4           scalar   ARG,IN           1173                              
+ MY                         Dummy  1155     I(4)            4           scalar   ARG,IN           1172,1173,1177,1178,1180          
+ U1LYB                      Subr   1155                                                                                             
+ V                          Dummy  1155     R(4)            4     2     0        ARG,INOUT        1178,1181                         
+
+Page 73          Source Listing                  U1LYB
+2017-04-18 11:09                                 pmat2.f90
+
+   1184 
+   1185 !=============================================================================
+   1186 subroutine LINBV(m,mah1,mah2,a,v)!                                     [LINBV]
+   1187 !=============================================================================
+   1188 !   R.J.Purser, National Meteorological Center, Washington D.C.  1994
+   1189 !		    SUBROUTINE LINBV
+   1190 !   Solve LINear system with square Banded-matrix and vector V
+   1191 !
+   1192 ! <-> A system matrix on input, its [L]*[D**-1]*[U] factorization on exit
+   1193 ! <-> V vector of right-hand-sides on input, solution vector on exit
+   1194 ! --> M order of matrix A
+   1195 ! --> MAH1 left half-bandwidth of A
+   1196 ! --> MAH2 right half-bandwidth of A
+   1197 !=============================================================================
+   1198 integer, intent(IN   ) :: m, mah1, mah2
+   1199 real,    intent(INOUT) :: a(m,-mah1:mah2), v(m)
+   1200 !=============================================================================
+   1201 call LDUB(m,mah1,mah2,a)
+   1202 call UDLBV(m,mah1,mah2,a,v)
+   1203 end subroutine LINBV
+
+
+ENTRY POINTS
+
+  Name                       
+                             
+ pmat2_mp_linbv_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  1186     R(4)            4     2     0        ARG,INOUT        1201,1202                         
+ LINBV                      Subr   1186                                                                                             
+ M                          Dummy  1186     I(4)            4           scalar   ARG,IN           1199,1201,1202                    
+ MAH1                       Dummy  1186     I(4)            4           scalar   ARG,IN           1199,1201,1202                    
+ MAH2                       Dummy  1186     I(4)            4           scalar   ARG,IN           1199,1201,1202                    
+ UDLBV                      Subr   1202                                                           41,1202                           
+ V                          Dummy  1186     R(4)            4     1     0        ARG,INOUT        1202                              
+
+Page 74          Source Listing                  LINBV
+2017-04-18 11:09                                 pmat2.f90
+
+   1204 
+   1205 !=============================================================================
+   1206 subroutine WRTB(m1,m2,mah1,mah2,a)!                                     [WRTB]
+   1207 !=============================================================================
+   1208 integer,  intent(IN) :: m1, m2, mah1, mah2
+   1209 real,     intent(IN) :: a(m1,-mah1:mah2)
+   1210 !-----------------------------------------------------------------------------
+   1211 integer              :: i1, i2, i, j1, j2, j, nj1
+   1212 !=============================================================================
+   1213 do i1=1,m1,20
+   1214    i2=min(i1+19,m1)
+   1215    write(41,'(7x,6(i2,10x))'),(j,j=-mah1,mah2)
+   1216    do i=i1,i2
+   1217       j1=max(-mah1,1-i)
+   1218       j2=min(mah2,m2-i)
+   1219       nj1=j1+mah1
+   1220       if(nj1==0) write(41,'(1x,i3,6(1x,e12.5))'),    i,(a(i,j),j=j1,j2)
+   1221       if(nj1==1) write(41,'(1x,i3,12x,5(1x,e12.5))'),i,(a(i,j),j=j1,j2)
+   1222       if(nj1==2) write(41,'(1x,i3,24x,4(1x,e12.5))'),i,(a(i,j),j=j1,j2)
+   1223       if(nj1==3) write(41,'(1x,i3,36x,3(1x,e12.5))'),i,(a(i,j),j=j1,j2)
+   1224       if(nj1==4) write(41,'(1x,i3,48x,2(1x,e12.5))'),i,(a(i,j),j=j1,j2)
+   1225       if(nj1==5) write(41,'(1x,i3,60x,1(1x,e12.5))'),i,(a(i,j),j=j1,j2)
+   1226    enddo
+   1227    read(*,*)
+   1228 enddo
+   1229 end subroutine WRTB
+
+
+ENTRY POINTS
+
+  Name                      
+                            
+ pmat2_mp_wrtb_             
+
+Page 75          Source Listing                  WRTB
+2017-04-18 11:09 Symbol Table                    pmat2.f90
+
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ A                          Dummy  1206     R(4)            4     2     0        ARG,IN           1220,1221,1222,1223,1224,1225     
+ I                          Local  1211     I(4)            4           scalar                    1216,1217,1218,1220,1221,1222,1223
+                                                                                                  ,1224,1225                        
+ I1                         Local  1211     I(4)            4           scalar                    1213,1214,1216                    
+ I2                         Local  1211     I(4)            4           scalar                    1214,1216                         
+ J                          Local  1211     I(4)            4           scalar                    1215,1220,1221,1222,1223,1224,1225
+ J1                         Local  1211     I(4)            4           scalar                    1217,1219,1220,1221,1222,1223,1224
+                                                                                                  ,1225                             
+ J2                         Local  1211     I(4)            4           scalar                    1218,1220,1221,1222,1223,1224,1225
+ M1                         Dummy  1206     I(4)            4           scalar   ARG,IN           1209,1213,1214                    
+ M2                         Dummy  1206     I(4)            4           scalar   ARG,IN           1218                              
+ MAH1                       Dummy  1206     I(4)            4           scalar   ARG,IN           1209,1215,1217,1219               
+ MAH2                       Dummy  1206     I(4)            4           scalar   ARG,IN           1209,1215,1218                    
+ MAX                        Func   1217                                 scalar                    1217                              
+ MIN                        Func   1214                                 scalar                    1214,1218                         
+ NJ1                        Local  1211     I(4)            4           scalar                    1219,1220,1221,1222,1223,1224,1225
+ WRTB                       Subr   1206                                                                                             
+
+Page 76          Source Listing                  WRTB
+2017-04-18 11:09 Symbol Table                    pmat2.f90
+
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ AVCO                       Subr   45                                                             39                                
+ CAD1B                      Subr   49                                                             39                                
+ CAD2B                      Subr   51                                                             39                                
+ CLIPB                      Local  48                                   scalar                    39                                
+ CSB1B                      Subr   50                                                             39                                
+ CSB2B                      Subr   52                                                             39                                
+ DFCO                       Subr   46                                                             39                                
+ DFCO2                      Subr   47                                                             39                                
+ L1UBB                      Subr   55                                                             40                                
+ L1UEB                      Subr   56                                                             40                                
+ LDLTB                      Subr   54                                                             40                                
+ LINBV                      Subr   71                                                             42                                
+ LTDLBV                     Subr   57                                                             40                                
+ PKIND                      Module 36                                                             36                                
+ PMAT2                      Module 34                                                                                               
+ U1LBV                      Subr   65                                                             41                                
+ U1LBX                      Subr   66                                                             41                                
+ U1LBY                      Subr   67                                                             41                                
+ U1LVB                      Subr   68                                                             41                                
+ U1LXB                      Subr   69                                                             41                                
+ U1LYB                      Subr   70                                                             42                                
+ UDLB                       Subr   58                                                             40                                
+ UDLBX                      Subr   60                                                             41                                
+ UDLBY                      Subr   61                                                             41                                
+ UDLVB                      Subr   62                                                             41                                
+ UDLXB                      Subr   63                                                             41                                
+ UDLYB                      Subr   64                                                             41                                
+ WRTB                       Subr   72                                                             42                                
+
+Page 77          Source Listing                  WRTB
+2017-04-18 11:09                                 pmat2.f90
+
+   1230 
+   1231 end module pmat2
+
+Page 78          Source Listing                  WRTB
+2017-04-18 11:09 Subprograms/Common Blocks       pmat2.f90
+
+
+
+SUBPROGRAMS/COMMON BLOCKS
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ AVCO                       Subr   76                                                                                               
+ CAD1B                      Subr   338                                                                                              
+ CAD2B                      Subr   383                                                                                              
+ CLIB                       Subr   310                                           PRIV                                               
+ CLIB_C                     Subr   328                                           PRIV                                               
+ CLIB_D                     Subr   319                                           PRIV                                               
+ CSB1B                      Subr   364                                                                                              
+ CSB2B                      Subr   408                                                                                              
+ DAVCO                      Subr   116                                           PRIV             148                               
+ DDFCO                      Subr   193                                           PRIV             226                               
+ DDFCO2                     Subr   272                                           PRIV             305                               
+ DFCO                       Subr   152                                                                                              
+ DFCO2                      Subr   231                                                                                              
+ DL1UBB                     Subr   641                                           PRIV                                               
+ DL1UEB                     Subr   714                                           PRIV                                               
+ DLDLTB                     Subr   546                                           PRIV                                               
+ DLDUB                      Subr   489                                           PRIV             594                               
+ DLTDLBV                    Subr   814                                           PRIV                                               
+ DUDLB                      Subr   587                                           PRIV                                               
+ DUDLBV                     Subr   772                                           PRIV                                               
+ L1UBB                      Subr   599                                                                                              
+ L1UEB                      Subr   668                                                                                              
+ LDLTB                      Subr   518                                                                                              
+ LDUB                       Subr   448                                                                                              
+ LINBV                      Subr   1186                                                                                             
+ LTDLBV                     Subr   792                                                                                              
+ PMAT2                      Module 34                                                                                               
+ TAVCO                      Subr   139                                           PRIV                                               
+ TDFCO                      Subr   217                                           PRIV                                               
+ TDFCO2                     Subr   296                                           PRIV                                               
+ U1LBV                      Subr   998                                                                                              
+ U1LBX                      Subr   1030                                                                                             
+ U1LBY                      Subr   1061                                                                                             
+ U1LVB                      Subr   1092                                                                                             
+ U1LXB                      Subr   1124                                                                                             
+ U1LYB                      Subr   1155                                                                                             
+ UDLB                       Subr   576                                                                                              
+ UDLBV                      Subr   741                                                                                              
+ UDLBX                      Subr   837                                                                                              
+ UDLBY                      Subr   869                                                                                              
+ UDLVB                      Subr   901                                                                                              
+ UDLXB                      Subr   934                                                                                              
+ UDLYB                      Subr   966                                                                                              
+ WRTB                       Subr   1206                                                                                             
+
+COMPILER OPTIONS BEING USED
+
+       -align noall                          -align nonone
+       -align nocommons                      -align nodcommons
+       -align noqcommons                     -align nozcommons
+       -align records                        -align nosequence
+
+Page 79          Source Listing                  WRTB
+2017-04-18 11:09                                 pmat2.f90
+
+       -align norec1byte                     -align norec2byte
+       -align norec4byte                     -align norec8byte
+       -align norec16byte                    -align norec32byte
+       -align norec64byte                    -align noarray8byte
+       -align noarray16byte                  -align noarray32byte
+       -align noarray64byte                  -align noarray128byte
+       -align noarray256byte                 -altparam
+       -assume accuracy_sensitive            -assume nobscc
+       -assume nobuffered_io                 -assume nobuffered_stdout
+       -assume nobyterecl                    -assume nocc_omp
+       -assume nocstring                     -assume nodummy_aliases
+       -assume nofpe_summary                 -assume noieee_fpe_flags
+       -assume nominus0                      -assume noold_boz
+       -assume old_complex_align             -assume old_unit_star
+       -assume noold_ldout_format            -assume noold_logical_ldio
+       -assume old_maxminloc                 -assume old_xor
+       -assume noprotect_allocates           -assume protect_constants
+       -assume noprotect_parens              -assume split_common
+       -assume source_include                -assume nostd_intent_in
+       -assume std_minus0_rounding           -assume nostd_mod_proc_name
+       -assume std_value                     -assume norealloc_lhs
+       -assume underscore                    -assume no2underscores
+  no   -auto                                 -auto_scalar
+  no   -bintext                              -ccdefault default
+       -check noargs                         -check noarg_temp_created
+       -check noassume                       -check nobounds
+       -check noformat                       -check nooutput_conversion
+       -check nooverflow                     -check nopointers
+       -check power                          -check noshape
+       -check nostack                        -check nounderflow
+       -check nouninitialized                -coarray-num-procs 0
+  no   -coarray-config-file                  -convert big_endian
+       -cross_reference                      -D __INTEL_COMPILER=1600
+       -D __INTEL_COMPILER_UPDATE=3          -D __unix__
+       -D __unix                             -D __linux__
+       -D __linux                            -D __gnu_linux__
+       -D unix                               -D linux
+       -D __ELF__                            -D __x86_64
+       -D __x86_64__                         -D __amd64
+       -D __amd64__                          -D __INTEL_COMPILER_BUILD_DATE=20160415
+       -D __INTEL_OFFLOAD                    -D __i686
+       -D __i686__                           -D __pentiumpro
+       -D __pentiumpro__                     -D __pentium4
+       -D __pentium4__                       -D __tune_pentium4__
+       -D __SSE2__                           -D __SSE2_MATH__
+       -D __SSE__                            -D __SSE_MATH__
+       -D __MMX__                            -double_size 64
+  no   -d_lines                         no   -Qdyncom
+       -error_limit 30                  no   -f66
+  no   -f77rtl                          no   -fast
+       -fpscomp nofilesfromcmd               -fpscomp nogeneral
+       -fpscomp noioformat                   -fpscomp noldio_spacing
+       -fpscomp nologicals              no   -fpconstant
+       -fpe3                                 -fprm nearest
+  no   -ftz                                  -fp_model noprecise
+       -fp_model fast                        -fp_model nostrict
+       -fp_model nosource                    -fp_model nodouble
+
+Page 80          Source Listing                  WRTB
+2017-04-18 11:09                                 pmat2.f90
+
+       -fp_model noextended                  -fp_model novery_fast
+       -fp_model noexcept                    -fp_model nono_except
+       -heap_arrays 0                   no   -threadprivate_compat
+       -free                                 -g2
+       -iface nomixed_str_len_arg            -iface nono_mixed_str_len_arg
+       -init noarrays                        -init noinf
+       -init nonan                           -init nosnan
+       -init nozero                     no   -intconstant
+       -integer_size 32                 no   -mixed_str_len_arg
+  no   -module                               -names lowercase
+  no   -noinclude                            -offload-build=host
+       -O2                              no   -pad_source
+       -real_size 32                    no   -recursive
+       -reentrancy none                 no   -sharable_localsaves
+       -vec=simd                             -show noinclude
+       -show map                             -show options
+  no   -syntax_only                     no   -threadcom
+  no   -U                               no   -vms
+       -w noall                              -w nonone
+       -w alignments                         -w noargument_checking
+       -w nodeclarations                     -w general
+       -w noignore_bounds                    -w noignore_loc
+       -w nointerfaces                       -w notruncated_source
+       -w uncalled                           -w uninitialized
+       -w nounused                           -w usage
+  no   -wrap-margins
+
+       -includepath : /usrx/local/intel/2016SP3/daal/include/,/usr/include/,.FOR,./.FOR,/usrx/local/intel/2016SP3/ipp/include/.FOR,
+           /usrx/local/intel/2016SP3/mkl/include/.FOR,/usrx/local/intel/2016SP3/tbb/include/.FOR,/usrx/local/intel/2016SP3/daal/include/.FOR,
+           /gpfs/tp1/usrx/local/intel/2016SP3/compilers_and_libraries_2016.3.210/linux/compiler/include/intel64/.FOR,
+           /gpfs/tp1/usrx/local/intel/2016SP3/compilers_and_libraries_2016.3.210/linux/compiler/include/.FOR,/usr/local/include/.FOR,
+           /usr/lib/gcc/x86_64-redhat-linux/4.4.7/include/.FOR,/usr/include/.FOR,/usr/include/.FOR,/usr/include/.FOR
+       -list filename : pmat2.lst
+       -o    filename : none
+
+COMPILER: Intel(R) Fortran 16.0-1633

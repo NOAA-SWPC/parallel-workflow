@@ -1,0 +1,1119 @@
+Page 1           Source Listing                  W3RTOVSUNP
+2017-04-18 11:09                                 w3rtovsunp.f
+
+      1 C$$$  SUBPROGRAM DOCUMENTATION BLOCK
+      2 C
+      3 C SUBPROGRAM:    W3RTOVSUNP
+      4 C   PRGMMR: KEYSER           ORG: NP22        DATE: 2013-02-14
+      5 C
+      6 C ABSTRACT: READS AND UNPACKS ONE REPORT FROM INPUT RTOVS RETRIEVAL
+      7 C   BUFR (DUMP) FILE INTO SPECIFIED FORMAT. RETURNS INFORMATION IN THE
+      8 C   FORMAT DESCRIBED BELOW.  INCLUDES SOUNDING DATA ON 40 LEVELS AND
+      9 C   RTOVS RADIANCES FROM 32 CHANNELS (20 HIRS, 4 MSU, 3 SSU, AND 5
+     10 C   AVHRR CHANNELS).  ALSO, INFORMATION ABOUT THE INPUT DATA SET
+     11 C   ITSELF (NAME, CENTER DATE, DUMP TIME) IS RETURNED.
+     12 C
+     13 C PROGRAM HISTORY LOG:
+     14 C 1997-11-21  BERT B. KATZ/GSC -- ORIGINAL AUTHOR
+     15 C 1998-05-05  D.A. KEYSER/NP22 -- STREAMLINED, CORRECTED ERRORS
+     16 C 1998-06-15  D.A. KEYSER/NP22 -- MODIFIED TO READ IN LONGITUDE
+     17 C     (MNEMONIC "CLON") CORRECTLY WHETHER STORED IN DEG. E, OR IN
+     18 C     DEG. W (-) AND DEG. E (+)
+     19 C 1998-09-21  D.A. KEYSER/NP22 -- SUBROUTINE NOW Y2K AND FORTRAN 90
+     20 C      COMPLIANT
+     21 C 1999-01-20 D. A. KEYSER -- INCORPORATED BOB KISTLER'S CHANGES NEEDED
+     22 C      TO PORT THE CODE TO THE IBM SP
+     23 C 1999-11-02 D. A. KEYSER -- SATELLITE IDENTIFICATION RETURNED IN
+     24 C      ISATOB(1) IS NOW BUFR CODE TABLE VALUE; CHANGES TO MAKE CODE
+     25 C      MORE PORTABLE; SUBROUTINE RENAMED
+     26 C 2000-02-17 D. A. KEYSER -- IF DATE OF INPUT FILE IS PRIOR TO
+     27 C      7/1/1998, THEN DOES NOT USE "TOFF" TO GET FILTER FLAG (NOT
+     28 C      VALID AT THIS TIME), RATHER SETS OUTPUT FILTER FLAG TO "-99"
+     29 C      WHICH ALERTS CALLING PROGRAM TO PROCESS ONLY EVERY 4'TH
+     30 C      RETRIEVAL TO SIMULATE 250KM SAMPLING (NEEDED FOR HISTORICAL
+     31 C      CDAS RUNS)
+     32 C 2012-11-30 J. WOOLLEN   -- INITIAL PORT TO WCOSS; RESET BMISS TO A
+     33 C      VALUE (10E08) WHICH WILL NOT CAUSE INTEGER OVERFLOW WHICH CAN BE
+     34 C      UNPREDICTABLE (PRIOR BMISS VALUE WAS 10E10)
+     35 C 2013-02-14 D. A. KEYSER -- FINAL CHANGES TO RUN ON WCOSS;  OBTAIN
+     36 C      VALUE OF BMISS SET IN CALLING PROGRAM VIA CALL TO BUFRLIB
+     37 C      ROUTINE GETBMISS RATHER THAN HARDWIRING IT TO 10E08 (OR 10E10);
+     38 C      USE BUFRLIB FUNCTION IBFMS TO DETERMINE IF A VARIABLE READ FROM
+     39 C      BUFR FILE IS MISSING (I.E. RETURNED AS BMISS);  USE FORMATTED
+     40 C      PRINT STATEMENTS WHERE PREVIOUSLY UNFORMATTED PRINT WAS USED
+     41 C      (WCOSS SPLITS UNFORMATTED PRINT AT 80 CHARACTERS)
+     42 C
+     43 C USAGE:    CALL W3RTOVSUNP(IUNIT,IBDATE,PP,TT,QQ,CLAL,CLAM,NLEV,
+     44 C                           IRTCHN,RTRAD,NCHN,STNID,ISATOB,RSATOB,
+     45 C                           DSNAME,IDSDAT,IDSDMP_8,IERR)
+     46 C   INPUT ARGUMENT LIST:
+     47 C     IUNIT    - UNIT NUMBER OF INPUT FILE CONTAINING RETRIEVAL DATA
+     48 C              - IN BUFR FORMAT.
+     49 C
+     50 C   OUTPUT ARGUMENT LIST:      (INCLUDING WORK ARRAYS)
+     51 C     IBDATE   - DATE IN SECTION 1 OF BUFR MESSAGE CONTAINING THIS
+     52 C              - RETRIEVAL (IN FORM YYYYMMDDHH)
+     53 C     PP       - PRESSURE IN MB AT RETRIEVAL LEVELS (MUST BE
+     54 C              - DIMENSIONED TO AT LEAST 40 WORDS BY CALLING PROGRAM
+     55 C              - - ONLY 40 WORDS WILL BE FILLED HERE)
+     56 C     TT       - VIRTUAL TEMPERATURE IN DEG. K AT RETRIEVAL LEVELS
+     57 C              - (MUST BE DIMENSIONED TO AT LEAST 40 WORDS BY CALLING
+
+Page 2           Source Listing                  W3RTOVSUNP
+2017-04-18 11:09                                 w3rtovsunp.f
+
+     58 C              - PROGRAM - ONLY 40 WORDS WILL BE FILLED HERE)
+     59 C     QQ       - SPECIFIC HUMIDITY IN G/G AT RETRIEVAL LEVELS (MUST
+     60 C              - BE DIMENSIONED TO AT LEAST 40 WORDS BY CALLING
+     61 C              - PROGRAM - ONLY 40 WORDS WILL BE FILLED HERE)
+     62 C     CLAL     - CLOUD TOP ALBEDO IN PERCENT AT RETRIEVAL LEVELS (MUST
+     63 C              - BE DIMENSIONED TO AT LEAST 40 WORDS BY CALLING
+     64 C              - PROGRAM - ONLY 40 WORDS WILL BE FILLED HERE)
+     65 C     CLAM     - CLOUD AMOUNT AT RETRIEVAL LEVELS (C.T. 0-20-011)
+     66 C              - (MUST BE DIMENSIONED TO AT LEAST 40 WORDS BY CALLING
+     67 C              - PROGRAM - ONLY 40 WORDS WILL BE FILLED HERE)
+     68 C     NLEV     - NUMBER OF RETRIEVAL LEVELS (SHOULD ALWAYS BE 40)
+     69 C     IRTCHN   - RTOVS RADIANCE CHANNELS (NUMERIC) (MUST BE
+     70 C              - DIMENSIONED TO AT LEAST 32 WORDS BY CALLING PROGRAM -
+     71 C              - ONLY 32 WORDS WILL BE FILLED HERE)
+     72 C     RTRAD    - RTOVS RADIANCES IN DEG. K (MUST BE DIMENSIONED TO AT
+     73 C              - LEAST 32 WORDS BY CALLING PROGRAM - ONLY 32 WORDS
+     74 C              - WILL BE FILLED HERE)
+     75 C     NCHN     - NUMBER OF RADIANCE CHANNELS (SHOULD ALWAYS BE 32)
+     76 C     STNID    - STATION ID (CHAR*8)
+     77 C     ISATOB   - 11-WORD INTEGER ARRAY CONTAINING RETURNED DATA
+     78 C              - (SEE REMARKS FOR CONTENTS)
+     79 C     RSATOB   - 17-WORD REAL ARRAY CONTAINING RETURNED DATA
+     80 C              - (SEE REMARKS FOR CONTENTS)
+     81 C     DSNAME   - CHARACTER*8 DATA SET NAME (SAME FOR ALL REPORTS IN
+     82 C              - A COMMON INPUT DATA SET - SEE REMARKS FOR IERR=1)
+     83 C     IDSDAT   - INTEGER DATA SET CENTER DATE IN FORM YYYYMMDDHH (SAME
+     84 C              - FOR ALL REPORTS IN A COMMON input data set - see
+     85 C              - REMARKS FOR IERR=1)
+     86 C     IDSDMP_8 - INTEGER*8 DATA SET DUMP TIME IN FORM YYYYMMDDHHMM
+     87 C              - (SAME FOR ALL REPORTS IN A COMMON INPUT DATA SET - SEE
+     88 C              - REMARKS FOR IERR=1)
+     89 C     IERR     - ERROR RETURN CODE
+     90 C                 =  0 OBSERVATION READ AND UNPACKED INTO OUTPUT
+     91 C                        ARGUMENT LOCATIONS (SEE ABOVE).  SEE REMARKS
+     92 C                        FOR CONTENTS. NEXT CALL TO W3RTOVSUNP WILL
+     93 C                        RETURN NEXT OBSERVATION IN DATA SET.
+     94 C                 =  1 INFORMATION ABOUT THE BUFR DATASET IS RETURNED
+     95 C                        IN THE OUTPUT ARGUMENTS DSNAME, IDSDAT,
+     96 C                        IDSDMP_8 (SEE OUTPUT ARGUMENT LIST ABOVE)
+     97 C
+     98 C                        THIS SHOULD ALWAYS OCCUR AFTER THE FIRST CALL
+     99 C                        TO THIS SUBROUTINE.  NO REPORT IS UNPACKED AT
+    100 C                        THIS POINT, AND ONLY DSNAME, IDSDAT, AND
+    101 C                        IDSDMP_8 CONTAIN INFORMATION.  ALL SUBSEQUENT
+    102 C                        CALLS TO W3RTOVSUNP SHOULD RETURN THE
+    103 C                        OBSERVATIONS IN THIS DATA SET, SEQUENTIALLY,
+    104 C                        (IERR=0) UNTIL THE END OF FILE IS ENCOUNTERED
+    105 C                        (IERR=2).  THE VALUES STORED IN DSNAME,
+    106 C                        IDSDAT, AND IDSDMP_8 WILL CONTINUE TO BE
+    107 C                        RETURNED ALONG WITH EACH REPORT WHEN IERR = 0.
+    108 C                 =  2 FOR NORMAL END-OF-FILE ENCOUNTERED.
+    109 C                 = -1 FOR END-OF-FILE ON FIRST READ -- EMPTY FILE
+    110 C                 = -2 FOR INPUT BUFR FILE NOT Y2K COMPLIANT -- NO
+    111 C                        PROCESSING DONE
+    112 C                 = -3 CENTER DATE COULD NOT BE OBTAINED FROM INPUT
+    113 C                        FILE -- NO PROCESSING DONE
+    114 C
+
+Page 3           Source Listing                  W3RTOVSUNP
+2017-04-18 11:09                                 w3rtovsunp.f
+
+    115 C   INPUT FILES:
+    116 C     UNIT "IUNIT" - FILE CONTAINING BUFR RTOVS DATA
+    117 C
+    118 C   OUTPUT FILES:
+    119 C     UNIT 06 - STANDARD OUTPUT PRINT
+    120 C
+    121 C   SUBPROGRAMS CALLED:
+    122 C     LIBRARY:
+    123 C       W3NCO       - W3DIFDAT
+    124 C       BUFRLIB     - DATELEN  DUMPBF   OPENBF   READMG   READSB
+    125 C                   - UFBINT   CLOSBF   GETBMISS IBFMS
+    126 C
+    127 C
+    128 C REMARKS:
+    129 C
+    130 C     CONTENTS OF OUTPUT ARGUMENT ISATOB (11 INTEGER WORDS) FOR EACH
+    131 C      RETRIEVAL:
+    132 C        WORD  1 - SATELLITE IDENTIFIER
+    133 C                                      (BUFR C.T. 0-01-007)
+    134 C        WORD  2 - PREPBUFR REPORT TYPE
+    135 C                     (=161 FOR CLEAR PATH OVER LAND)
+    136 C                     (=163 FOR CLOUDY PATH OVER LAND)
+    137 C                     (=171 FOR CLEAR PATH OVER OCEAN)
+    138 C                     (=173 FOR CLOUDY PATH OVER OCEAN)
+    139 C                     {NOTE: R. TYPE 162 (NSTAR PATH OVER LAND) AND
+    140 C                            R. TYPE 172 (NSTAR PATH OVER OCEAN)
+    141 C                            ARE NOT VALID FOR RTOVS}
+    142 C        WORD  3 - SWATH LOCATION :  1 INDICATES LEFT  LIMB OF SWATH
+    143 C                                   56 INDICATES RIGHT LIMB OF SWATH
+    144 C                           USED FOR DETERMINING DISTANCE FROM NADIR
+    145 C        WORD  4 - ORBIT NUMBER
+    146 C        WORD  5 - NESDIS LAND-SEA FLAG
+    147 C        WORD  6 - SATELLITE DATA PROCESSING TECHNIQUE
+    148 C                     (=12 FOR CLOUDY PATH)
+    149 C                     (=36 FOR CLEAR PATH)
+    150 C                     (= 4 FOR UNKNOWN PATH????)
+    151 C        WORD  7 - ROVS FILTER FLAG (=  0 FOR GOOD)
+    152 C                                   (=  1 FOR REDUNDANT)
+    153 C                                   (=-99 FOR PRIOR TO 07/01/1998)
+    154 C                   IMPORTANT: REDUNDANT RETRIEVALS ARE AT FULL 80 KM
+    155 C                              RESOLUTION; GOOD RETRIEVALS ARE AT
+    156 C                              250 KM RESOLUTION
+    157 C        WORD  8 - SUPERADIABATIC FLAG (=0 FOR NOT SUPERADIABATIC)
+    158 C                                      (.NE. 0 FOR SUPERADIABATIC)
+    159 C        WORD  9 - DAY/NIGHT QUALIFIER (=0 FOR NIGHT)
+    160 C                                      (=1 FOR DAY)
+    161 C        WORD 10 - VERTICAL SIGNIFICANCE (SAT OBSERVATION)
+    162 C                                      (BUFR C.T. 0-08-003)
+    163 C        WORD 11 - SNOW/ICE FLAGS (TERRAIN TYPE)
+    164 C                                      (BUFR C.T. 0-13-039)
+    165 C
+    166 C     CONTENTS OF OUTPUT ARGUMENT RSATOB (17 REAL WORDS) FOR EACH
+    167 C      RETRIEVAL:
+    168 C        WORD  1 - OBSERVATION TIME IN HOURS GOOD TO 0.01 HOUR.
+    169 C        WORD  2 - LATITUDE IN DEGREES (N+,S-)
+    170 C        WORD  3 - LONGITUDE IN DEGREES EAST (0.0 to 359.99)
+    171 C        WORD  4 - SURFACE HEIGHT IN METERS
+
+Page 4           Source Listing                  W3RTOVSUNP
+2017-04-18 11:09                                 w3rtovsunp.f
+
+    172 C        WORD  5 - FIRST ABOVE-GROUND RTOVS PRESSURE LEVEL IN MB
+    173 C        WORD  6 - SKIN TEMPERATURE IN DEGREES K
+    174 C        WORD  7 - TOTAL PRECIPITABLE WATER IN MM
+    175 C        WORD  8 - TOTAL OZONE IN DOBSONS
+    176 C        WORD  9 - SEA SURFACE TEMPERATURE IN DEGREES K
+    177 C        WORD 10 - CLOUD-TOP PRESSURE IN MB
+    178 C        WORD 11 - SOLAR ZENITH ANGLE IN DEGREES
+    179 C        WORD 12 - SATELLITE ELEVATION IN DEGREES
+    180 C        WORD 13 - NESDIS AVERAGE NSTAR (CLOUDINESS PARAMETER)
+    181 C                   (NOTE: THIS IS NOT OF ANY USE SINCE NSTAR
+    182 C                         PATH NOT VALID FOR RTOVS
+    183 C                         = -1 FOR CLOUDY PATH
+    184 C                         = MISSING FOR CLEAR PATH)
+    185 C        WORD 14 - HIRS CHANNEL UTILIZATION FLAGS
+    186 C        WORD 15 - MSU CHANNEL UTILIZATION FLAGS
+    187 C        WORD 16 - SSU CHANNEL UTILIZATION FLAGS
+    188 C        WORD 17 - AVHRR CHANNEL UTILIZATION FLAGS
+    189 C
+    190 C FOR ALL DATA: MISSING VALUES ARE RETURNED AS XMISS (99999.) (REAL) OR
+    191 C               IMISS (99999) (INTEGER)
+    192 C
+    193 C ATTRIBUTES:
+    194 C   LANGUAGE: FORTRAN 90
+    195 C   MACHINE:  NCEP WCOSS
+    196 C
+    197 C$$$
+    198       SUBROUTINE W3RTOVSUNP(IUNIT,IBDATE,PP,TT,QQ,CLAL,CLAM,NLEV,
+    199      $                      IRTCHN,RTRAD,NCHN,STNID,ISATOB,RSATOB,
+    200      $                      DSNAME,IDSDAT,IDSDMP_8,IERR)
+    201  
+    202       DATA IFIRST/0/,KOUNTR/0/,ITOFF/0/
+    203 
+    204       REAL  PP(*),TT(*),QQ(*),CLAL(*),CLAM(*),RTRAD(*),RINC(5)
+    205 
+    206       INTEGER  IRTCHN(*),JDATE(5),JDUMP(5),NF(0:3),KDATE(8),LDATE(8)
+    207 
+    208       INTEGER(8) IDSDMP_8,JDUMP_8(5)
+    209 
+    210       CHARACTER*8 SUBSET,DSNAME
+    211 
+    212       CHARACTER*50 IDTSTR
+    213       DATA IDTSTR/'SAID CLAT CLON TOFF HOUR MINU SECO FOVN ORBN SADF '/
+    214       CHARACTER*5 IDTST2
+    215       DATA IDTST2/'DNQL '/
+    216 
+    217       CHARACTER*50 INFSTR
+    218       DATA INFSTR/'SOEL ELEV NSAV OZON SDPT HIRC MSUC SSUC AVHC TPWT '/
+    219       CHARACTER*10 INFST1
+    220       DATA INFST1/'CDTP VSAT '/
+    221 
+    222       CHARACTER*30 SRFSTR
+    223       DATA SRFSTR/'PRES SELV LSQL TMSK SST1 TERR '/
+    224 
+    225       CHARACTER*25 RETSTR
+    226       DATA RETSTR/'PRLC TMDB MIXR CLAL CLAM '/
+    227 
+    228       CHARACTER*10 BRTSTR
+
+Page 5           Source Listing                  W3RTOVSUNP
+2017-04-18 11:09                                 w3rtovsunp.f
+
+    229       DATA BRTSTR/'CHNM TMBR '/
+    230 
+    231       REAL(8) XIDENT_8(11),XINFO_8(12),SRFDAT_8(6),RETDAT_8(5,40),
+    232      $        BRTDAT_8(2,32),AMAXIMUM_8
+    233       REAL(8) BMISS,GETBMISS
+    234 
+    235       DIMENSION  KOUNT(0:3,0:3),ISATOB(11),RSATOB(17)
+    236       DATA  KOUNT/16*0/,XMISS/99999./,IMISS/99999/,NF/31,13,35,17/
+    237 
+    238       CHARACTER*8   STNID
+    239 
+    240       CHARACTER*1   NMCHAR(0:35)
+    241 
+    242       SAVE
+    243 
+    244       DATA          NMCHAR/'0','1','2','3','4','5','6','7','8','9',
+    245      $                     'A','B','C','D','E','F','G','H','I','J',
+    246      $                     'K','L','M','N','O','P','Q','R','S','T',
+    247      $                     'U','V','W','X','Y','Z'/
+    248 
+    249       IF(IFIRST.EQ.0) THEN
+    250 
+    251 C  FIRST TIME IN, SET DATELEN, GET CENTER AND DUMP TIME FOR FILE, TEST
+    252 C   FOR CENTER FILE DATE PRIOR TO 07/01/1998, AND GET VALUE FOR "BMISS"
+    253 C  --------------------------------------------------------------------
+    254 
+    255          PRINT'("  ==> W3RTOVSUNP -- WCOSS VERSION 02-14-2013")'
+    256          IFIRST = 1
+    257          CALL DATELEN(10)
+    258          CALL DUMPBF(IUNIT,JDATE,JDUMP)
+    259 cppppp
+    260          print'("  -- CENTER DATE (JDATE) = ",5(I0,1X))', jdate
+    261          print'("  -- DUMP DATE   (JDUMP) = ",5(I0,1X))', jdump
+    262          print'(1X)'
+    263 cppppp
+    264          IF(JDATE(1).LE.0)  then
+    265             PRINT'(" ##W3RTOVSUNP - CENTER DATE COULD NOT BE OBTAINED ",
+    266      $       "FROM INPUT FILE ON UNIT ",I0," -- IERR = -3")', IUNIT
+    267             RETURN
+    268          END IF
+    269          IF(JDATE(1).LT.100)  THEN
+    270 
+    271 C IF 2-DIGIT YEAR RETURNED IN JDATE(1), MUST USE "WINDOWING" TECHNIQUE
+    272 C  TO CREATE A 4-DIGIT YEAR
+    273 
+    274 C IMPORTANT: IF DATELEN(10) IS CALLED, THE DATE HERE SHOULD ALWAYS
+    275 C            CONTAIN A 4-DIGIT YEAR, EVEN IF INPUT FILE IS NOT
+    276 C            Y2K COMPLIANT (BUFRLIB DOES THE WINDOWING HERE)
+    277 
+    278             PRINT'(" ##W3RTOVSUNP - THE FOLLOWING SHOULD NEVER ",
+    279      $       "HAPPEN!!!!!")'
+    280             PRINT'(" ##W3RTOVSUNP - 2-DIGIT YEAR IN JDATE(1) RETURNED ",
+    281      $       "FROM DUMPBF (JDATE IS: ",I5,4I3") - USE WINDOWING ",
+    282      $       "TECHNIQUE TO OBTAIN 4-DIGIT YEAR")', JDATE
+    283             IF(JDATE(1).GT.20)  THEN
+    284                JDATE(1) = 1900 + JDATE(1)
+    285             ELSE
+
+Page 6           Source Listing                  W3RTOVSUNP
+2017-04-18 11:09                                 w3rtovsunp.f
+
+    286                JDATE(1) = 2000 + JDATE(1)
+    287             ENDIF
+    288             PRINT'(" ##W3RTOVSUNP - CORRECTED JDATE(1) WITH 4-DIGIT ",
+    289      $       "YEAR, JDATE NOW IS: ",I5,4I3)', JDATE
+    290          ENDIF
+    291          IDSDAT = JDATE(1)*1000000+JDATE(2)*10000+JDATE(3)*100+JDATE(4)
+    292          IF(JDUMP(1).LE.0)  THEN
+    293             IDSDMP_8 = 999999999999_8
+    294          ELSE
+    295             IF(JDUMP(1).LT.100)  THEN
+    296 
+    297 C IF 2-DIGIT YEAR RETURNED IN JDUMP(1), MUST USE "WINDOWING" TECHNIQUE
+    298 C  TO CREATE A 4-DIGIT YEAR
+    299 
+    300 C IMPORTANT: IF DATELEN(10) IS CALLED, THE DATE HERE SHOULD ALWAYS
+    301 C            CONTAIN A 4-DIGIT YEAR, EVEN IF INPUT FILE IS NOT
+    302 C            Y2K COMPLIANT (BUFRLIB DOES THE WINDOWING HERE)
+    303 
+    304                PRINT'(" ##W3RTOVSUNP - THE FOLLOWING SHOULD NEVER ",
+    305      $          "HAPPEN!!!!!")'
+    306                PRINT'(" ##W3RTOVSUNP - 2-DIGIT YEAR IN JDUMP(1) ",
+    307      $          "RETURNED FROM DUMPBF (JDUMP IS: ",I5,4I3") - USE ",
+    308      $          "WINDOWING TECHNIQUE TO OBTAIN 4-DIGIT YEAR")', JDUMP
+    309                IF(JDUMP(1).GT.20)  THEN
+    310                   JDUMP(1) = 1900 + JDUMP(1)
+    311                ELSE
+    312                   JDUMP(1) = 2000 + JDUMP(1)
+    313                ENDIF
+    314                PRINT'(" ##W3RTOVSUNP - CORRECTED JDUMP(1) WITH 4-DIGIT",
+    315      $          " YEAR, JDUMP NOW IS: ",I5,4I3)', JDUMP
+    316             END IF
+    317             JDUMP_8 = JDUMP
+    318             IDSDMP_8 = JDUMP_8(1)*100000000+JDUMP_8(2)*1000000+
+    319      $       JDUMP_8(3)*10000+JDUMP_8(4)*100+JDUMP_8(5)
+    320          ENDIF
+    321 c-----------------------------------------------------------------------
+    322 c This logic is needed only because SUBSET is not returned in DUMPBF
+    323 c  and we need it in order to return dsname - after dsname is retrieved
+    324 c  close data set ..
+    325          call openbf(iunit,'IN',iunit)
+    326          call readmg(iunit,subset,ibdate,iret)
+    327          if(subset.eq.'NC003102')  then
+    328             dsname = 'RTOVS   '
+    329          else
+    330             dsname = '????????'
+    331          end if
+    332          call closbf(iunit)
+    333 c-----------------------------------------------------------------------
+    334          KDATE(1:3) = JDATE(1:3)
+    335          KDATE(4)   = 0
+    336          KDATE(5:6) = JDATE(4:5)
+    337          KDATE(7:8) = 0
+    338          LDATE(1)   = 1998
+    339          LDATE(2)   = 07
+    340          LDATE(3)   = 01
+    341          LDATE(4:8) = 0
+    342          CALL W3DIFDAT(KDATE,LDATE,1,RINC)
+
+Page 7           Source Listing                  W3RTOVSUNP
+2017-04-18 11:09                                 w3rtovsunp.f
+
+    343          IF(RINC(1).LT.0.0)  THEN
+    344             WRITE(6,3004)
+    345  3004       FORMAT(/'##W3RTOVSUNP - DATE OF INPUT FILE IS PRIOR TO ',
+    346      $       '07/01/1998 - VALUE IN "TOFF" NOT RELATED TO FILTER FLAG ',
+    347      $       'SO SET'/15X,'OUTPUT FILTER FLAG TO -99 FOR ALL REPORTS'/)
+    348             ITOFF = 1
+    349          END IF
+    350 c-----------------------------------------------------------------------
+    351 
+    352 C  GET VALUE FOR "BMISS"
+    353 C  --------------------
+    354 
+    355          BMISS = GETBMISS()
+    356          print'(1X)'
+    357          print'(" BUFRLIB value for missing passed into W3RTOVSUNP is:",
+    358      $    1X,G0)', bmiss
+    359          print'(1X)'
+    360 c-----------------------------------------------------------------------
+    361 
+    362          IERR = 1
+    363          RETURN
+    364       ELSE  IF(IFIRST.EQ.1) THEN
+    365 
+    366 C  SECOND TIME IN, OPEN BUFR DATASET FOR INPUT AND DECODE FIRST MESSAGE
+    367 C  --------------------------------------------------------------------
+    368 
+    369          IFIRST = 2
+    370          CALL OPENBF(IUNIT,'IN',IUNIT)
+    371          CALL READMG(IUNIT,SUBSET,IBDATE,IRET)
+    372          IF(IRET.NE.0) THEN
+    373             WRITE(6,1009) IUNIT
+    374  1009       FORMAT('##W3RTOVSUNP ERROR: EMPTY FILE IN UNIT ',I5)
+    375             IERR = -1
+    376             RETURN
+    377          ENDIF
+    378          IF(IBDATE.LT.100000000)  THEN
+    379 C IF INPUT BUFR FILE DOES NOT RETURN MESSAGES WITH A 4-DIGIT YEAR,
+    380 C  SOMETHING IS WRONG (EVEN NON-COMPLIANT BUFR MESSAGES SHOULD
+    381 C  CONSTRUCT A 4-DIGIT YEAR AS LONG AS DATELEN(10) HAS BEEN CALLED
+    382             WRITE(6,1209) IUNIT
+    383  1209       FORMAT('##W3RTOVSUNP ERROR: A 10-DIGIT SECT. 1 BUFR ',
+    384      $       'MESSAGE DATE WAS NOT RETURNED IN UNIT',I5,' - PROBLEM ',
+    385      $       'WITH BUFR FILE')
+    386             IERR = -2
+    387             RETURN
+    388          END IF
+    389       ENDIF
+    390 
+    391  1000 CONTINUE                                                          
+    392 
+    393 C  EACH CALL TO READSB INCREASES "KOUNTR" BY 1 (REGARDLESS OF RESULT)
+    394 C  ------------------------------------------------------------------
+    395 
+    396       KOUNTR = KOUNTR + 1
+    397 
+    398       CALL READSB(IUNIT,IRET)
+    399       IF(IRET.NE.0) THEN
+
+Page 8           Source Listing                  W3RTOVSUNP
+2017-04-18 11:09                                 w3rtovsunp.f
+
+    400         CALL READMG(IUNIT,SUBSET,IBDATE,IRET)
+    401         IF(IRET.NE.0) THEN
+    402 
+    403 C  ALL BUFR MESSAGES HAVE BEEN READ AND DECODED -- ALL DONE
+    404 C  --------------------------------------------------------
+    405 
+    406            WRITE(6,1001) IUNIT
+    407  1001 FORMAT(//' ==> W3RTOVSUNP: END OF FILE ON UNIT',I3,' -- ALL DONE'
+    408      $ /)
+    409            IERR = 2
+    410            RETURN
+    411         ENDIF
+    412          IF(IBDATE.LT.100000000)  THEN
+    413 C IF INPUT BUFR FILE DOES NOT RETURN MESSAGES WITH A 4-DIGIT YEAR,
+    414 C  SOMETHING IS WRONG (EVEN NON-COMPLIANT BUFR MESSAGES SHOULD
+    415 c  CONSTRUCT A 4-DIGIT YEAR AS LONG AS DATELEN(10) HAS BEEN CALLED
+    416             WRITE(6,1209) IUNIT
+    417             IERR = -2
+    418             RETURN
+    419          END IF
+    420         GO TO 1000
+    421       ENDIF
+    422 
+    423       XIDENT_8 = BMISS
+    424       CALL UFBINT(IUNIT,XIDENT_8,11, 1,IRET,IDTSTR//IDTST2)
+    425 
+    426       XINFO_8 = BMISS
+    427       CALL UFBINT(IUNIT,XINFO_8 ,12, 1,IRET,INFSTR//INFST1)
+    428 
+    429       SRFDAT_8 = BMISS
+    430       CALL UFBINT(IUNIT,SRFDAT_8, 6, 1,IRET,SRFSTR)
+    431 
+    432       RETDAT_8 = BMISS
+    433       CALL UFBINT(IUNIT,RETDAT_8, 5,40,NLEV,RETSTR)
+    434 
+    435       BRTDAT_8 = BMISS
+    436       CALL UFBINT(IUNIT,BRTDAT_8, 2,32,NCHN,BRTSTR)
+    437 
+    438       ISATOB = IMISS
+    439       RSATOB = XMISS
+    440       PP(1:40) = XMISS
+    441       TT(1:40) = XMISS
+    442       QQ(1:40) = XMISS
+    443       CLAL(1:40) = XMISS
+    444       CLAM(1:40) = XMISS
+    445       IRTCHN(1:32) = IMISS
+    446       RTRAD(1:32) = XMISS
+    447 
+    448 C  SATELLITE IDENTIFIER
+    449 C  --------------------
+    450 
+    451       IF(IBFMS(XIDENT_8(1)).EQ.0)  THEN
+    452          ISATOB(1) = NINT(XIDENT_8(1))
+    453          IF(ISATOB(1).LT.200.OR.ISATOB(1).GT.209) THEN
+    454             WRITE(6,2071) KOUNTR,ISATOB(1)
+    455  2071 FORMAT(/'##W3RTOVSUNP WARNING: A DECODED RETRIEVAL (#',I5,') HAS',
+    456      $ ' AN UNRECOGNIZED SATELLITE ID (=',I5,') - SKIP IT')
+
+Page 9           Source Listing                  W3RTOVSUNP
+2017-04-18 11:09                                 w3rtovsunp.f
+
+    457             GO TO 1000
+    458          ENDIF
+    459       ELSE
+    460          WRITE(6,2072) KOUNTR
+    461  2072 FORMAT(/'##W3RTOVSUNP WARNING: A DECODED RETRIEVAL (#',I5,') HAS',
+    462      $ ' A MISSING SATELLITE ID - SKIP IT')
+    463          GO TO 1000
+    464       ENDIF
+    465 
+    466 C  LATITUDE
+    467 C  --------
+    468 
+    469       IF(IBFMS(XIDENT_8(2)).EQ.0)  THEN
+    470          RSATOB(2) = XIDENT_8(2)
+    471       ELSE
+    472          WRITE(6,2073) KOUNTR
+    473  2073 FORMAT(/'##W3RTOVSUNP WARNING: A DECODED RETRIEVAL (#',I5,') HAS',
+    474      $ ' A MISSING LATITUDE - SKIP IT')
+    475          GO TO 1000
+    476       ENDIF
+    477 
+    478 C  LONGITUDE
+    479 C  ---------
+    480 
+    481       IF(IBFMS(XIDENT_8(3)).EQ.0)  THEN
+    482 
+    483 C Important: According to BUFR Manual, CLON (0-06-002) - represented
+    484 C  here by "XIDENT_8(3)" - should be in units of Degrees West - and
+    485 C  East + (-180.0 to +180.0); however some BUFR data sets (e.g.,
+    486 C  PREPBUFR) are known to encode 0-06-002 in units of Degrees East
+    487 C  (0.0 to 359.99)
+    488 C  -- So we use the following conversion to work in either case ...
+    489          RSATOB(3) = 360._8 - MOD(360._8-XIDENT_8(3),360._8)
+    490          IF(RSATOB(3).EQ.360.0)  RSATOB(3) = 0.0
+    491       ELSE
+    492          WRITE(6,2074) KOUNTR
+    493  2074 FORMAT(/'##W3RTOVSUNP WARNING: A DECODED RETRIEVAL (#',I5,') HAS',
+    494      $ ' A MISSING LONGITUDE - SKIP IT')
+    495          GO TO 1000
+    496       ENDIF
+    497 
+    498 C  FILTER FLAG
+    499 C  -----------
+    500 c  If date of input file is prior to 7/1/1998, then "TOFF" does not
+    501 c   indicate filter flag, set filter flag to "-99" (alerts calling
+    502 c   program to process only every 4'th retrieval to simulate 250km
+    503 c   sampling - needed for historical cdas runs)
+    504 
+    505       IF(IBFMS(XIDENT_8(4)).EQ.0)  THEN
+    506          IF(ITOFF.EQ.0)  THEN
+    507             ISATOB(7) = NINT(XIDENT_8(4))
+    508          ELSE
+    509             ISATOB(7) = -99
+    510          END IF
+    511       ELSE
+    512          WRITE(6,2075) KOUNTR
+    513  2075 FORMAT(/'##W3RTOVSUNP WARNING: A DECODED RETRIEVAL (#',I5,') HAS',
+
+Page 10          Source Listing                  W3RTOVSUNP
+2017-04-18 11:09                                 w3rtovsunp.f
+
+    514      $ ' A MISSING FILTER FLAG - SKIP IT')
+    515          GO TO 1000
+    516        ENDIF
+    517 
+    518 C  OBSERVATION TIME
+    519 C  ----------------
+    520 
+    521       AMAXIMUM_8 = MAX(XIDENT_8(5),XIDENT_8(6),XIDENT_8(7))
+    522       IF(IBFMS(AMAXIMUM_8).EQ.0) THEN
+    523          HRFRAC = (60.0 * XIDENT_8(6) + XIDENT_8(7)) / 3600.0
+    524          RSATOB(1) = XIDENT_8(5) + HRFRAC
+    525          RSATOB(1) = 0.01 * AINT(100.0 * RSATOB(1) + 0.5)
+    526       ELSE
+    527          WRITE(6,2076) KOUNTR
+    528  2076 FORMAT(/'##W3RTOVSUNP WARNING: A DECODED RETRIEVAL (#',I5,') HAS',
+    529      $ ' ONE OR MORE MISSING TIME UNITS - SKIP IT')
+    530          GO TO 1000
+    531       ENDIF
+    532 
+    533 C  SWATH LOCATION
+    534 C  --------------
+    535 
+    536       IF(IBFMS(XIDENT_8(8)).EQ.0)  THEN
+    537          ISATOB(3) = NINT(XIDENT_8(8))
+    538       ELSE
+    539          WRITE(6,2077) KOUNTR
+    540  2077 FORMAT(/'##W3RTOVSUNP WARNING: A DECODED RETRIEVAL (#',I5,') HAS',
+    541      $ ' A MISSING SWATH LOCATION - SKIP IT')
+    542          GO TO 1000
+    543       ENDIF
+    544 
+    545 C  ORBIT NUMBER
+    546 C  ------------
+    547 
+    548       IF(IBFMS(XIDENT_8(9)).EQ.0)  ISATOB(4) = NINT(XIDENT_8(9))
+    549 
+    550 C  SUPERADIABATIC FLAG
+    551 C  -------------------
+    552 
+    553       IF(IBFMS(XIDENT_8(10)).EQ.0)  ISATOB(8) = NINT(XIDENT_8(10))
+    554       IF(ISATOB(8).NE.0)  THEN
+    555          WRITE(6,2078) KOUNTR,ISATOB(8)
+    556  2078 FORMAT(/'##W3RTOVSUNP WARNING: A DECODED RETRIEVAL (#',I5,') IS ',
+    557      $ 'SUPERADIABATIC (FLAG=',I5,') - SKIP IT')
+    558          GO TO 1000
+    559       ENDIF
+    560 
+    561 C  DAY-NIGHT INDICATOR
+    562 C  -------------------
+    563 
+    564       IF(IBFMS(XIDENT_8(11)).EQ.0)  ISATOB(9) = NINT(XIDENT_8(11))
+    565 
+    566 C  SOLAR ZENITH ANGLE
+    567 C  ------------------
+    568 
+    569       IF(IBFMS(XINFO_8(1)).EQ.0)  RSATOB(11) = XINFO_8(1)
+    570 
+
+Page 11          Source Listing                  W3RTOVSUNP
+2017-04-18 11:09                                 w3rtovsunp.f
+
+    571 C  SOLAR ELEVATION
+    572 C  ---------------
+    573 
+    574       IF(IBFMS(XINFO_8(2)).EQ.0)  RSATOB(12) = XINFO_8(2)
+    575 
+    576 C  AVERAGE NSTAR VALUE
+    577 C  -------------------
+    578 
+    579       IF(IBFMS(XINFO_8(3)).EQ.0)  RSATOB(13) = XINFO_8(3)
+    580 
+    581 C  OZONE
+    582 C  -----
+    583 
+    584       IF(IBFMS(XINFO_8(4)).EQ.0)  RSATOB(8) = XINFO_8(4)
+    585 
+    586 C  SATELLITE DATA PROCESSING TECHNIQUE
+    587 C  -----------------------------------
+    588 
+    589       IF(IBFMS(XINFO_8(5)).EQ.0)  THEN
+    590          ISATOB(6) = NINT(XINFO_8(5))
+    591       ELSE
+    592          WRITE(6,2079) KOUNTR
+    593  2079 FORMAT(/'##W3RTOVSUNP WARNING: A DECODED RETRIEVAL (#',I5,') HAS',
+    594      $ ' A MISSING SATELLITE DATA PROCESSING TECHNIQUE - SKIP IT')
+    595          GO TO 1000
+    596       ENDIF
+    597 
+    598 C  HIRS CHANNEL UTILIZATION FLAGS
+    599 C  ------------------------------
+    600 
+    601       IF(IBFMS(XINFO_8(6)).EQ.0)  RSATOB(14) = XINFO_8(6)
+    602 
+    603 C  MSU CHANNEL UTILIZATION FLAGS
+    604 C  ------------------------------
+    605 
+    606       IF(IBFMS(XINFO_8(7)).EQ.0)  RSATOB(15) = XINFO_8(7)
+    607 
+    608 C  SSU CHANNEL UTILIZATION FLAGS
+    609 C  -----------------------------
+    610 
+    611       IF(IBFMS(XINFO_8(8)).EQ.0)  RSATOB(16) = XINFO_8(8)
+    612 
+    613 C  AVHRR CHANNEL UTILIZATION FLAGS
+    614 C  -------------------------------
+    615 
+    616       IF(IBFMS(XINFO_8(9)).EQ.0)  RSATOB(17) = XINFO_8(9)
+    617 
+    618 C  TOTAL PRECIPITABLE WATER
+    619 C  ------------------------
+    620 
+    621       IF(IBFMS(XINFO_8(10)).EQ.0)  RSATOB(7) = XINFO_8(10) * 10.
+    622 
+    623 C  CLOUD-TOP PRESSURE
+    624 C  ------------------
+    625 
+    626       IF(IBFMS(XINFO_8(11)).EQ.0)  RSATOB(10) = XINFO_8(11) * 0.01
+    627 
+
+Page 12          Source Listing                  W3RTOVSUNP
+2017-04-18 11:09                                 w3rtovsunp.f
+
+    628 C  VERTICAL SIGNIFICANCE INDICATOR (SATELLITE SOUNDINGS)
+    629 C  -----------------------------------------------------
+    630 
+    631       IF(IBFMS(XINFO_8(12)).EQ.0)  ISATOB(10) = NINT(XINFO_8(12))
+    632 
+    633 C  STATION ID
+    634 C  ----------
+    635 
+    636       STNID = '      R '
+    637       MODSAT = MOD(ISATOB(1),4)
+    638       INST = IMISS
+    639       IF(ISATOB(6).GE.32) THEN
+    640 
+    641 C  CLEAR PATH
+    642 C  ----------
+    643 
+    644          INST = 1
+    645          STNID(8:8) = NMCHAR(NF(MODSAT)-3)
+    646       ELSE IF(ISATOB(6).GE.16) THEN
+    647 
+    648 C  NSTAR PATH ===> NOT VALID FOR RTOVS!!!! - SHOULD NEVER SEE THIS
+    649 C  ---------------------------------------------------------------
+    650 
+    651          INST = 2
+    652          STNID(8:8) = NMCHAR(NF(MODSAT)-2)
+    653       ELSE IF(ISATOB(6).GE.8) THEN
+    654 
+    655 C  CLOUDY PATH
+    656 C  -----------
+    657 
+    658          INST = 3
+    659          STNID(8:8) = NMCHAR(NF(MODSAT)-1)
+    660       ELSE
+    661 
+    662 C  UNKNOWN PATH
+    663 C  ------------
+    664 
+    665          INST = 0
+    666          STNID(8:8) = NMCHAR(NF(MODSAT))
+    667          WRITE(6,2080) KOUNTR,STNID,ISATOB(6)
+    668  2080 FORMAT(/'##W3RTOVSUNP WARNING: A DECODED RETRIEVAL (#',I5,',ID=',
+    669      $ A8,') HAS AN UNKNOWN SATELLITE DATA PROCESSING TECH. (=',I5,
+    670      $ ') - SKIP IT')
+    671          GO TO 1000
+    672       ENDIF
+    673 
+    674       KOUNT(INST,MODSAT) = MIN(99999,KOUNT(INST,MODSAT) + 1)
+    675       WRITE(STNID(2:6),'(I5.5)') KOUNT(INST,MODSAT)
+    676 
+    677       NADIR = INT(ABS(FLOAT(ISATOB(3)) - 28.5)) / 3
+    678       IF(NADIR.LT.9) NADIR = NADIR + 1
+    679       IF(NADIR.GT.0.AND.NADIR.LT.10)  THEN
+    680          STNID(1:1) = NMCHAR(NADIR)
+    681       ELSE
+    682          WRITE(6,2081) KOUNTR,STNID,NADIR
+    683  2081 FORMAT(/'##W3RTOVSUNP WARNING: A DECODED RETRIEVAL (#',I5,',ID=',
+    684      $ A8,') HAS AN INVALID NADIR PROX. IND. (=',I5,') - SKIP IT')
+
+Page 13          Source Listing                  W3RTOVSUNP
+2017-04-18 11:09                                 w3rtovsunp.f
+
+    685          GO TO 1000
+    686       ENDIF
+    687 
+    688       IF(NLEV.EQ.40)  THEN
+    689 
+    690 C  FILL IN THE LEVEL SOUNDING DATA - MUST HAVE 40 TEMP LEVELS TO ACCEPT
+    691 C  --------------------------------------------------------------------
+    692 
+    693          DO L = 1,NLEV
+    694             LREV = NLEV + 1 - L
+    695             PP(LREV) = RETDAT_8(1,L) * 0.01
+    696             IF(IBFMS(RETDAT_8(2,L)).EQ.0) THEN
+    697                IF(IBFMS(RETDAT_8(3,L)).NE.0) THEN
+    698                   TT(LREV) = RETDAT_8(2,L)
+    699                ELSE
+    700                   QQ(LREV) = RETDAT_8(3,L) / (1.0 + RETDAT_8(3,L))
+    701                   TT(LREV) = RETDAT_8(2,L) * (1.0 + 0.61 * QQ(LREV))
+    702                ENDIF
+    703             ELSE
+    704                WRITE(6,3082) KOUNTR
+    705  3082 FORMAT(/'##W3RTOVSUNP WARNING: A DECODED RETRIEVAL (#',I5,') ',
+    706      $ 'CONTAINS 1 OR MORE MISSING TEMERATURES IN ITS SOUNDING - SKIP ',
+    707      $ 'IT')
+    708                GO TO 1000
+    709             ENDIF
+    710             IF(IBFMS(RETDAT_8(4,L)).EQ.0)  CLAL(LREV) = RETDAT_8(4,L)
+    711             IF(IBFMS(RETDAT_8(5,L)).EQ.0)  CLAM(LREV) = RETDAT_8(5,L)
+    712          ENDDO
+    713       ELSE
+    714          WRITE(6,2082) STNID,KOUNTR,NLEV
+    715  2082 FORMAT(/'##W3RTOVSUNP WARNING: ID ',A8,' (#',I5,') DOES NOT ',
+    716      $ 'CONTAIN 40 SOUNDING LEVELS (HAS ',I3,' LEVELS) -- NO SOUNDING ',
+    717      $ 'LEVEL DATA PROCESSED')
+    718       ENDIF
+    719 
+    720       IF(NCHN.EQ.32)  THEN
+    721 
+    722 C  FILL IN THE RADIANCE DATA
+    723 C  -------------------------
+    724 
+    725          DO L = 1,NCHN
+    726             IF(IBFMS(BRTDAT_8(1,L)).EQ.0) IRTCHN(L) =NINT(BRTDAT_8(1,L))
+    727             IF(IBFMS(BRTDAT_8(2,L)).EQ.0) RTRAD(L)  = BRTDAT_8(2,L)
+    728          ENDDO
+    729       ELSE
+    730          WRITE(6,2083) STNID,KOUNTR,NCHN
+    731  2083 FORMAT(/'##W3RTOVSUNP WARNING: ID ',A8,' (#',I5,') DOES NOT ',
+    732      $ 'CONTAIN 32 RADIANCE CHANNELS (HAS ',I3,' CHANNELS) -- NO ',
+    733      $ 'RADIANCE DATA PROCESSED')
+    734       ENDIF
+    735 
+    736 C  BOTTOM LEVEL PRESSURE
+    737 C  ---------------------
+    738 
+    739       IF(IBFMS(SRFDAT_8(1)).EQ.0)  THEN
+    740          RSATOB(5) = 0.01 * SRFDAT_8(1)
+    741       ELSE
+
+Page 14          Source Listing                  W3RTOVSUNP
+2017-04-18 11:09                                 w3rtovsunp.f
+
+    742          WRITE(6,2084) KOUNTR,STNID
+    743  2084 FORMAT(/'##W3RTOVSUNP WARNING: A DECODED RETRIEVAL (#',I5,',ID=',
+    744      $ A8,') HAS A MISSING BOTTOM PRESSURE LEVEL - SKIP IT')
+    745          GO TO 1000
+    746       ENDIF
+    747 
+    748 C  SURFACE HEIGHT
+    749 C  --------------
+    750 
+    751       IF(IBFMS(SRFDAT_8(2)).EQ.0)  THEN
+    752          RSATOB(4) = SRFDAT_8(2)
+    753       ELSE
+    754          WRITE(6,2085) KOUNTR,STNID
+    755  2085 FORMAT(/'##W3RTOVSUNP WARNING: A DECODED RETRIEVAL (#',I5,',ID=',
+    756      $ A8,') HAS A MISSING SURFACE HEIGHT - SKIP IT')
+    757          GO TO 1000
+    758       ENDIF
+    759 
+    760 C  REPORT TYPE AND LAND/SEA TAG
+    761 C  ----------------------------
+    762 
+    763       IF(IBFMS(SRFDAT_8(3)).EQ.0)  THEN
+    764          ISATOB(5) = NINT(SRFDAT_8(3))
+    765          IF(MOD(ISATOB(5),2).EQ.0)  THEN
+    766             IF(INST.LT.IMISS)  ISATOB(2) = 170 + INST
+    767             ISATOB(5) = 0
+    768          ELSE 
+    769             IF(INST.LT.IMISS)  ISATOB(2) = 160 + INST
+    770             ISATOB(5) = 1
+    771          ENDIF
+    772       ELSE
+    773          WRITE(6,2086) KOUNTR,STNID
+    774  2086 FORMAT(/'##W3RTOVSUNP WARNING: A DECODED RETRIEVAL (#',I5,',ID=',
+    775      $ A8,') HAS A MISSING LAND/SEA INDICATOR - SKIP IT')
+    776             GO TO 1000
+    777       ENDIF
+    778 
+    779 C  SKIN TEMPERATURE
+    780 C  ----------------
+    781 
+    782       IF(IBFMS(SRFDAT_8(4)).EQ.0)  RSATOB(6) = SRFDAT_8(4)
+    783 
+    784 C  SEA-SURFACE  TEMPERATURE
+    785 C  ------------------------
+    786 
+    787       IF(IBFMS(SRFDAT_8(5)).EQ.0)  RSATOB(9) = SRFDAT_8(5)
+    788 
+    789 C  TERRAIN INDICATOR
+    790 C  -----------------
+    791 
+    792       IF(IBFMS(SRFDAT_8(6)).EQ.0)  ISATOB(11) = NINT(SRFDAT_8(6))
+    793 
+    794 C  RETURN WITH DECODED RTOVS RETRIEVAL
+    795 C  -----------------------------------
+    796 
+    797       IERR = 0
+    798 
+
+Page 15          Source Listing                  W3RTOVSUNP
+2017-04-18 11:09                                 w3rtovsunp.f
+
+    799       RETURN
+    800       END
+
+
+ENTRY POINTS
+
+  Name                   
+                         
+ w3rtovsunp_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ 1000                       Label  391                                                            420,457,463,475,495,515,530,542,55
+                                                                                                  8,595,671,685,708,745,757,776     
+ 1001                       Label  407                                                            406                               
+ 1009                       Label  374                                                            373                               
+ 1209                       Label  383                                                            382,416                           
+ 2071                       Label  455                                                            454                               
+ 2072                       Label  461                                                            460                               
+ 2073                       Label  473                                                            472                               
+ 2074                       Label  493                                                            492                               
+ 2075                       Label  513                                                            512                               
+ 2076                       Label  528                                                            527                               
+ 2077                       Label  540                                                            539                               
+ 2078                       Label  556                                                            555                               
+ 2079                       Label  593                                                            592                               
+ 2080                       Label  668                                                            667                               
+ 2081                       Label  683                                                            682                               
+ 2082                       Label  715                                                            714                               
+ 2083                       Label  731                                                            730                               
+ 2084                       Label  743                                                            742                               
+ 2085                       Label  755                                                            754                               
+ 2086                       Label  774                                                            773                               
+ 3004                       Label  345                                                            344                               
+ 3082                       Label  705                                                            704                               
+ ABS                        Func   677                                  scalar                    677                               
+ AINT                       Func   525                                  scalar                    525                               
+ AMAXIMUM_8                 Local  232      R(8)            8           scalar   SAVE             521,522                           
+ BMISS                      Local  233      R(8)            8           scalar   SAVE             355,358,423,426,429,432,435       
+ BRTDAT_8                   Local  232      R(8)            8     2     64       SAVE             435,436,726,727                   
+ BRTSTR                     Local  228      CHAR            10          scalar   SAVE             229,436                           
+ CLAL                       Dummy  198      R(4)            4     1     0        ARG,INOUT        443,710                           
+ CLAM                       Dummy  198      R(4)            4     1     0        ARG,INOUT        444,711                           
+ CLOSBF                     Subr   332                                                            332                               
+ DATELEN                    Subr   257                                                            257                               
+ DSNAME                     Dummy  200      CHAR            8           scalar   ARG,INOUT        328,330                           
+ DUMPBF                     Subr   258                                                            258                               
+ FLOAT                      Func   677                                  scalar                    677                               
+ GETBMISS                   Func   233      R(8)            8           scalar                    355                               
+ HRFRAC                     Local  523      R(4)            4           scalar   SAVE             523,524                           
+ IBDATE                     Dummy  198      I(4)            4           scalar   ARG,INOUT        326,371,378,400,412               
+ IBFMS                      Func   451      I(4)            4           scalar                    451,469,481,505,522,536,548,553,56
+                                                                                                  4,569,574,579,584,589,601,606,611,
+                                                                                                  616,621,626,631,696,697,710,711,72
+
+Page 16          Source Listing                  W3RTOVSUNP
+2017-04-18 11:09 Symbol Table                    w3rtovsunp.f
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+                                                                                                  6,727,739,751,763,782,787,792     
+ IDSDAT                     Dummy  200      I(4)            4           scalar   ARG,INOUT        291                               
+ IDSDMP_8                   Dummy  200      I(8)            8           scalar   ARG,INOUT        293,318                           
+ IDTST2                     Local  214      CHAR            5           scalar   SAVE             215,424                           
+ IDTSTR                     Local  212      CHAR            50          scalar   SAVE             213,424                           
+ IERR                       Dummy  200      I(4)            4           scalar   ARG,INOUT        362,375,386,409,417,797           
+ IFIRST                     Local  202      I(4)            4           scalar   SAVE             202,249,256,364,369               
+ IMISS                      Local  236      I(4)            4           scalar   SAVE             236,438,445,638,766,769           
+ INFST1                     Local  219      CHAR            10          scalar   SAVE             220,427                           
+ INFSTR                     Local  217      CHAR            50          scalar   SAVE             218,427                           
+ INST                       Local  638      I(4)            4           scalar   SAVE             638,644,651,658,665,674,675,766,76
+                                                                                                  9                                 
+ INT                        Func   677                                  scalar                    677                               
+ IRET                       Local  326      I(4)            4           scalar   SAVE             326,371,372,398,399,400,401,424,42
+                                                                                                  7,430                             
+ IRTCHN                     Dummy  199      I(4)            4     1     0        ARG,INOUT        445,726                           
+ ISATOB                     Dummy  199      I(4)            4     1     11       ARG,INOUT        438,452,453,454,507,509,537,548,55
+                                                                                                  3,554,555,564,590,631,637,639,646,
+                                                                                                  653,667,677,764,765,766,767,769,77
+                                                                                                  0,792                             
+ ITOFF                      Local  202      I(4)            4           scalar   SAVE             202,348,506                       
+ IUNIT                      Dummy  198      I(4)            4           scalar   ARG,INOUT        258,266,325,326,332,370,371,373,38
+                                                                                                  2,398,400,406,416,424,427,430,433,
+                                                                                                  436                               
+ JDATE                      Local  206      I(4)            4     1     5        SAVE             258,260,264,269,282,283,284,286,28
+                                                                                                  9,291,334,336                     
+ JDUMP                      Local  206      I(4)            4     1     5        SAVE             258,261,292,295,308,309,310,312,31
+                                                                                                  5,317                             
+ JDUMP_8                    Local  208      I(8)            8     1     5        SAVE             317,318,319                       
+ KDATE                      Local  206      I(4)            4     1     8        SAVE             334,335,336,337,342               
+ KOUNT                      Local  235      I(4)            4     2     16       SAVE             236,674,675                       
+ KOUNTR                     Local  202      I(4)            4           scalar   SAVE             202,396,454,460,472,492,512,527,53
+                                                                                                  9,555,592,667,682,704,714,730,742,
+                                                                                                  754,773                           
+ L                          Local  693      I(4)            4           scalar   SAVE             693,694,695,696,697,698,700,701,71
+                                                                                                  0,711,725,726,727                 
+ LDATE                      Local  206      I(4)            4     1     8        SAVE             338,339,340,341,342               
+ LREV                       Local  694      I(4)            4           scalar   SAVE             694,695,698,700,701,710,711       
+ MAX                        Func   521                                  scalar                    521                               
+ MIN                        Func   674                                  scalar                    674                               
+ MOD                        Func   489                                  scalar                    489,637,765                       
+ MODSAT                     Local  637      I(4)            4           scalar   SAVE             637,645,652,659,666,674,675       
+ NADIR                      Local  677      I(4)            4           scalar   SAVE             677,678,679,680,682               
+ NCHN                       Dummy  199      I(4)            4           scalar   ARG,INOUT        436,720,725,730                   
+ NF                         Local  206      I(4)            4     1     4        SAVE             236,645,652,659,666               
+ NINT                       Func   452                                  scalar                    452,507,537,548,553,564,590,631,72
+                                                                                                  6,764,792                         
+ NLEV                       Dummy  198      I(4)            4           scalar   ARG,INOUT        433,688,693,694,714               
+ NMCHAR                     Local  240      CHAR            1     1     36       SAVE             244,645,652,659,666,680           
+ OPENBF                     Subr   325                                                            325,370                           
+ PP                         Dummy  198      R(4)            4     1     0        ARG,INOUT        440,695                           
+ QQ                         Dummy  198      R(4)            4     1     0        ARG,INOUT        442,700,701                       
+ READMG                     Subr   326                                                            326,371,400                       
+ READSB                     Subr   398                                                            398                               
+ RETDAT_8                   Local  231      R(8)            8     2     200      SAVE             432,433,695,696,697,698,700,701,71
+
+Page 17          Source Listing                  W3RTOVSUNP
+2017-04-18 11:09 Symbol Table                    w3rtovsunp.f
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+                                                                                                  0,711                             
+ RETSTR                     Local  225      CHAR            25          scalar   SAVE             226,433                           
+ RINC                       Local  204      R(4)            4     1     5        SAVE             342,343                           
+ RSATOB                     Dummy  199      R(4)            4     1     17       ARG,INOUT        439,470,489,490,524,525,569,574,57
+                                                                                                  9,584,601,606,611,616,621,626,740,
+                                                                                                  752,782,787                       
+ RTRAD                      Dummy  199      R(4)            4     1     0        ARG,INOUT        446,727                           
+ SRFDAT_8                   Local  231      R(8)            8     1     6        SAVE             429,430,739,740,751,752,763,764,78
+                                                                                                  2,787,792                         
+ SRFSTR                     Local  222      CHAR            30          scalar   SAVE             223,430                           
+ STNID                      Dummy  199      CHAR            8           scalar   ARG,INOUT        636,645,652,659,666,667,675,680,68
+                                                                                                  2,714,730,742,754,773             
+ SUBSET                     Local  210      CHAR            8           scalar   SAVE             326,327,371,400                   
+ TT                         Dummy  198      R(4)            4     1     0        ARG,INOUT        441,698,701                       
+ UFBINT                     Subr   424                                                            424,427,430,433,436               
+ W3DIFDAT                   Subr   342                                                            342                               
+ W3RTOVSUNP                 Subr   198                                                                                              
+ XIDENT_8                   Local  231      R(8)            8     1     11       SAVE             423,424,451,452,469,470,481,489,50
+                                                                                                  5,507,521,523,524,536,537,548,553,
+                                                                                                  564                               
+ XINFO_8                    Local  231      R(8)            8     1     12       SAVE             426,427,569,574,579,584,589,590,60
+                                                                                                  1,606,611,616,621,626,631         
+ XMISS                      Local  236      R(4)            4           scalar   SAVE             236,439,440,441,442,443,444,446   
+
+Page 18          Source Listing                  W3RTOVSUNP
+2017-04-18 11:09 Subprograms/Common Blocks       w3rtovsunp.f
+
+
+
+SUBPROGRAMS/COMMON BLOCKS
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ W3RTOVSUNP                 Subr   198                                                                                              
+
+COMPILER OPTIONS BEING USED
+
+       -align noall                          -align nonone
+       -align nocommons                      -align nodcommons
+       -align noqcommons                     -align nozcommons
+       -align records                        -align nosequence
+       -align norec1byte                     -align norec2byte
+       -align norec4byte                     -align norec8byte
+       -align norec16byte                    -align norec32byte
+       -align norec64byte                    -align noarray8byte
+       -align noarray16byte                  -align noarray32byte
+       -align noarray64byte                  -align noarray128byte
+       -align noarray256byte                 -altparam
+       -assume accuracy_sensitive            -assume nobscc
+       -assume nobuffered_io                 -assume nobuffered_stdout
+       -assume nobyterecl                    -assume nocc_omp
+       -assume nocstring                     -assume nodummy_aliases
+       -assume nofpe_summary                 -assume noieee_fpe_flags
+       -assume nominus0                      -assume noold_boz
+       -assume old_complex_align             -assume old_unit_star
+       -assume noold_ldout_format            -assume noold_logical_ldio
+       -assume old_maxminloc                 -assume old_xor
+       -assume noprotect_allocates           -assume protect_constants
+       -assume noprotect_parens              -assume split_common
+       -assume source_include                -assume nostd_intent_in
+       -assume std_minus0_rounding           -assume nostd_mod_proc_name
+       -assume std_value                     -assume norealloc_lhs
+       -assume underscore                    -assume no2underscores
+       -auto                            no   -auto_scalar
+  no   -bintext                              -ccdefault default
+       -check noargs                         -check noarg_temp_created
+       -check noassume                       -check nobounds
+       -check noformat                       -check nooutput_conversion
+       -check nooverflow                     -check nopointers
+       -check power                          -check noshape
+       -check nostack                        -check nounderflow
+       -check nouninitialized                -coarray-num-procs 0
+  no   -coarray-config-file                  -convert big_endian
+       -cross_reference                      -D __INTEL_COMPILER=1600
+       -D __INTEL_COMPILER_UPDATE=3          -D __unix__
+       -D __unix                             -D __linux__
+       -D __linux                            -D __gnu_linux__
+       -D unix                               -D linux
+       -D __ELF__                            -D __x86_64
+       -D __x86_64__                         -D __amd64
+       -D __amd64__                          -D __INTEL_COMPILER_BUILD_DATE=20160415
+       -D __INTEL_OFFLOAD                    -D __i686
+       -D __i686__                           -D __pentiumpro
+       -D __pentiumpro__                     -D __pentium4
+
+Page 19          Source Listing                  W3RTOVSUNP
+2017-04-18 11:09                                 w3rtovsunp.f
+
+       -D __pentium4__                       -D __tune_pentium4__
+       -D __SSE2__                           -D __SSE2_MATH__
+       -D __SSE__                            -D __SSE_MATH__
+       -D __MMX__                            -double_size 64
+  no   -d_lines                         no   -Qdyncom
+       -error_limit 30                  no   -f66
+  no   -f77rtl                          no   -fast
+       -fpscomp nofilesfromcmd               -fpscomp nogeneral
+       -fpscomp noioformat                   -fpscomp noldio_spacing
+       -fpscomp nologicals                   -fixed
+  no   -fpconstant                           -fpe3
+       -fprm nearest                    no   -ftz
+       -fp_model noprecise                   -fp_model fast
+       -fp_model nostrict                    -fp_model nosource
+       -fp_model nodouble                    -fp_model noextended
+       -fp_model novery_fast                 -fp_model noexcept
+       -fp_model nono_except                 -heap_arrays 0
+  no   -threadprivate_compat                 -g2
+       -iface nomixed_str_len_arg            -iface nono_mixed_str_len_arg
+       -init noarrays                        -init noinf
+       -init nonan                           -init nosnan
+       -init nozero                     no   -intconstant
+       -integer_size 32                 no   -mixed_str_len_arg
+  no   -module                               -names lowercase
+  no   -noinclude                            -offload-build=host
+       -O2                              no   -pad_source
+       -real_size 32                    no   -recursive
+       -reentrancy none                 no   -sharable_localsaves
+       -vec=simd                             -show noinclude
+       -show map                             -show options
+  no   -syntax_only                     no   -threadcom
+  no   -U                               no   -vms
+       -w noall                              -w nonone
+       -w alignments                         -w noargument_checking
+       -w nodeclarations                     -w general
+       -w noignore_bounds                    -w noignore_loc
+       -w nointerfaces                       -w notruncated_source
+       -w uncalled                           -w uninitialized
+       -w nounused                           -w usage
+  no   -wrap-margins
+
+       -includepath : /usrx/local/intel/2016SP3/daal/include/,/usr/include/,.FOR,./.FOR,/usrx/local/intel/2016SP3/ipp/include/.FOR,
+           /usrx/local/intel/2016SP3/mkl/include/.FOR,/usrx/local/intel/2016SP3/tbb/include/.FOR,/usrx/local/intel/2016SP3/daal/include/.FOR,
+           /gpfs/tp1/usrx/local/intel/2016SP3/compilers_and_libraries_2016.3.210/linux/compiler/include/intel64/.FOR,
+           /gpfs/tp1/usrx/local/intel/2016SP3/compilers_and_libraries_2016.3.210/linux/compiler/include/.FOR,/usr/local/include/.FOR,
+           /usr/lib/gcc/x86_64-redhat-linux/4.4.7/include/.FOR,/usr/include/.FOR,/usr/include/.FOR,/usr/include/.FOR
+       -list filename : w3rtovsunp.lst
+       -o    filename : none
+
+COMPILER: Intel(R) Fortran 16.0-1633

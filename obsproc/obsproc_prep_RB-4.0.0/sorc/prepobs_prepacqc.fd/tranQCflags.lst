@@ -1,0 +1,1106 @@
+Page 1           Source Listing                  TRANQCFLAGS
+2017-04-18 11:09                                 tranQCflags.f
+
+      1 c$$$  Subprogram Documentation Block
+      2 c   BEST VIEWED WITH 94-CHARACTER WIDTH WINDOW
+      3 c
+      4 c Subprogram: tranQCflags
+      5 c   Programmer: D. Keyser       Org: NP22       Date: 2012-05-08
+      6 c
+      7 c Abstract:  Translates quality information from NRL standards to equivalent NCEP PREPBUFR
+      8 c   quality marks.  Also generates the NCEP PREPBUFR reason codes based on the NRL quality
+      9 c   information.  This is read in for one observation at a time for each report (e.g.,
+     10 c   pressure reads it, then altitude, then temperature, then moisture, then wind).
+     11 c
+     12 c Program History Log:
+     13 c 2010-11-15  S. Bender -- Original Author
+     14 c 2012-05-08  D. Keyser -- Prepared for operational implementation
+     15 c
+     16 c Usage: call tranQCflags(NRLQCstg,type,NCEPqm,NCEPrc,l_badrpt,l_duprpt)
+     17 c
+     18 c   Input argument list:
+     19 c     NRLQCstg     - NRLACQC quality information (11 char. string) for this complete report
+     20 c     type         - Type of variable being considered in this call (e.g., 'p', 'z', 't',
+     21 c                    'q', 'w')
+     22 c
+     23 c   Output argument list:
+     24 c     NCEPqm       - Equivalent NCEP PREPBUFR quality mark for this variable
+     25 c     NCEPrc       - Generated NCEP PREPBUFR reason code for this variable
+     26 c     l_badrpt     - Logical indicating if the entire report should be marked as "bad"
+     27 c     l_duprpt     - Logical indicating if the entire report should be marked as a duplicate
+     28 c
+     29 c   Output files:
+     30 c     Unit 06     - Standard output print
+     31 c
+     32 c   Subprograms called:
+     33 c     Library:
+     34 c       W3NCO:   ERREXIT    W3TAGE     MOVA2I
+     35 c
+     36 c   Exit States:
+     37 c     Cond =  0 - successful run
+     38 c            69 - row number for input data matrix is outside range of 1-34
+     39 c
+     40 c Remarks: Called by subroutines output_acqc_noprof and sub2mem_um.
+     41 c
+     42 c Attributes:
+     43 c   Language: FORTRAN 90
+     44 c   Machine:  NCEP WCOSS
+     45 c
+     46 c$$$
+     47       subroutine tranQCflags(NRLQCstg,type,NCEPqm,NCEPrc,l_badrpt,
+     48      +                       l_duprpt)
+     49 
+     50       implicit none
+     51 
+     52       character*11 NRLQCstg
+     53       character*1 type
+     54 
+     55       logical l_badrpt,l_duprpt
+     56 
+     57       integer iii(45:118)               ! the "row number" (RN) corresponding to the single
+
+Page 2           Source Listing                  TRANQCFLAGS
+2017-04-18 11:09                                 tranQCflags.f
+
+     58                                         !  character NRLACQC  quality flag pulled out of
+     59                                         !  NRLQCstg, this is the second dimension of table
+     60                                         !  w2d
+     61      +,         mova2i
+     62 
+     63       integer   cp                      ! character position in c_qc string (1-11), this
+     64                                         !  value minus 1 is the first dimension of table w2d
+     65      +,         RN                      ! row number in w2d/action data table/numerical 
+     66                                         !  equivalent of character value (example: a=1,
+     67                                         !  F=10), this is obtained via integer conversion of
+     68                                         !  the single ASCII character NRLACQC quality flag
+     69                                         !  pulled out of NRLQCstg, obtained from iii
+     70 
+     71       character*2 w2d(0:10,34)
+     72 c             0 = overall report
+     73 c              |--- 1 = time
+     74 c              |--- |--- 2 = latitude
+     75 c              |--- |--- |--- 3 = longitude
+     76 c              |--- |--- |--- |--- 4 = pressure/altitude
+     77 c              |--- |--- |--- |--- |--- 5 = temperature
+     78 c              |--- |--- |--- |--- |--- |--- 6 = wind direction
+     79 c              |--- |--- |--- |--- |--- |--- |--- 7 = wind speed
+     80 c              |--- |--- |--- |--- |--- |--- |--- |--- 8 = moisture
+     81 c              |--- |--- |--- |--- |--- |--- |--- |--- |--- 9 = reject (black) list
+     82 c              |--- |--- |--- |--- |--- |--- |--- |--- |--- |--- 10 = flight phase
+     83 c              |--- |--- |--- |--- |--- |--- |--- |--- |--- |--- |---
+     84 c       i: 0:10 (cp-1) -------------->
+     85       data w2d/'ND','ND','ND','ND','ND','ND','ND','ND','ND','ND','IO', ! a  j:1-34 (RN) 1 |
+     86      +         'RR','ND','ND','ND','ND','ND','ND','RW','ND','ND','IO', ! A	        2 |
+     87      +         'RR','RR','RR','RR','RR','RR','RW','RW','RM','ND','ND', ! B	        3 |
+     88      +         'ND','ND','ND','ND','ND','RT','ND','ND','ND','ND','ND', ! b	        4 V
+     89      +	       'ND','ND','ND','ND','ND','ND','ND','ND','ND','IO','ND', ! C              5
+     90      +	       'DR','ND','ND','ND','ND','ND','ND','ND','ND','ND','IO', ! D              6
+     91      +	       'DR','ND','ND','ND','ND','ND','ND','ND','ND','ND','IO', ! d              7
+     92      +	       'RR','ND','ND','ND','ND','RT','RW','RW','ND','ND','ND', ! E              8
+     93      +	       'RR','ND','ND','ND','ND','ND','ND','ND','ND','ND','ND', ! e              9
+     94      +	       'ND','ND','ND','ND','ND','ND','ND','ND','ND','ND','ND', ! F             10
+     95      +	       'ND','RR','RR','RR','RR','RT','RW','RW','ND','ND','ND', ! I             11
+     96      +	       'ND','ND','ND','ND','RR','ND','ND','ND','ND','ND','IO', ! i             12
+     97      +	       'ND','RR','RR','RR','RR','CW','CT','CT','RM','ND','ND', ! K             13
+     98      +	       'ND','ND','ND','ND','ND','ND','ND','ND','ND','ND','IO', ! L             14
+     99      +	       'ND','RR','RR','RR','RR','CW','CT','CT','RM','IO','IO', ! M             15
+    100      +	       'NU','NU','NU','NU','ND','NU','ND','ND','NU','ND','IO', ! N             16
+    101      +         'RR','ND','ND','ND','ND','ND','ND','ND','ND','RR','ND', ! O             17
+    102      +         'RR','ND','ND','ND','ND','ND','ND','ND','ND','ND','ND', ! P             18
+    103      +         'RR','ND','ND','ND','ND','ND','ND','ND','ND','ND','ND', ! p             19
+    104      +	       'ND','IO','IO','IO','IO','IO','ND','ND','ND','ND','ND', ! R             20
+    105      +	       'RR','ND','ND','ND','IO','ND','ND','ND','ND','ND','ND', ! r             21
+    106      +	       'RR','RR','RR','RR','RR','ND','ND','SW','SM','ND','ND', ! S             22
+    107      +	       'RR','ND','ND','ND','ND','ND','SW','SW','ND','ND','ND', ! s             23
+    108      +	       'ND','ND','ND','ND','ND','ND','ND','ND','ND','RT','ND', ! T             24
+    109      +	       'RR','ND','ND','ND','ND','ND','ND','ND','ND','ND','ND', ! t             25
+    110      +	       'ND','ND','ND','ND','ND','ND','ND','ND','ND','ND','IO', ! U             26
+    111      +	       'RR','ND','ND','ND','ND','ND','ND','ND','ND','ND','ND', ! V             27
+    112      +	       'RR','ND','ND','ND','ND','ND','ND','ND','ND','ND','ND', ! v             28
+    113      +	       'RR','ND','ND','ND','ND','ND','ND','ND','ND','RW','ND', ! W             29
+    114      +	       'RR','ND','ND','ND','ND','ND','ND','ND','ND','ND','ND', ! X             30
+
+Page 3           Source Listing                  TRANQCFLAGS
+2017-04-18 11:09                                 tranQCflags.f
+
+    115      +	       'GR','IO','IO','IO','GV','GT','GW','GW','GM','IO','ND', ! .             31
+    116      +	       'NU','ND','ND','ND','NU','NU','NU','NU','NU','ND','ND', ! -             32
+    117      +	       'IO','ND','ND','ND','ND','ND','ND','ND','SM','ND','ND', ! 2             33
+    118      +	       'ND','ND','ND','ND','ND','ND','ND','ND','SM','ND','ND'  ! 3             34
+    119      +	      /
+    120 
+    121 c  'CT' --  check temperature -> reject wind, or will reject report if temperature also bad
+    122 c  'CW' --  check wind -> reject temperature, or will reject report if wind also bad
+    123 c  'DR' --  duplicate report
+    124 c  'GM' --  good moisture
+    125 c  'GR' --  good report
+    126 c  'GT' --  good temperature`
+    127 c  'GV' --  good pressure/altitude
+    128 c  'GW' --  good wind
+    129 c  'IO' --  inconclusive (?)
+    130 c  'ND' --  not defined
+    131 c  'NU' --  neutral report (not checked)
+    132 c  'RM' --  reject moisture
+    133 c  'RR' --  reject entire report
+    134 c  'RT' --  reject temperature
+    135 c  'RW' --  reject wind
+    136 c  'SM' --  suspect moisture
+    137 c  'SW' --  suspect wind
+    138 c  'XX' --  initialized value (not yet set)
+    139 
+    140       character*2 action                ! action value to be passed back to the calling
+    141                                         !  routine (RR,DR,GR,RT,RM,RW,SW,NU,ND,IO)
+    142      +,           bl_action             ! reject (black) list action (c_qc(10:10))
+    143      +,	          pres_action           ! pressure/altitude action (c_qc(5:5))
+    144      +,           temp_action 	        ! temperature action (c_qc(6:6))
+    145      +,           moist_action          ! moisture action (c_qc(9:9))
+    146      +,	          wdir_action           ! wind direction action (c_qc(7:7))
+    147      +,           wspd_action           ! wind speed action (c_qc(8:8))
+    148      +,           lat_action            ! latitude action (c_qc(3:3))
+    149      +,           lon_action            ! longitude action (c_qc(4:4))
+    150      +,	          time_action           ! time action (c_qc(2:2))
+    151      +,           overall_action        ! action per c_qc(1:1)
+    152 
+    153       integer     NCEPqm                ! value of NCEP quality mark to be passed back to
+    154                                         !  calling routine
+    155      +,           NCEPrc                ! value of NCEP reason code to be passed back to
+    156                                         !  calling routine
+    157      +,           NCEPrc_t              ! intermediate value for temperature quality mark
+    158      +,           NCEPrc_q              ! intermediate value for moisture quality mark
+    159      +,           NCEPrc_w              ! intermediate value for wind quality mark
+    160 
+    161 
+    162 c Misc.
+    163 c -----
+    164 
+    165 c decimal -->     45  46              50  51
+    166 c character -->  '-' '.'             '2' '3'
+    167       data iii  / 32, 31,  0,  0,  0, 33, 34,  0,  0,  0,  0,  0,  0,
+    168 
+    169 c decimal -->                                 65  66  67  68  69  70
+    170 c character -->                              'A' 'B' 'C' 'D' 'E' 'F'
+    171      +             0,  0,  0,  0,  0,  0,  0,  2,  3,  5,  6,  8, 10,
+
+Page 4           Source Listing                  TRANQCFLAGS
+2017-04-18 11:09                                 tranQCflags.f
+
+    172 
+    173 c decimal -->             73      75  76  77  78  79  80      82  83
+    174 c character -->          'I'     'K' 'L' 'M' 'N' 'O' 'P'     'R' 'S'
+    175      +             0,  0, 11,  0, 13, 14, 15, 16, 17, 18,  0, 20, 22,
+    176 
+    177 c decimal -->     84  85  86  87  88
+    178 c character -->  'T' 'U' 'V' 'W' 'X'
+    179      +            24, 26, 27, 29, 30,  0,  0,  0,  0,  0,  0,  0,  0,
+    180 
+    181 c decimal -->     97  98     100 101             105
+    182 c character -->  'a' 'b'     'd' 'e'             'i'
+    183      +             1,  4,  0,  7,  9,  0,  0,  0, 12,  0,  0,  0,  0,
+    184 
+    185 c decimal -->            112     114 115 116     118
+    186 c character -->          'p'     'r' 's' 't'     'v'
+    187      +             0,  0, 19,  0, 21, 23, 25,  0, 28 /
+    188 
+    189 c -----------------------------------------------------------
+    190 
+    191 c Initialize variables
+    192 c --------------------
+    193       l_badrpt = .false.
+    194       l_duprpt = .false.
+    195 
+    196       bl_action      = 'XX'
+    197       pres_action    = 'XX'
+    198       temp_action    = 'XX'
+    199       moist_action   = 'XX'
+    200       wdir_action    = 'XX'
+    201       wspd_action    = 'XX'
+    202       lat_action     = 'XX'
+    203       lon_action     = 'XX'
+    204       time_action    = 'XX'
+    205       overall_action = 'XX'
+    206       action         = 'XX'
+    207 
+    208       NCEPqm   = 99999
+    209       NCEPrc   = 99999
+    210       NCEPrc_t = 99999
+    211       NCEPrc_q = 99999
+    212       NCEPrc_w = 99999
+    213 c -----------------------------------------------------------
+    214 
+    215 C *************************************************************************
+    216 c FIRST CHECK FOR UNILATERAL REJECT REPORT - APPLIES TO ALL VARIABLES
+    217 C *************************************************************************
+    218 
+    219 c ---------------------------------------------------------------------
+    220 c First sub-check is on OVERALL REPORT (first character of c_qc string)
+    221 c ---------------------------------------------------------------------
+    222       cp = 1
+    223 
+    224 c iii represents the "row number" corresponding to the single ASCII character NRLACQC
+    225 c   quality flag NRLQCstg(cp:cp) and is the second dimension of table w2d (Note: this comment
+    226 c   is not repeated for each instance where iii is obtained below)
+    227 c -------------------------------------------------------------------------------------------
+    228       RN = iii(mova2i(NRLQCstg(cp:cp)))
+
+Page 5           Source Listing                  TRANQCFLAGS
+2017-04-18 11:09                                 tranQCflags.f
+
+    229       if(RN.lt.0 .or. RN.gt.34) go to 999
+    230       action = w2d(cp-1,RN) ! either 'ND', 'RR', 'IO', 'NU', 'GR', 'DR'
+    231       overall_action = action
+    232       if(action.eq.'RR' .or. action.eq.'DR') then
+    233         NCEPrc = (cp-1)*100 + RN ! RC range 001-034
+    234         go to 2000 ! reject entire report here means we don't need to do anymore testing
+    235       endif
+    236 
+    237 c ------------------------------------------------------------------------
+    238 C If we make it to here ...
+    239 c Second sub-check is on PRESSURE/ALTITUDE (fifth character of c_qc string)
+    240 c -------------------------------------------------------------------------
+    241       cp = 5
+    242       RN = iii(mova2i(NRLQCstg(cp:cp)))
+    243       if(RN.lt.0 .or. RN.gt.34) go to 999
+    244       action = w2d(cp-1,RN) ! either 'ND', 'RR', 'IO', 'NU', 'GV'
+    245       pres_action = action
+    246       if(action.eq.'RR') then
+    247         NCEPrc = (cp-1)*100 + RN ! RC range 401-434
+    248         go to 2000 ! reject entire report here means we don't need to do anymore testing
+    249       endif
+    250 
+    251 c ------------------------------------------------------------------
+    252 C If we make it to here ...
+    253 c Third sub-check is on TEMPERATURE (sixth character of c_qc string)
+    254 c ------------------------------------------------------------------
+    255       cp = 6
+    256       RN = iii(mova2i(NRLQCstg(cp:cp)))
+    257       if(RN.lt.0 .or. RN.gt.34) go to 999
+    258       action = w2d(cp-1,RN) ! either 'ND', 'RR', 'IO', 'NU', 'RT', 'GT', 'CW'
+    259       temp_action = action
+    260       if(temp_action.eq.'RT') then
+    261 c If temperature action is reject temperature ('RT'), change reject (black) list value in
+    262 c  tenth character of c_qc string from 'O' (reject entire report) to 'W' (reject wind only) -
+    263 c  this prevents eighth sub-check below from masking QM (13) & RC associated with this code's
+    264 c  reject of temperature {instead it would receive reject (black) list QM (14) and RC}
+    265         if(NRLQCstg(10:10).eq.'O')  NRLQCstg(10:10) = 'W'
+    266       endif
+    267       if(action.eq.'RR') then
+    268         NCEPrc = (cp-1)*100 + RN ! RC range 501-534
+    269         go to 2000 ! reject entire report here means we don't need to do anymore testing
+    270       endif
+    271 
+    272 c -------------------------------------------------------------
+    273 C If we make it to here ...
+    274 c Fourth sub-check is on TIME (second character of c_qc string)
+    275 c -------------------------------------------------------------
+    276       cp = 2
+    277       RN = iii(mova2i(NRLQCstg(cp:cp)))
+    278       if(RN.lt.0 .or. RN.gt.34) go to 999
+    279       action = w2d(cp-1,RN) ! either 'ND', 'RR', 'IO', 'NU'
+    280       time_action = action
+    281       if(action.eq.'RR') then
+    282         NCEPrc = (cp-1)*100 + RN ! RC range 101-134
+    283         go to 2000 ! reject entire report here means we don't need to do anymore testing
+    284       endif
+    285 
+
+Page 6           Source Listing                  TRANQCFLAGS
+2017-04-18 11:09                                 tranQCflags.f
+
+    286 c ---------------------------------------------------------------
+    287 C If we make it to here ...
+    288 c Fifth sub-check is on LATITUDE (third character of c_qc string)
+    289 c ---------------------------------------------------------------
+    290       cp = 3
+    291       RN = iii(mova2i(NRLQCstg(cp:cp)))
+    292       if(RN.lt.0 .or. RN.gt.34) go to 999
+    293       action = w2d(cp-1,RN) ! either 'ND', 'RR', 'IO', 'NU'
+    294       lat_action = action
+    295       if(action.eq.'RR') then
+    296         NCEPrc = (cp-1)*100 + RN ! RC range 201-234
+    297         go to 2000 ! reject entire report here means we don't need to do anymore testing
+    298       endif
+    299 
+    300 c -----------------------------------------------------------------
+    301 C If we make it to here ...
+    302 c Sixth sub-check is on LONGITUDE (fourth character of c_qc string)
+    303 c -----------------------------------------------------------------
+    304       cp = 4
+    305       RN = iii(mova2i(NRLQCstg(cp:cp)))
+    306       if(RN.lt.0 .or. RN.gt.34) go to 999
+    307       action = w2d(cp-1,RN) ! either 'ND', 'RR', 'IO', 'NU'
+    308       lon_action = action
+    309       if(action.eq.'RR') then
+    310         NCEPrc = (cp-1)*100 + RN ! RC range 301-334
+    311         go to 2000 ! reject entire report here means we don't need to do anymore testing
+    312       endif
+    313 
+    314 c -------------------------------------------------------------------------------------------
+    315 C If we make it to here ...
+    316 c Seventh sub-check is on TEMPERATURE/WIND COMBINATION (sixth thru tenth char of c_qc string)
+    317 c -------------------------------------------------------------------------------------------
+    318 c We already know temperature action (from sixth character of c_qc string) from above
+    319 c  {temp_action, either 'ND', 'IO', 'NU', 'RT', 'GT', 'CW' ('RR' already considered)}
+    320 
+    321 c Obtain wind direction action from seventh character of c_qc string (wdir_action)
+    322       cp = 7
+    323       RN = iii(mova2i(NRLQCstg(cp:cp)))
+    324       if(RN.lt.0 .or. RN.gt.34) go to 999
+    325       wdir_action = w2d(cp-1,RN) ! either 'ND', 'NU', 'RW', 'SW', 'GW', 'CT'
+    326                                  !                              (Note: 'RR' not a choice here)
+    327       if(wdir_action.eq.'RW') then
+    328 c If wind direction action is reject wind ('RW'), change reject (black) list value in tenth
+    329 c  character of c_qc string from 'O' (reject entire report) to 'T' (reject temperature only)
+    330 c  - this prevents eighth sub-check below from masking QM (13) & RC associated with this
+    331 c  code's reject of wind {instead it would receive reject (black) list QM (14) & RC}
+    332         if(NRLQCstg(10:10).eq.'O')  NRLQCstg(10:10) = 'T'
+    333       endif
+    334 
+    335 c Obtain wind speed action from eighth character of c_qc string (wspd_action)
+    336       cp = 8
+    337       RN = iii(mova2i(NRLQCstg(cp:cp)))
+    338       if(RN.lt.0 .or. RN.gt.34) go to 999
+    339       wspd_action = w2d(cp-1,RN) ! either 'ND', 'NU', 'RW', 'SW', 'GW', 'CT'
+    340                                  !                              (Note: 'RR' not a choice here)
+    341       if(wspd_action.eq.'RW') then
+    342 c If wind speed action is reject wind ('RW'), change reject (black) list value in tenth
+
+Page 7           Source Listing                  TRANQCFLAGS
+2017-04-18 11:09                                 tranQCflags.f
+
+    343 c  character of c_qc string from 'O' (reject entire report) to 'T' (reject temperature only)
+    344 c  - this prevents eighth sub-check below from masking QM (13) & RC associated with this
+    345 c   code's reject of wind {instead it would receive reject (black) list QM (14) and RC}
+    346         if(NRLQCstg(10:10).eq.'O')  NRLQCstg(10:10) = 'T'
+    347       endif
+    348 
+    349 c Obtain moisture action from ninth character of c_qc string (wspd_action)
+    350       cp = 9
+    351       RN = iii(mova2i(NRLQCstg(cp:cp)))
+    352       if(RN.lt.0 .or. RN.gt.34) go to 999
+    353       moist_action = w2d(cp-1,RN) ! either 'ND', 'NU', 'RM', 'SM', 'GM'
+    354                                   !                             (Note: 'RR' not a choice here)
+    355 
+    356 c Obtain reject (black) list action from tenth character of c_qc string (bl_action)
+    357       cp = 10
+    358       RN = iii(mova2i(NRLQCstg(cp:cp)))
+    359       if(RN.lt.0 .or. RN.gt.34) go to 999
+    360       bl_action = w2d(cp-1,RN) ! either 'ND', 'RR', 'IO', 'RT', 'RW'
+    361 
+    362 c If temperature action is to check wind ('CW'), then a "bad" wind will result in the entire
+    363 c  report being rejected
+    364       if(temp_action.eq.'CW') then
+    365         action = 'RR'
+    366         cp = 6
+    367         RN = iii(mova2i(NRLQCstg(cp:cp)))
+    368         if(RN.lt.0 .or. RN.gt.34) go to 999
+    369         NCEPrc_t = (cp-1)*100 + RN ! temperature RC range 501-534
+    370 c .... first check wind direction to see if it is "bad"
+    371         if(wdir_action.eq.'CT'.or.wdir_action.eq.'RW') then
+    372           cp = 7
+    373           RN = iii(mova2i(NRLQCstg(cp:cp)))
+    374           if(RN.lt.0 .or. RN.gt.34) go to 999
+    375 	  NCEPrc_w = (cp-1)*100 + RN ! wind RC range 601-634
+    376 c ........ a bad wind direction rejects entire report
+    377 c ........ set RC for moisture to moisture action if moisture rejected, otherwise set it to
+    378 c           RC for temperature
+    379           if(moist_action.eq.'RM') then
+    380             cp = 9
+    381             RN = iii(mova2i(NRLQCstg(cp:cp)))
+    382             if(RN.lt.0 .or. RN.gt.34) go to 999
+    383 	    NCEPrc_q = (cp-1)*100 + RN ! moisture RC range 801-834
+    384           else
+    385 	    NCEPrc_q = NCEPrc_t ! moisture RC range 501-534
+    386           endif
+    387           go to 2000 ! reject entire report here means we don't need to do anymore testing
+    388         elseif(wspd_action.eq.'CT'.or.wspd_action.eq.'RW') then
+    389 c .... next check wind speed to see if it is "bad"
+    390 	  cp = 8
+    391           RN = iii(mova2i(NRLQCstg(cp:cp)))
+    392           if(RN.lt.0 .or. RN.gt.34) go to 999
+    393 	  NCEPrc_w = (cp-1)*100 + RN ! wind RC range 701-734
+    394 c ........ a bad wind speed rejects entire report
+    395 c ........ set RC for moisture to moisture action if moisture rejected, otherwise set it to
+    396 c           RC for temperature
+    397           if(moist_action.eq.'RM') then
+    398             cp = 9
+    399             RN = iii(mova2i(NRLQCstg(cp:cp)))
+
+Page 8           Source Listing                  TRANQCFLAGS
+2017-04-18 11:09                                 tranQCflags.f
+
+    400             if(RN.lt.0 .or. RN.gt.34) go to 999
+    401 	    NCEPrc_q = (cp-1)*100 + RN ! moisture RC range 801-834
+    402           else
+    403 	    NCEPrc_q = NCEPrc_t ! moisture RC range 501-534
+    404           endif
+    405           go to 2000 ! reject entire report here means we don't need to do anymore testing
+    406         elseif(bl_action.eq.'RW' ) then
+    407 c .... finally check reject (black) list to see if wind (direction/speed) is rejected ("bad")
+    408 c       (Note: bl_action = 'RR' will be considered separately in eighth sub-check below)
+    409 	  cp = 10
+    410           RN = iii(mova2i(NRLQCstg(cp:cp)))
+    411           if(RN.lt.0 .or. RN.gt.34) go to 999
+    412 	  NCEPrc_w = (cp-1)*100 + RN ! wind RC range 901-934
+    413 c ........ wind on reject (black) list rejects entire report
+    414 c ........ set RC for moisture to moisture action if moisture rejected, otherwise set it to
+    415 c           RC for temperature
+    416           if(moist_action.eq.'RM') then
+    417             cp = 9
+    418             RN = iii(mova2i(NRLQCstg(cp:cp)))
+    419             if(RN.lt.0 .or. RN.gt.34) go to 999
+    420 	    NCEPrc_q = (cp-1)*100 + RN ! moisture RC range 801-834
+    421           else
+    422 	    NCEPrc_q = NCEPrc_t ! moisture RC range 501-534
+    423           endif
+    424           go to 2000 ! reject entire report here means we don't need to do anymore testing
+    425         else
+    426 c .... even though temperature action is to check wind ('CW'), wind is not "bad", so
+    427 c      temperature (and wind and moisture if they are present) will be tested later as a
+    428 c      single variable unless eighth sub-check below yields a reject entire report
+    429 	  action = 'XX' ! reset action back to initialized value
+    430 	  NCEPrc_t = 99999  ! reset temperature reason code back to initialized value
+    431         endif
+    432       else
+    433 c Temperature action is something other than check wind ('CW') {or, for that matter, reject
+    434 c  report ('RR')}, so temperature (and wind and moisture if present) will be tested later as
+    435 c  a single variable unless eighth sub-check below yields a reject entire report
+    436         temp_action = temp_action ! dummy statement to allow else branch here
+    437       endif
+    438 
+    439 c If wind direction action is to check temperature ('CT'), then a "bad" temperature will
+    440 c  result in the entire report being rejected
+    441       if(wdir_action.eq.'CT') then
+    442         action = 'RR'
+    443         cp = 7
+    444         RN = iii(mova2i(NRLQCstg(cp:cp)))
+    445         if(RN.lt.0 .or. RN.gt.34) go to 999
+    446 	NCEPrc_w = (cp-1)*100 + RN ! wind RC range 601-634
+    447 c .... first check temperature to see if it is "bad"
+    448         if(temp_action.eq.'CW'.or.temp_action.eq.'RT') then
+    449 	  cp = 6
+    450           RN = iii(mova2i(NRLQCstg(cp:cp)))
+    451           if(RN.lt.0 .or. RN.gt.34) go to 999
+    452 	  NCEPrc_t = (cp-1)*100 + RN ! temperature RC range 501-534
+    453 c ........ a bad temperature rejects entire report
+    454 c ........ set RC for moisture to moisture action if moisture rejected, otherwise set it to
+    455 c           RC for temperature
+    456           if(moist_action.eq.'RM') then
+
+Page 9           Source Listing                  TRANQCFLAGS
+2017-04-18 11:09                                 tranQCflags.f
+
+    457             cp = 9
+    458             RN = iii(mova2i(NRLQCstg(cp:cp)))
+    459             if(RN.lt.0 .or. RN.gt.34) go to 999
+    460 	    NCEPrc_q = (cp-1)*100 + RN ! moisture RC range 801-834
+    461           else
+    462 	    NCEPrc_q = NCEPrc_t ! moisture RC range 501-534
+    463           endif
+    464           go to 2000 ! reject entire report here means we don't need to do anymore testing
+    465         elseif(bl_action.eq.'RT' ) then
+    466 c .... finally check reject (black) list to see if temperature is rejected ("bad")
+    467 c       (Note: bl_action = 'RR' will be considered separately in eighth sub-check below)
+    468 	  cp = 10
+    469           RN = iii(mova2i(NRLQCstg(cp:cp)))
+    470           if(RN.lt.0 .or. RN.gt.34) go to 999
+    471 	  NCEPrc_t = (cp-1)*100 + RN ! temperature RC range 901-934
+    472 c ........ temperature on reject (black) list rejects entire report
+    473 c ........ set RC for moisture to moisture action if moisture rejected, otherwise set it to
+    474 c           RC for temperature
+    475           if(moist_action.eq.'RM') then
+    476             cp = 9
+    477             RN = iii(mova2i(NRLQCstg(cp:cp)))
+    478             if(RN.lt.0 .or. RN.gt.34) go to 999
+    479 	    NCEPrc_q = (cp-1)*100 + RN ! moisture RC range 801-834
+    480           else
+    481 	    NCEPrc_q = NCEPrc_t ! moisture RC range 501-534
+    482           endif
+    483           go to 2000 ! reject entire report here means we don't need to do anymore testing
+    484         else
+    485 c .... even though wind direction action is to check temperature ('CT'), temperature is not
+    486 c      "bad", so wind (and temperature and moisture if present) will be tested later as a
+    487 c      single variable unless either wind speed check (action 'CT' checking against "bad"
+    488 c      temperature) just below yields a reject entire report, or eighth sub-check below
+    489 c      yields a reject entire report
+    490 	  action = 'XX'     ! reset action back to initialized value
+    491 	  NCEPrc_w = 99999  ! reset wind reason code back to initialized value
+    492         endif
+    493       else
+    494 c Wind direction action is something other than check temperature ('CT') {or, for that
+    495 c  matter, reject report ('RR')}, so wind (and temperature and moisture if present) will be
+    496 c  tested later as a single variable unless either wind speed check (action 'CT' checking
+    497 c  against "bad" temperature) just below yields a reject entire report, or eighth sub-check
+    498 c  below yields a reject entire report
+    499         wdir_action = wdir_action ! dummy statement to allow else branch here
+    500       endif
+    501 
+    502 c If wind speed action is to check temperature ('CT'), then a "bad" temperature will result
+    503 c  in the entire report being rejected
+    504       if(wspd_action.eq.'CT') then
+    505         action = 'RR'
+    506         cp = 8
+    507         RN = iii(mova2i(NRLQCstg(cp:cp)))
+    508         if(RN.lt.0 .or. RN.gt.34) go to 999
+    509         NCEPrc_w = (cp-1)*100 + RN ! wind RC range 701-734
+    510 c .... first check temperature to see if it is "bad"
+    511         if(temp_action.eq.'CW'.or.temp_action.eq.'RT') then
+    512           cp = 6
+    513           RN = iii(mova2i(NRLQCstg(cp:cp)))
+
+Page 10          Source Listing                  TRANQCFLAGS
+2017-04-18 11:09                                 tranQCflags.f
+
+    514           if(RN.lt.0 .or. RN.gt.34) go to 999
+    515 	  NCEPrc_t = (cp-1)*100 + RN ! temperature RC range 501-534
+    516 c ........ a bad temperature rejects entire report
+    517 c ........ set RC for moisture to moisture action if moisture rejected, otherwise set it to
+    518 c           RC for temperature
+    519           if(moist_action.eq.'RM') then
+    520             cp = 9
+    521             RN = iii(mova2i(NRLQCstg(cp:cp)))
+    522             if(RN.lt.0 .or. RN.gt.34) go to 999
+    523 	    NCEPrc_q = (cp-1)*100 + RN ! moisture RC range 801-834
+    524           else
+    525 	    NCEPrc_q = NCEPrc_t ! moisture RC range 501-534
+    526           endif
+    527           go to 2000 ! reject entire report here means we don't need to do anymore testing
+    528         elseif(bl_action.eq.'RT' ) then
+    529 c .... finally check reject (black) list to see if temperature is rejected ("bad")
+    530 c       (Note: bl_action = 'RR' will be considered separately in eighth sub-check below)
+    531 	  cp = 10
+    532           RN = iii(mova2i(NRLQCstg(cp:cp)))
+    533           if(RN.lt.0 .or. RN.gt.34) go to 999
+    534 	  NCEPrc_t = (cp-1)*100 + RN ! temperature RC range 901-934
+    535 c ........ temperature on reject (black) list rejects entire report
+    536 c ........ set RC for moisture to moisture action if moisture rejected, otherwise set it to
+    537 c           RC for temperature
+    538           if(moist_action.eq.'RM') then
+    539             cp = 9
+    540             RN = iii(mova2i(NRLQCstg(cp:cp)))
+    541             if(RN.lt.0 .or. RN.gt.34) go to 999
+    542             NCEPrc_q = (cp-1)*100 + RN ! moisture RC range 801-834
+    543           else
+    544             NCEPrc_q = NCEPrc_t ! moisture RC range 501-534
+    545           endif
+    546           go to 2000 ! reject entire report here means we don't need to do anymore testing
+    547         else
+    548 c .... even though wind speed action is to check temperature ('CT'), temperature is not"bad",
+    549 c      so wind (and temperature and moisture if present) will be tested later as a single
+    550 c      variable unless eighth sub-check below yields a reject entire report
+    551 	  action = 'XX'     ! reset action back to initialized value
+    552 	  NCEPrc_w = 99999  ! reset wind reason code back to initialized value
+    553         endif
+    554       else
+    555 c Wind speed action is something other than check temperature ('CT') {or, for that matter,
+    556 c  reject report ('RR')}, so wind (and temperature and moisture if present) will be tested
+    557 c  later as a single variable unless eighth sub-check below yields a reject entire report
+    558         wspd_action = wspd_action ! dummy statement to allow else branch here
+    559       endif
+    560 
+    561 c ---------------------------------------------------------------------------
+    562 C If we make it to here ...
+    563 c Eighth sub-check is on REJECT (BLACK) LIST (tenth character of c_qc string)
+    564 c ---------------------------------------------------------------------------
+    565 c We already know reject (black) list action (from tenth character of c_qc string) from above
+    566 c  {bl_action, either 'ND', 'RR', 'IO', 'RT', 'RW'}
+    567       action = bl_action
+    568       if(action.eq.'RR') then
+    569         cp = 10
+    570         RN = iii(mova2i(NRLQCstg(cp:cp)))
+
+Page 11          Source Listing                  TRANQCFLAGS
+2017-04-18 11:09                                 tranQCflags.f
+
+    571         if(RN.lt.0 .or. RN.gt.34) go to 999
+    572         NCEPrc = (cp-1)*100 + RN ! RC range 901-934
+    573         go to 2000 ! reject entire report here means we don't need to do anymore testing
+    574       endif
+    575 
+    576 C *************************************************************************
+    577 C If we make it to here ...
+    578 c NEXT CHECK SINGLE VARIABLES
+    579 C *************************************************************************
+    580 
+    581       if(type.eq.'p' .or. type.eq.'z') then ! check 5
+    582 c *****************
+    583 c PRESSURE/ALTITUDE
+    584 c *****************
+    585         cp = 5
+    586         RN = iii(mova2i(NRLQCstg(cp:cp)))
+    587         if(RN.lt.0 .or. RN.gt.34) go to 999
+    588         action = w2d(cp-1,RN) ! either 'ND', 'IO', 'NU', 'GV' ('RR' already considered)
+    589         NCEPrc = (cp-1)*100 + RN ! pressure/altitude RC range 401-434
+    590         pres_action = action
+    591 
+    592       elseif(type.eq.'t') then ! check 6, 10
+    593 c ***********
+    594 c TEMPERATURE
+    595 c ***********
+    596         cp = 6
+    597         RN = iii(mova2i(NRLQCstg(cp:cp)))
+    598         if(RN.lt.0 .or. RN.gt.34) go to 999
+    599         action = w2d(cp-1,RN) ! either 'ND', 'IO', 'NU', 'RT', 'GT', 'CW'
+    600                               !                                      ('RR' already considered)
+    601         NCEPrc_t = (cp-1)*100 + RN ! temperature RC range 501-534
+    602 
+    603 c A temperature action of check wind ('CW') is treated as a reject temperature ('RT') - test
+    604 c  for unilateral reject of entire report above has already tested cases where temperature
+    605 c  action of 'CW' is combined with a "bad" wind (resulting in a reject of the entire report),
+    606 c  so we know here that wind is not bad and only temperature should be rejected
+    607 c -------------------------------------------------------------------------------------------
+    608         if(action.eq.'CW') action = 'RT'
+    609 
+    610 c Check reject (black) list flag to see if temperature should be rejected {but ONLY if
+    611 c  temperature action is not already set to reject temperature ('RT')}
+    612 c ------------------------------------------------------------------------------------
+    613         if(action.ne.'RT') then
+    614 	  cp = 10
+    615           RN = iii(mova2i(NRLQCstg(cp:cp)))
+    616           if(RN.lt.0 .or. RN.gt.34) go to 999
+    617           bl_action = w2d(cp-1,RN) ! either 'ND', 'IO', 'RT', 'RW' ('RR' already considered)
+    618 	  if(bl_action.eq.'RT') then
+    619 	    action = 'RT' ! reject temperature
+    620 	    NCEPrc_t = (cp-1)*100 + RN ! temperature RC range 901-934
+    621 	  endif
+    622 	endif
+    623 
+    624       elseif(type.eq.'q') then ! check 9
+    625 c ********	
+    626 c MOISTURE
+    627 c ********	
+
+Page 12          Source Listing                  TRANQCFLAGS
+2017-04-18 11:09                                 tranQCflags.f
+
+    628         cp = 9
+    629         RN = iii(mova2i(NRLQCstg(cp:cp)))
+    630         if(RN.lt.0 .or. RN.gt.34) go to 999
+    631         action = w2d(cp-1,RN) ! either 'ND', 'NU', 'RM', 'SM', 'GM'
+    632                               !                                 (Note: 'RR' not a choice here)
+    633         NCEPrc_q = (cp-1)*100 + RN ! moisture RC range 801-834
+    634         moist_action = action
+    635 
+    636         if(action.ne.'RM') then
+    637 
+    638 c A reject of temperature forces a reject of moisture (if moisture not already rejected)
+    639 c --------------------------------------------------------------------------------------
+    640           cp = 6
+    641           RN = iii(mova2i(NRLQCstg(cp:cp)))
+    642           if(RN.lt.0 .or. RN.gt.34) go to 999
+    643           temp_action = w2d(cp-1,RN) !  either 'ND', 'IO', 'NU', 'RT', 'GT', 'CW'
+    644                                      !                               ('RR' already considered)
+    645           if(temp_action.eq.'RT') then
+    646             action = 'RM'
+    647             NCEPrc_q = (cp-1)*100 + RN ! moisture RC range 501-534
+    648           endif
+    649         endif
+    650 
+    651       elseif(type.eq.'w') then ! check 7, 8, 10
+    652 c ****
+    653 c WIND
+    654 c ****
+    655 
+    656 c First, check Wind direction action
+    657 c ----------------------------------
+    658         cp = 7
+    659         RN = iii(mova2i(NRLQCstg(cp:cp)))
+    660         if(RN.lt.0 .or. RN.gt.34) go to 999
+    661         wdir_action = w2d(cp-1,RN) ! either 'ND', 'NU', 'RW', 'SW', 'GW', 'CT'
+    662                                    !                            (Note: 'RR' not a choice here)
+    663      	NCEPrc_w = (cp-1)*100 + RN ! initially set overall wind RC to reflect wind direction
+    664                                ! status, wind RC range 601-634 {this may be overwritten later
+    665                                !  by wind speed status if it is inferior to wind direction
+    666                                !  status (quality-wise)})
+    667 
+    668         action = wdir_action   ! initially set overall wind action to wind direction
+    669                                !  action {this may be overwritten later by wind speed action
+    670                                !  if it is inferior to wind direction action (quality-wise)}
+    671 
+    672 c A wind direction action of check temperature ('CT') is treated as a reject wind ('RW') -
+    673 c  test for unilateral reject of entire report above has already tested cases where wind
+    674 c  direction action of 'CT' is combined with a "bad" temperature (resulting in a reject of
+    675 c  the entire report), so we know here that temperature is not bad and only wind should be
+    676 c  rejected
+    677 c ----------------------------------------------------------------------------------------
+    678         if(wdir_action.eq.'CT') wdir_action = 'RW'
+    679 
+    680         if(wdir_action.eq.'RW') then
+    681 
+    682 c If wind direction action is reject wind ('RW') then set overall wind action to 'RW' - no
+    683 c  need to examine wind speed action in this case
+    684 c ----------------------------------------------------------------------------------------
+
+Page 13          Source Listing                  TRANQCFLAGS
+2017-04-18 11:09                                 tranQCflags.f
+
+    685           action = 'RW'
+    686         else
+    687 
+    688 c Otherwise, check wind speed action to see if it is inferior to wind direction action
+    689 C  (quality-wise)
+    690 c ------------------------------------------------------------------------------------
+    691 
+    692           cp = 8
+    693           RN = iii(mova2i(NRLQCstg(cp:cp)))
+    694           if(RN.lt.0 .or. RN.gt.34) go to 999
+    695           wspd_action = w2d(cp-1,RN) ! either 'ND', 'NU', 'RW', 'SW', 'GW', 'CT'
+    696                                      !                          (Note: 'RR' not a choice here)
+    697 
+    698 c A wind speed action of check temperature ('CT') is treated as a reject wind ('RW') - test
+    699 c  for unilateral reject of entire report above has already tested cases where wind speed
+    700 c  action of 'CT' is combined with a "bad" temperature (resulting in a reject of the entire
+    701 c  report), so we know here that temperature is not bad and only wind should be rejected
+    702 c -----------------------------------------------------------------------------------------
+    703           if(wspd_action.eq.'CT') wspd_action = 'RW'
+    704 
+    705           if(wspd_action.eq.'RW') then
+    706 
+    707 c For cases when wind direction action is not 'RW' but wind speed action is 'RW', use wind
+    708 c  speed's RC as overall wind RC value since it is inferior to wind direction action
+    709 C  (quality-wise)
+    710 c ----------------------------------------------------------------------------------------
+    711             NCEPrc_w = (cp-1)*100 + RN !  wind RC range 701-734
+    712             action = 'RW'
+    713           elseif (wdir_action.eq.'SW') then
+    714 
+    715 c For cases when wind direction action is suspect wind ('SW') and wind speed action is not
+    716 c  'RW', set overall wind action to 'SW' and use wind direction's RC as overall wind RC value
+    717 c  since it is inferior to wind speed action (quality-wise)
+    718 c -------------------------------------------------------------------------------------------
+    719             action = 'SW'
+    720           elseif (wspd_action.eq.'SW') then
+    721 
+    722 c For cases when wind direction action is neither 'RW' nor 'SW' but wind speed action is
+    723 c  'SW', set overall wind action to 'SW' and use wind speed's RC as overall wind RC value
+    724 c  since it is inferior to wind direction action (quality-wise)
+    725 c ---------------------------------------------------------------------------------------
+    726             NCEPrc_w = (cp-1)*100 + RN !  wind RC range 701-734
+    727             action = 'SW'
+    728           endif
+    729         endif
+    730 
+    731 c Check reject (black) list flag to see if wind should be rejected {but ONLY if overall wind
+    732 c  action is not already set to reject wind ('RW')}
+    733 c ------------------------------------------------------------------------------------------
+    734         if(action.ne.'RW') then
+    735           cp = 10
+    736           RN = iii(mova2i(NRLQCstg(cp:cp)))
+    737           if(RN.lt.0 .or. RN.gt.34) go to 999
+    738           bl_action = w2d(cp-1,RN) ! either 'ND', 'IO', 'RT', 'RW' ('RR' already considered)
+    739           if(bl_action.eq.'RW') then
+    740             action = 'RW' ! reject wind
+    741             NCEPrc_w = (cp-1)*100 + RN ! wind RC range 901-934
+
+Page 14          Source Listing                  TRANQCFLAGS
+2017-04-18 11:09                                 tranQCflags.f
+
+    742           endif
+    743         endif
+    744 
+    745       endif
+    746 
+    747 C *************************************************************************
+    748 
+    749  2000 continue
+    750 
+    751 c -------------------------------------------
+    752 c Translate actions into NCEP QUALITY MARKERS
+    753 c -------------------------------------------
+    754       if(action.eq.'RR') then
+    755         l_badrpt = .true. 		 
+    756 
+    757       elseif(action.eq.'DR') then 
+    758         l_duprpt = .true.
+    759 
+    760       elseif(action.eq.'GV'.or.action.eq.'GT' .or.
+    761      +       action.eq.'GM'.or.action.eq.'GW') then
+    762         NCEPqm = 1 ! good (RC already set)
+    763 
+    764       elseif(action.eq.'NU') then 
+    765         NCEPqm = 2 ! neutral/not checked (RC already set)
+    766 
+    767       elseif(action.eq.'ND') then ! not defined
+    768         NCEPqm = 2   ! QM -> neutral
+    769         NCEPrc = 099 ! RC -> 099 - override any RCs already set
+    770 
+    771         print *, 'type: ',type
+    772         print *, 'overall_action: ',overall_action
+    773         print *, 'time_action: ',time_action
+    774         print *, 'lat/lon_action: ',lat_action,'/',lon_action
+    775         print *, 'pres_action: ',pres_action
+    776         print *, 'temp_action: ',temp_action
+    777         print *, 'moist_action: ',moist_action
+    778         print *, 'wdir_action: ',wdir_action
+    779         print *, 'wspd_action: ',wspd_action
+    780         print *, 'bl_action: ',bl_action
+    781         print *, 'c_qc: "',NRLQCstg,'"'
+    782 
+    783       elseif(action.eq.'RT'.or.action.eq.'RM'.or.action.eq.'RW') then  
+    784         NCEPqm = 13 ! QM -> bad (RC already set)
+    785 
+    786       elseif(action.eq.'SM'.or.action.eq.'SW') then
+    787         NCEPqm = 3  ! QM -> suspect (RC already set)
+    788 
+    789       else
+    790         cp = 99 ! this is just a dummy statement
+    791                 !  leave QM as is (IO,GR)
+    792       endif
+    793 
+    794 c -------------------------------------------------------------
+    795 c Set QM, RC info into arrays to be returned to calling routine
+    796 c -------------------------------------------------------------
+    797       if(type.eq.'t' .and. NCEPrc_t.ne.99999) then
+    798         NCEPrc = NCEPrc_t
+
+Page 15          Source Listing                  TRANQCFLAGS
+2017-04-18 11:09                                 tranQCflags.f
+
+    799       elseif(type.eq.'q' .and. NCEPrc_q.ne.99999) then
+    800         NCEPrc = NCEPrc_q
+    801       elseif(type.eq.'w' .and. NCEPrc_w.ne.99999) then
+    802         NCEPrc = NCEPrc_w
+    803       endif
+    804 
+    805       return
+    806 
+    807   999 continue
+    808  
+    809       write(*,*) '*** Warning! RN is out of range 1-34, here = ',RN
+    810       call w3tage('PREPOBS_PREPACQC')
+    811       call errexit(69)
+    812 
+    813       end
+
+
+ENTRY POINTS
+
+  Name                    
+                          
+ tranqcflags_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ 2000                       Label  749                                                            234,248,269,283,297,311,387,405,42
+                                                                                                  4,464,483,527,546,573             
+ 999                        Label  807                                                            229,243,257,278,292,306,324,338,35
+                                                                                                  2,359,368,374,382,392,400,411,419,
+                                                                                                  445,451,459,470,478,508,514,522,53
+                                                                                                  3,541,571,587,598,616,630,642,660,
+                                                                                                  694,737                           
+ ACTION                     Local  140      CHAR            2           scalar                    206,230,231,232,244,245,246,258,25
+                                                                                                  9,267,279,280,281,293,294,295,307,
+                                                                                                  308,309,365,429,442,490,505,551,56
+                                                                                                  7,568,588,590,599,608,613,619,631,
+                                                                                                  634,636,646,668,685,712,719,727,73
+                                                                                                  4,740,754,757,760,761,764,767,783,
+                                                                                                  786                               
+ BL_ACTION                  Local  142      CHAR            2           scalar                    196,360,406,465,528,567,617,618,73
+                                                                                                  8,739,780                         
+ CP                         Local  63       I(4)            4           scalar                    222,228,230,233,241,242,244,247,25
+                                                                                                  5,256,258,268,276,277,279,282,290,
+                                                                                                  291,293,296,304,305,307,310,322,32
+                                                                                                  3,325,336,337,339,350,351,353,357,
+                                                                                                  358,360,366,367,369,372,373,375,38
+                                                                                                  0,381,383,390,391,393,398,399,401,
+                                                                                                  409,410,412,417,418,420,443,444,44
+                                                                                                  6,449,450,452,457,458,460,468,469,
+                                                                                                  471,476,477,479,506,507,509,512,51
+                                                                                                  3,515,520,521,523,531,532,534,539,
+                                                                                                  540,542,569,570,572,585,586,588,58
+                                                                                                  9,596,597,599,601,614,615,617,620,
+                                                                                                  628,629,631,633,640,641,643,647,65
+
+Page 16          Source Listing                  TRANQCFLAGS
+2017-04-18 11:09 Symbol Table                    tranQCflags.f
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+                                                                                                  8,659,661,663,692,693,695,711,726,
+                                                                                                  735,736,738,741,790               
+ ERREXIT                    Subr   811                                                            811                               
+ III                        Local  57       I(4)            4     1     74                        167,228,242,256,277,291,305,323,33
+                                                                                                  7,351,358,367,373,381,391,399,410,
+                                                                                                  418,444,450,458,469,477,507,513,52
+                                                                                                  1,532,540,570,586,597,615,629,641,
+                                                                                                  659,693,736                       
+ LAT_ACTION                 Local  148      CHAR            2           scalar                    202,294,774                       
+ LON_ACTION                 Local  149      CHAR            2           scalar                    203,308,774                       
+ L_BADRPT                   Dummy  47       L(4)            4           scalar   ARG,INOUT        193,755                           
+ L_DUPRPT                   Dummy  48       L(4)            4           scalar   ARG,INOUT        194,758                           
+ MOIST_ACTION               Local  145      CHAR            2           scalar                    199,353,379,397,416,456,475,519,53
+                                                                                                  8,634,777                         
+ MOVA2I                     Func   61       I(4)            4           scalar                    228,242,256,277,291,305,323,337,35
+                                                                                                  1,358,367,373,381,391,399,410,418,
+                                                                                                  444,450,458,469,477,507,513,521,53
+                                                                                                  2,540,570,586,597,615,629,641,659,
+                                                                                                  693,736                           
+ NCEPQM                     Dummy  47       I(4)            4           scalar   ARG,INOUT        208,762,765,768,784,787           
+ NCEPRC                     Dummy  47       I(4)            4           scalar   ARG,INOUT        209,233,247,268,282,296,310,572,58
+                                                                                                  9,769,798,800,802                 
+ NCEPRC_Q                   Local  158      I(4)            4           scalar                    211,383,385,401,403,420,422,460,46
+                                                                                                  2,479,481,523,525,542,544,633,647,
+                                                                                                  799,800                           
+ NCEPRC_T                   Local  157      I(4)            4           scalar                    210,369,385,403,422,430,452,462,47
+                                                                                                  1,481,515,525,534,544,601,620,797,
+                                                                                                  798                               
+ NCEPRC_W                   Local  159      I(4)            4           scalar                    212,375,393,412,446,491,509,552,66
+                                                                                                  3,711,726,741,801,802             
+ NRLQCSTG                   Dummy  47       CHAR            11          scalar   ARG,INOUT        228,242,256,265,277,291,305,323,33
+                                                                                                  2,337,346,351,358,367,373,381,391,
+                                                                                                  399,410,418,444,450,458,469,477,50
+                                                                                                  7,513,521,532,540,570,586,597,615,
+                                                                                                  629,641,659,693,736,781           
+ OVERALL_ACTION             Local  151      CHAR            2           scalar                    205,231,772                       
+ PRES_ACTION                Local  143      CHAR            2           scalar                    197,245,590,775                   
+ RN                         Local  65       I(4)            4           scalar                    228,229,230,233,242,243,244,247,25
+                                                                                                  6,257,258,268,277,278,279,282,291,
+                                                                                                  292,293,296,305,306,307,310,323,32
+                                                                                                  4,325,337,338,339,351,352,353,358,
+                                                                                                  359,360,367,368,369,373,374,375,38
+                                                                                                  1,382,383,391,392,393,399,400,401,
+                                                                                                  410,411,412,418,419,420,444,445,44
+                                                                                                  6,450,451,452,458,459,460,469,470,
+                                                                                                  471,477,478,479,507,508,509,513,51
+                                                                                                  4,515,521,522,523,532,533,534,540,
+                                                                                                  541,542,570,571,572,586,587,588,58
+                                                                                                  9,597,598,599,601,615,616,617,620,
+                                                                                                  629,630,631,633,641,642,643,647,65
+                                                                                                  9,660,661,663,693,694,695,711,726,
+                                                                                                  736,737,738,741,809               
+ TEMP_ACTION                Local  144      CHAR            2           scalar                    198,259,260,364,436,448,511,643,64
+                                                                                                  5,776                             
+ TIME_ACTION                Local  150      CHAR            2           scalar                    204,280,773                       
+
+Page 17          Source Listing                  TRANQCFLAGS
+2017-04-18 11:09 Symbol Table                    tranQCflags.f
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ TRANQCFLAGS                Subr   47                                                                                               
+ TYPE                       Dummy  47       CHAR            1           scalar   ARG,INOUT        581,592,624,651,771,797,799,801   
+ W2D                        Local  71       CHAR            2     2     374                       85,230,244,258,279,293,307,325,339
+                                                                                                  ,353,360,588,599,617,631,643,661,6
+                                                                                                  95,738                            
+ W3TAGE                     Subr   810                                                            810                               
+ WDIR_ACTION                Local  146      CHAR            2           scalar                    200,325,327,371,441,499,661,668,67
+                                                                                                  8,680,713,778                     
+ WSPD_ACTION                Local  147      CHAR            2           scalar                    201,339,341,388,504,558,695,703,70
+                                                                                                  5,720,779                         
+
+Page 18          Source Listing                  TRANQCFLAGS
+2017-04-18 11:09 Subprograms/Common Blocks       tranQCflags.f
+
+
+
+SUBPROGRAMS/COMMON BLOCKS
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ TRANQCFLAGS                Subr   47                                                                                               
+
+COMPILER OPTIONS BEING USED
+
+       -align noall                          -align nonone
+       -align nocommons                      -align nodcommons
+       -align noqcommons                     -align nozcommons
+       -align records                        -align nosequence
+       -align norec1byte                     -align norec2byte
+       -align norec4byte                     -align norec8byte
+       -align norec16byte                    -align norec32byte
+       -align norec64byte                    -align noarray8byte
+       -align noarray16byte                  -align noarray32byte
+       -align noarray64byte                  -align noarray128byte
+       -align noarray256byte                 -altparam
+       -assume accuracy_sensitive            -assume nobscc
+       -assume nobuffered_io                 -assume nobuffered_stdout
+       -assume nobyterecl                    -assume nocc_omp
+       -assume nocstring                     -assume nodummy_aliases
+       -assume nofpe_summary                 -assume noieee_fpe_flags
+       -assume nominus0                      -assume noold_boz
+       -assume old_complex_align             -assume old_unit_star
+       -assume noold_ldout_format            -assume noold_logical_ldio
+       -assume old_maxminloc                 -assume old_xor
+       -assume noprotect_allocates           -assume protect_constants
+       -assume noprotect_parens              -assume split_common
+       -assume source_include                -assume nostd_intent_in
+       -assume std_minus0_rounding           -assume nostd_mod_proc_name
+       -assume std_value                     -assume norealloc_lhs
+       -assume underscore                    -assume no2underscores
+  no   -auto                                 -auto_scalar
+  no   -bintext                              -ccdefault default
+       -check noargs                         -check noarg_temp_created
+       -check noassume                       -check nobounds
+       -check noformat                       -check nooutput_conversion
+       -check nooverflow                     -check nopointers
+       -check power                          -check noshape
+       -check nostack                        -check nounderflow
+       -check nouninitialized                -coarray-num-procs 0
+  no   -coarray-config-file                  -convert big_endian
+       -cross_reference                      -D __INTEL_COMPILER=1600
+       -D __INTEL_COMPILER_UPDATE=3          -D __unix__
+       -D __unix                             -D __linux__
+       -D __linux                            -D __gnu_linux__
+       -D unix                               -D linux
+       -D __ELF__                            -D __x86_64
+       -D __x86_64__                         -D __amd64
+       -D __amd64__                          -D __INTEL_COMPILER_BUILD_DATE=20160415
+       -D __INTEL_OFFLOAD                    -D __i686
+       -D __i686__                           -D __pentiumpro
+       -D __pentiumpro__                     -D __pentium4
+
+Page 19          Source Listing                  TRANQCFLAGS
+2017-04-18 11:09                                 tranQCflags.f
+
+       -D __pentium4__                       -D __tune_pentium4__
+       -D __SSE2__                           -D __SSE2_MATH__
+       -D __SSE__                            -D __SSE_MATH__
+       -D __MMX__                            -double_size 64
+  no   -d_lines                         no   -Qdyncom
+       -error_limit 30                  no   -f66
+  no   -f77rtl                          no   -fast
+       -fpscomp nofilesfromcmd               -fpscomp nogeneral
+       -fpscomp noioformat                   -fpscomp noldio_spacing
+       -fpscomp nologicals                   -fixed
+  no   -fpconstant                           -fpe3
+       -fprm nearest                    no   -ftz
+       -fp_model noprecise                   -fp_model fast
+       -fp_model nostrict                    -fp_model nosource
+       -fp_model nodouble                    -fp_model noextended
+       -fp_model novery_fast                 -fp_model noexcept
+       -fp_model nono_except                 -heap_arrays 0
+  no   -threadprivate_compat                 -g2
+       -iface nomixed_str_len_arg            -iface nono_mixed_str_len_arg
+       -init noarrays                        -init noinf
+       -init nonan                           -init nosnan
+       -init nozero                     no   -intconstant
+       -integer_size 32                 no   -mixed_str_len_arg
+  no   -module                               -names lowercase
+  no   -noinclude                            -offload-build=host
+       -O2                              no   -pad_source
+       -real_size 32                    no   -recursive
+       -reentrancy none                 no   -sharable_localsaves
+       -vec=simd                             -show noinclude
+       -show map                             -show options
+  no   -syntax_only                     no   -threadcom
+  no   -U                               no   -vms
+       -w noall                              -w nonone
+       -w alignments                         -w noargument_checking
+       -w nodeclarations                     -w general
+       -w noignore_bounds                    -w noignore_loc
+       -w nointerfaces                       -w notruncated_source
+       -w uncalled                           -w uninitialized
+       -w nounused                           -w usage
+  no   -wrap-margins
+
+       -includepath : /usrx/local/intel/2016SP3/daal/include/,/usr/include/,.FOR,./.FOR,/usrx/local/intel/2016SP3/ipp/include/.FOR,
+           /usrx/local/intel/2016SP3/mkl/include/.FOR,/usrx/local/intel/2016SP3/tbb/include/.FOR,/usrx/local/intel/2016SP3/daal/include/.FOR,
+           /gpfs/tp1/usrx/local/intel/2016SP3/compilers_and_libraries_2016.3.210/linux/compiler/include/intel64/.FOR,
+           /gpfs/tp1/usrx/local/intel/2016SP3/compilers_and_libraries_2016.3.210/linux/compiler/include/.FOR,/usr/local/include/.FOR,
+           /usr/lib/gcc/x86_64-redhat-linux/4.4.7/include/.FOR,/usr/include/.FOR,/usr/include/.FOR,/usr/include/.FOR
+       -list filename : tranQCflags.lst
+       -o    filename : none
+
+COMPILER: Intel(R) Fortran 16.0-1633

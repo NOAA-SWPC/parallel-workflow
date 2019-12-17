@@ -1,0 +1,1927 @@
+Page 1           Source Listing                  OUTPUT_ACQC_PROF
+2017-04-18 11:09                                 output_acqc_prof.f
+
+      1 c$$$  Subprogram Documentation Block
+      2 c   BEST VIEWED WITH 94-CHARACTER WIDTH WINDOW
+      3 c
+      4 c Subprogram: output_acqc_prof 
+      5 c   Programmer: D. Keyser       Org: NP22       Date: 2016-12-09
+      6 c
+      7 c Abstract: Reads in sorted NRLACQC quality controlled single-level aircraft reports and
+      8 c   constructs profiles from ascending or descending flights.  Encodes these profiles as
+      9 c   merged (mass and wind) reports (subsets) along with (when l_prof1lvl=T) merged
+     10 c   single(flight)-level aircraft reports not part of any profile into a PREPBUFR-like file
+     11 c   containing only these data.  Single-level reports get PREPBUFR report type 3xx (where xx
+     12 c   is original type in 1xx mass and 2xx wind reports), ascending profile reports get
+     13 c   PREPBUFR report type 4xx, and descending profile reports get PREPBUFR report type 5xx.
+     14 c
+     15 c Program History Log:
+     16 c 2010-11-15  S. Bender  -- Original Author
+     17 c 2012-05-08  D. Keyser  -- Prepared for operational implementation
+     18 c 2012-11-20  J. Woollen -- Initial port to WCOSS
+     19 c 2013-02-07  D. Keyser  -- Final changes to run on WCOSS: use formatted print statements
+     20 c                           where previously unformatted print was > 80 characters
+     21 c 2016-12-09  D. Keyser  --
+     22 c                 - Nomenclature change: replaced "MDCRS/ACARS" with just "MDCRS".
+     23 c                 - Latitude/longitdue arrays "alat" and "alon" passed into of this subroutine
+     24 c                   now double precision. XOB and YOB in PREPBUFR file now scaled to 10**5
+     25 c                   (was 10**2) to handle new v7 AMDAR and MDCRS reports which have this
+     26 c                   higher precision.
+     27 c                   BENEFIT: Retains exact precison here. Improves QC processing.
+     28 c                         - The format for all print statements containing latitude and longitude
+     29 c                           changed to print to 5 decimal places.
+     30 c
+     31 c Usage: call output_acqc_prof(proflun,nrpts4QC_pre,max_reps,mxnmev,
+     32 c                              mxlv,bmiss,cdtg_an,alat,alon,ht_ft,
+     33 c                              idt,c_qc,trad,l_otw,l_nhonly,sortidx,
+     34 c                              c_acftreg,c_acftid,ob_t,nevents,hdr,
+     35 c                              acid,rct,drinfo,acft_seq,mstq,cat,
+     36 c                              pob_ev,pqm_ev,ppc_ev,prc_ev,pbg,ppp,
+     37 c                              zob_ev,zqm_ev,zpc_ev,zrc_ev,zbg,zpp,
+     38 c                              tob_ev,tqm_ev,tpc_ev,trc_ev,tbg,tpp,
+     39 c                              qob_ev,qqm_ev,qpc_ev,qrc_ev,qbg,qpp,
+     40 c                              uob_ev,vob_ev,wqm_ev,wpc_ev,wrc_ev,
+     41 c                              wbg,wpp,ddo_ev,ffo_ev,dfq_ev,dfp_ev,
+     42 c                              dfr_ev,nrlacqc_pc,l_allev_pf,
+     43 c                              l_prof1lvl,l_mandlvl,tsplines,l_operational,lwr)
+     44 c
+     45 c   Input argument list:
+     46 c     proflun      - Unit number for the output post-PREPACQC PREPBUFR-like file containing
+     47 c                    merged profile reports (always) and single(flight)-level reports not
+     48 c                    part of any profile (when l_prof1lvl=T) with added NRLACQC events
+     49 c                    (aircraft data only)
+     50 c     nrpts4QC_pre - Number of reports in the "merged" single-level aircraft report arrays
+     51 c     max_reps     - Maximum number of reports accepted by acftobs_qc
+     52 c     mxnmev       - Maximum number of events allowed, per variable type
+     53 c     mxlv         - Maximum number of levels allowed in a report profile
+     54 c     bmiss        - BUFRLIB missing value (set in main program)
+     55 c     cdtg_an      - Date/analysis time (YYYYMMDDCC)
+     56 c     alat         - Array of latitudes for the "merged" reports
+     57 c     alon         - Array of longitudes for the "merged" reports
+
+Page 2           Source Listing                  OUTPUT_ACQC_PROF
+2017-04-18 11:09                                 output_acqc_prof.f
+
+     58 c     ht_ft        - Array of altitudes for the "merged" reports
+     59 c     idt          - Array of ob-cycle times for the "merged" reports (in seconds)
+     60 c     c_qc         - Array of NRLACQC quality information (11 char. string) ("merged" reports)
+     61 c     trad         - Time window radius for outputting reports (if l_otw=T) (read in via
+     62 c                    namelist)
+     63 c     l_otw        - Logical whether or not to eliminate reports outside the time window
+     64 c                    radius (trad) (read in via namelist)
+     65 c     l_nhonly     - Logical Whether or not to eliminate reports south of 20S latitude (i.e,
+     66 c                    outside the tropics and N. Hemisphere) (read in via namelist)
+     67 c     sortidx      - Sort index that specifies the order in which the reports should be
+     68 c                     written to the output PREPBUFR-like profiles file
+     69 c     c_acftreg    - Array of aircraft tail numbers for the "merged" reports as used in
+     70 c                    NRL QC processing
+     71 c     c_acftid     - Array of aircraft flight numbers for the "merged" reports as used in
+     72 c                    NRL QC processing
+     73 c     ob_t         - Array of aircraft temperatures for the "merged" reports
+     74 c     nevents      - Array tracking number of events for variables for each report
+     75 c     hdr          - Array containing header information for the "merged" reports {word 1 is
+     76 c                    flight number for AIREPs, tail number for AMDARs (all types) and MDCRS,
+     77 c                    and manfactured id for PIREPs and TAMDARs  - this will be later be
+     78 c                    encoded into 'SID' for aircraft reports in output  PREPBUFR-like file)
+     79 c     acid         - Array containing flight numbers for the "merged" MDCRS and AMDAR (LATAM
+     80 c                    only) reports {this will be encoded into 'ACID' for MDCRS and AMDAR
+     81 c                    (LATAM only) reports in output PREPBUFR-like profiles file}
+     82 c     rct          - Array containing receipt times for the "merged" reports
+     83 c     drinfo       - Array containing drift information for the "merged" reports
+     84 c     acft_seq     - Array containing temperature precision and phase of flight for the
+     85 c                    "merged" reports
+     86 c     mstq         - Array containing moisture quality flags for the "merged" reports
+     87 c     cat          - Array containing level category for the "merged" reports
+     88 c     pob_ev       - Pressure event obs
+     89 c     pqm_ev       - Pressure event quality marks
+     90 c     ppc_ev       - Pressure event program codes
+     91 c     prc_ev       - Pressure event reason codes
+     92 c     pbg          - Pressure background data (POE PFC PFCMOD)
+     93 c     ppp          - Pressure post-processing info (PAN PCL PCS)
+     94 c     zob_ev       - Altitude event obs
+     95 c     zqm_ev       - Altitude event quality marks
+     96 c     zpc_ev       - Altitude event program codes
+     97 c     zrc_ev       - Altitude event reason codes
+     98 c     zbg          - Altitude background data (ZOE ZFC ZFCMOD)
+     99 c     zpp          - Altitude post-processing info (ZAN ZCL ZCS)
+    100 c     tob_ev       - Temperature event obs
+    101 c     tqm_ev       - Temperature event quality marks
+    102 c     tpc_ev       - Temperature event program codes
+    103 c     trc_ev       - Temperature event reason codes
+    104 c     tbg          - Temperature background data (TOE TFC TFCMOD)
+    105 c     tpp          - Temperature post-processing info (TAN TCL TCS)
+    106 c     qob_ev       - Moisture event obs
+    107 c     qqm_ev       - Moisture event quality marks
+    108 c     qpc_ev       - Moisture event program codes
+    109 c     qrc_ev       - Moisture event reason codes
+    110 c     qbg          - Moisture background data (QOE QFC QFCMOD)
+    111 c     qpp          - Moisture post-processing info (QAN QCL QCS)
+    112 c     uob_ev       - Wind/u-comp event obs
+    113 c     vob_ev       - Wind/v-comp event obs
+    114 c     wqm_ev       - Wind event quality marks
+
+Page 3           Source Listing                  OUTPUT_ACQC_PROF
+2017-04-18 11:09                                 output_acqc_prof.f
+
+    115 c     wpc_ev       - Wind event program codes
+    116 c     wrc_ev       - Wind event reason codes
+    117 c     wbg          - Wind background data (WOE UFC VFC UFCMOD VFCMOD)
+    118 c     wpp          - Wind post-processing info (UAN VAN UCL VCL UCS VCS)
+    119 c     ddo_ev       - Wind direction event obs
+    120 c     ffo_ev       - Wind speed event obs
+    121 c     dfq_ev       - Wind direction/speed quality mark
+    122 c     dfp_ev       - Wind direction/speed program code
+    123 c     dfr_ev       - Wind direction/speed reason code
+    124 c     nrlacqc_pc   - PREPBUFR program code for the NRLACQC step
+    125 c     l_allev_pf   - Logical whether to process latest (likely NRLACQC) event plus all prior
+    126 c                    events (TRUE) or only latest event (FALSE) into profiles PREPBUFR-like
+    127 c                    file
+    128 c     l_prof1lvl   - Logical whether to encode merged single(flight)-level aircraft reports
+    129 c                    with NRLACQC events that are not part of any profile into PREPBUFR-like
+    130 c                    file (along with, always, merged profiles from aircraft ascents and
+    131 c                    descents)
+    132 c     l_mandlvl    - Logical whether to interpolate to mandatory levels in profile generation
+    133 c     tsplines     - Logical whether to use tension-splines for aircraft vertical velocity
+    134 c                    calculation
+    135 c     l_operational- Run program in operational mode if true
+    136 c     lwr          - Machine word length in bytes (either 4 or 8)
+    137 c
+    138 c   Output files:
+    139 c     Unit proflun - PREPBUFR-like file containing merged (mass and wind) profile reports
+    140 c                    (always) and single(flight)-level reports not part of any profile (when
+    141 c                    l_prof1lvl=T) with NRLACQC events
+    142 c     Unit 06      - Standard output print
+    143 c     Unit 52      - Text file containing listing of all QC'd merged aircraft reports written
+    144 c                    to profiles PREPBUFR-like file
+    145 c
+    146 c   Subprograms called:
+    147 c     Unique:    SUB2MEM_MER SUB2MEM_UM
+    148 c     Library:
+    149 c       SYSTEM:  SYSTEM
+    150 c       BUFRLIB: OPENMB      WRITSB
+    151 c
+    152 c   Exit States:
+    153 c     Cond =  0 - successful run
+    154 c
+    155 c Remarks: Called by main program.
+    156 c
+    157 c Attributes:
+    158 c   Language: FORTRAN 90
+    159 c   Machine:  NCEP WCOSS
+    160 c
+    161 c$$$
+    162       subroutine output_acqc_prof(proflun,nrpts4QC_pre,max_reps,mxnmev,
+    163      +                            mxlv,bmiss,cdtg_an,alat,alon,ht_ft,
+    164      +                            idt,c_qc,trad,l_otw,l_nhonly,sortidx,
+    165      +                            c_acftreg,c_acftid,ob_t,nevents,hdr,
+    166      +                            acid,rct,drinfo,acft_seq,mstq,cat,
+    167      +                            pob_ev,pqm_ev,ppc_ev,prc_ev,pbg,ppp,
+    168      +                            zob_ev,zqm_ev,zpc_ev,zrc_ev,zbg,zpp,
+    169      +                            tob_ev,tqm_ev,tpc_ev,trc_ev,tbg,tpp,
+    170      +                            qob_ev,qqm_ev,qpc_ev,qrc_ev,qbg,qpp,
+    171      +                            uob_ev,vob_ev,wqm_ev,wpc_ev,wrc_ev,
+
+Page 4           Source Listing                  OUTPUT_ACQC_PROF
+2017-04-18 11:09                                 output_acqc_prof.f
+
+    172      +                            wbg,wpp,ddo_ev,ffo_ev,dfq_ev,dfp_ev,
+    173      +                            dfr_ev,nrlacqc_pc,l_allev_pf,
+    174      +                            l_prof1lvl,l_mandlvl,tsplines,
+    175      +                            l_operational,lwr)
+    176 
+    177       implicit none
+    178       integer mevwrt(1)   ! DAK: This is a "dummy" variable, not used anywhere.  For some
+    179                           !      reason if one removes this, moves it to any other place in
+    180                           !      this subr., changes the dimension, or does not initialize it
+    181                           !      as zero (look below)  the compiler can fail under -O3 with
+    182                           !      debugging turned on ("An error occurred during code
+    183                           !      generation.  The code generation return code was 40." 
+    184                           !     "Compilation failed for file output_acqc_prof.f."
+    185 
+    186 c ------------------------------
+    187 c Parameter statements/constants
+    188 c ------------------------------
+    189       integer    proflun              ! output unit number for post-PREPACQC PREPBUFR-like
+    190                                       !  file containing merged profile reports (always) and
+    191                                       !  single(flight)-level reports not part of any profile
+    192                                       !  (when l_prof1lvl=T) with added NRLACQC events
+    193 
+    194       integer    max_reps             ! maximum number of input merged (mass + wind piece)
+    195                                       !  aircraft-type reports allowed
+    196 cvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+    197 c replace above with this in event of future switch to dynamic memory allocation
+    198 
+    199 calloc  integer    max_reps           ! original number of input reports obtained from
+    200 calloc                                !  first pass through to get total for array allocation
+    201 c^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    202       real*8     bmiss                ! BUFRLIB missing value (set in main program)
+    203 
+    204 c ----------------------
+    205 c Declaration statements
+    206 c ----------------------
+    207 
+    208 c Variables for BUFRLIB interface
+    209 c -------------------------------
+    210       character*10 cdtg_an            ! date-time group for analysis (YYYYMMDDCC)
+    211                                       !  (all messages in a PREPBUFR-like file should have
+    212       integer      icdtg_an           !   same YYYYMMDDCC)
+    213 
+    214 c Indices/counters 
+    215 c ----------------
+    216       integer      i,j,k,ii           ! loop indices
+    217 
+    218       integer      nrpts4QC_pre       ! original number of input merged (mass + wind piece)
+    219                                       !  aircraft-type reports (read in from PREPBUFR file)
+    220 
+    221       integer      sortidx(max_reps)  ! index if reports are to be written back out in a 
+    222                                       !  certain order (determined by calling routine)
+    223 
+    224       character*11 c_qc(max_reps)     ! character QC flags output from NRL QC code
+    225                                       !   1st char - info about reject (if ob was rejected)
+    226                                       !   2nd char - reason why time was rejected
+    227                                       !   3rd char - reason why latitude was rejected
+    228                                       !   4th char - reason why longitude was rejected
+
+Page 5           Source Listing                  OUTPUT_ACQC_PROF
+2017-04-18 11:09                                 output_acqc_prof.f
+
+    229                                       !   5th char - reason why pressure/atitude was rejected
+    230                                       !   6th char - readon why temperature was rejected
+    231                                       !   7th char - reason why wind direction was rejected
+    232                                       !   8th char - reason why wind speed was rejected
+    233                                       !   9th char - reason why mixing ratio was rejected
+    234                                       !  10th char - reason for blacklisting the aircraft
+    235                                       !  11th char - info about flight phase
+    236 
+    237       real*8       alat(max_reps)     ! latitude
+    238      +,            alon(max_reps)     ! longitude
+    239       real         ht_ft(max_reps)    ! altitude in feet
+    240 
+    241       integer      idt(max_reps)      ! time in seconds to anal. time (- before, + after)
+    242       character*8  c_acftreg(max_reps)! aircraft registration (tail) number as used in NRL
+    243                                       !  QC processing
+    244       character*9  c_acftid(max_reps) ! aircraft flight number as used in NRL QC processing
+    245 
+    246       real         ob_t(max_reps)     ! temperature
+    247 
+    248 c Logicals controlling processing (read in from namelist in main program)
+    249 c -----------------------------------------------------------------------
+    250       real      trad            ! Time window radius for outputting reports (if l_otw=T)
+    251       logical   l_otw           ! T=eliminate reports outside cycle time window radius (trad)
+    252      +,         l_nhonly        ! T=filter out obs outside tropics and Northern Hemisphere
+    253      +,         l_allev_pf      ! T=process latest (likely NRLACQC) events plus all prior
+    254                                 !   events into profiles PREPBUFR-like file
+    255                                 !   **CAUTION: More complete option, but will make code take
+    256                                 !              longer to run!!!
+    257                                 ! F=process ONLY latest (likely NRLACQC) events into profiles
+    258                                 !   PREPBUFR-like file
+    259                                 !
+    260                                 ! Note : All pre-existing events plus latest (likely NRLACQC)
+    261                                 !        events are always encoded into full PREPBUFR file)
+    262 
+    263      +,         l_prof1lvl      ! T=encode merged single(flight)-level aircraft reports with
+    264                                 !   NRLACQC events that are not part of any profile into
+    265                                 !   PREPBUFR-like file, along with merged profiles from
+    266                                 !   aircraft ascents and descents
+    267                                 !   **CAUTION: Will make code take a bit longer to run!!
+    268                                 ! F=do not encode merged single(flight)-level aircraft
+    269                                 !   reports with NRLACQC events into PREPBUFR-like file -
+    270                                 !   only merged profiles from aircraft ascents and descents
+    271                                 !   will be encoded into this file
+    272      +,         l_mandlvl       ! T=interpolate to mandatory levels in profile generation
+    273                                 ! F=do not interpolate to mandatory levels in profile
+    274                                 !   generation
+    275      +,         tsplines        ! T=use tension-splines for aircraft vertical velocity
+    276                                 !   calculation
+    277                                 ! F=use finite-differencing for aircraft vertical velocity
+    278                                 !   calculation
+    279 
+    280 
+    281 c Logicals controlling processing (not read in from namelist in main program)
+    282 c ---------------------------------------------------------------------------
+    283       logical   l_operational   ! Run program  in operational mode if true
+    284 
+    285 c Counters
+
+Page 6           Source Listing                  OUTPUT_ACQC_PROF
+2017-04-18 11:09                                 output_acqc_prof.f
+
+    286 c --------
+    287       integer   elim_knt(3)     ! Count of reports eliminated and kept
+    288                                 !   1 - # of merged reports outside time radius (prior to any
+    289                                 !         geographical domain checking)
+    290                                 !   2 - # of merged reports outside geographical domain (had
+    291                                 !         passed time window radius check)
+    292                                 !   3 - # of merged reports passing both time window radius
+    293                                 !         and geographical domain checks and thus retained
+    294                                 !         for eventual processing into PREPBUFR-like profiles
+    295                                 !         file
+    296 
+    297 c Variables used to write data to output PREPBUFR-like file in sorted order
+    298 c -------------------------------------------------------------------------
+    299       character*8 msgtyp2wrt       ! BUFR message type to write to output PREPBUFR-like file
+    300 
+    301       integer      mxlv            ! maximum number of report levels allowed in aircraft
+    302                                    !  profiles
+    303       character*6  cmxlv           ! character form of mxlv
+    304 
+    305       integer mxnmev               ! maximum number of events allowed in stack
+    306 
+    307       integer lvlsinprof(mxlv)     ! array containing a list of pressure levels that are
+    308                                    !  present in the current profile
+    309 
+    310       logical l_newprofile         ! T = start a new profile
+    311 
+    312       integer nprofiles	           ! number of "profile" reports identified
+    313      +,       nprofiles_encoded    ! number of "profile" reports actually encoded into
+    314                                    !  PREPBUFR-like file 
+    315      +,       mxe4prof             ! maximum number of events in a single-level merged report
+    316                                    !  (i.e., the maximum amongst the number of pressure,
+    317                                    !  moisture, temperature, altitude, u/v wind and dir/speed
+    318                                    !  wind events)
+    319      +,       nlvinprof	           ! number of levels in a profile
+    320      +,       nlvinprof_last       ! index for level number of last level (for duplicate
+    321                                    !  pressure level removal option #1)
+    322      +,       nlvinprof_temp       ! temporary level number index needed for duplicate
+    323                                    !  pressure level removal
+    324 
+    325       character*8   tail_curr,     ! aircraft registration (tail) number of current report
+    326      +              tail_prev      ! aircraft registration (tail) number of previous report
+    327 
+    328       character*9   flt_curr,      ! flight number of current report
+    329      +              flt_prev       ! flight number of previous report
+    330 
+    331       real          elv_curr,      ! elevation of current report
+    332      +              elv_prev       ! elevation of previous report
+    333 
+    334       integer       idt_curr,      ! time of current report
+    335      +	            idt_prev       ! time of previous report
+    336 
+    337       integer       idz_curr,      ! altitude of current report
+    338      +              idz_prev       ! altitude of previous report
+    339 
+    340       real*8   hdr2wrt(15)              ! array used to pass header info to subroutine
+    341                                         !  sub2mem_mer 
+    342       character*8 c_sid                 ! SID from PREPBUFR file = Site ID
+
+Page 7           Source Listing                  OUTPUT_ACQC_PROF
+2017-04-18 11:09                                 output_acqc_prof.f
+
+    343       equivalence(c_sid,hdr2wrt(1))
+    344 
+    345       real*8   drinfo_accum(3,mxlv)	! array used to accumulate drift info across profile
+    346                                         !  levels
+    347 
+    348       real*8   acft_seq_accum(2,mxlv)   ! array used to accumulate ACFT_SEQ (PCAT -
+    349                                         !  temperature precision, POAF - phase of flight)
+    350                                         !  info across profile levels
+    351      +,	       mstq_accum(1,mxlv)       ! array used to accumulate moisture QC marks across
+    352                                         !  profile levels
+    353      +,	       cat_accum(1,mxlv)        ! array used to accumulate level category markers
+    354                                         !  across profile levels
+    355      +,	       elv_accum(1,mxlv)        ! array used to accumulate elevation across profile
+    356                                         !  levels
+    357      +,	       rpt_accum(1,mxlv)        ! array used to accumulate reported obs time across
+    358                                         !  profile levels
+    359      +,	       tcor_accum(1,mxlv)       ! array used to accumulate time correction indicator
+    360                                         !  across profile levels
+    361      +,	       rct_accum(1,mxlv)        ! array used to accumulate receipt time across
+    362                                         !  profile levels
+    363 
+    364       real*8   pevn_accum(4,mxlv,mxnmev)! array used to accumulate pressure data/events for a
+    365                                         !  single profile, across profile levels
+    366      +,	       pbg_accum(3,mxlv)        ! array used to accumulate pressure background info
+    367                                         !  (POE, PFC, PFCMOD) for a single profile, across
+    368                                         !  profile levels
+    369      +,        ppp_accum(3,mxlv)        ! array used to accumulate pressure post-processing
+    370                                         !  info (PAN, PCL, PCS) for a single profile, across
+    371                                         !  profile levels
+    372 
+    373       real*8   qevn_accum(4,mxlv,mxnmev)! array used to accumulate moisture data/events for a
+    374                                         !  single profile, across profile levels
+    375      +,        qbg_accum(3,mxlv)        ! array used to accumulate moisture background info
+    376                                         !  (QOE, QFC, QFCMOD) for a single profile, across
+    377                                         !  profile levels
+    378      +,        qpp_accum(3,mxlv)        ! array used to accumulate moisture post-processing
+    379                                         !  info (QAN, QCL, QCS) for a single profile, across
+    380                                         !  profile levels
+    381 
+    382       real*8   tevn_accum(4,mxlv,mxnmev)! array used to accumulate temperature data/events
+    383                                         !  for a single profile, across profile levels
+    384      +,	       tbg_accum(3,mxlv)        ! array used to accumulate temperature background
+    385                                         !  info (TOE, TFC, TFCMOD) for a single profile,
+    386                                         !  across profile levels
+    387      +,        tpp_accum(3,mxlv)	! array used to accumulate temperature post-
+    388                                         !  processing info (TAN, TCL, TCS) for a single
+    389                                         !  profile, across profile levels
+    390 
+    391       real*8   zevn_accum(4,mxlv,mxnmev)! array used to accumulate altitude data/events for a
+    392                                         !  single profile, across profile levels
+    393      +,        zbg_accum(3,mxlv)        ! array used to accumulate altitude background info
+    394                                         !  (ZOE, ZFC, ZFCMOD) for a single profile, across
+    395                                         !  profile levels
+    396      +,        zpp_accum(3,mxlv)        ! array used to accumulate altitude post-processing
+    397                                         !  info (ZAN, ZCL, ZCS) for a single profile, across
+    398                                         !  profile levels
+    399 
+
+Page 8           Source Listing                  OUTPUT_ACQC_PROF
+2017-04-18 11:09                                 output_acqc_prof.f
+
+    400       real*8   wuvevn_accum(5,mxlv,mxnmev)! array used to accumulate wind data/events (u/v
+    401                                           !  components) for a single profile, across profile
+    402                                           !  levels
+    403      +,        wuvbg_accum(5,mxlv)      ! array used to accumulate wind background info (WOE,
+    404                                         !  UFC, VFC, UFCMOD, VFCMOD)  for a single profile,
+    405                                         !  across profile levels
+    406      +,        wuvpp_accum(6,mxlv)      ! array used to accumulate wind post-processing info
+    407                                         !  (UAN, VAN, UCL, VCL, UCS, VCS) for a single
+    408                                         !  profile, across profile levels
+    409 
+    410       real*8   wdsevn_accum(5,mxlv,mxnmev)! array used to accumulate wind data/events
+    411                                           !  (direction/speed) for a single profile, across
+    412                                           !  profile levels
+    413 
+    414       character*11 c_qc_accum(mxlv)    ! array used to accumulate NRLACQC quality information
+    415                                        !  on individual obs in a profile, across profile
+    416                                        !  levels
+    417 
+    418 c Summary counters
+    419 c ----------------
+    420       integer num_events_prof          ! total number of events on an ob, across all levels,
+    421                                        !  across all reports, written in the PREPBUFR-like
+    422                                        !  (profiles) file (this value is the same for each
+    423                                        !  ob type)
+    424 
+    425 c Mandatory levels settings
+    426 c -------------------------
+    427       integer maxmandlvls              ! maxmum number of mandatory pressure levels to
+    428                                        !  consider for aircraft profiles
+    429       parameter(maxmandlvls = 9)
+    430 
+    431       integer mandlvls(maxmandlvls)    ! list of mandatory pressure levels to consider for
+    432                                        !  aircraft profiles
+    433 
+    434       data mandlvls/1000,1500,2000,3000,4000,5000,7000,8500,10000/
+    435 
+    436 c Variables used to hold original aircraft data read from input PREPBUFR file - necessary for
+    437 c  carrying data through program so that it can be later written to output PREPBUFR-like
+    438 c  profiles file from memory instead of going back to input PREPBUFR file and re-reading that
+    439 c  file before adding any NRLACQC events
+    440 c -------------------------------------------------------------------------------------------
+    441       integer nevents(max_reps,6)     ! array tracking number of events for variables for
+    442                                       ! each report:
+    443                                       !   1 - number of pressure events
+    444                                       !   2 - number of moisture events
+    445                                       !   3 - number of temperature events
+    446                                       !   4 - number of altitude events
+    447                                       !   5 - number of wind (u/v) events
+    448                                       !   6 - number of wind (direction/speed) events
+    449 
+    450       real*8  pob_ev(max_reps,mxnmev) ! POB values for each report, including all events
+    451      +,       pqm_ev(max_reps,mxnmev) ! PQM values for each report, including all events
+    452      +,       ppc_ev(max_reps,mxnmev) ! PPC values for each report, including all events
+    453      +,       prc_ev(max_reps,mxnmev) ! PRC values for each report, including all events
+    454      +,       zob_ev(max_reps,mxnmev) ! ZOB values for each report, including all events
+    455      +,       zqm_ev(max_reps,mxnmev) ! ZQM values for each report, including all events
+    456      +,       zpc_ev(max_reps,mxnmev) ! ZPC values for each report, including all events
+
+Page 9           Source Listing                  OUTPUT_ACQC_PROF
+2017-04-18 11:09                                 output_acqc_prof.f
+
+    457      +,       zrc_ev(max_reps,mxnmev) ! ZRC values for each report, including all events
+    458      +,       tob_ev(max_reps,mxnmev) ! TOB values for each report, including all events
+    459      +,       tqm_ev(max_reps,mxnmev) ! TQM values for each report, including all events
+    460      +,       tpc_ev(max_reps,mxnmev) ! TPC values for each report, including all events
+    461      +,       trc_ev(max_reps,mxnmev) ! TRC values for each report, including all events
+    462      +,       qob_ev(max_reps,mxnmev) ! QOB values for each report, including all events
+    463      +,       qqm_ev(max_reps,mxnmev) ! QQM values for each report, including all events
+    464      +,       qpc_ev(max_reps,mxnmev) ! QPC values for each report, including all events
+    465      +,       qrc_ev(max_reps,mxnmev) ! QRC values for each report, including all events
+    466      +,       uob_ev(max_reps,mxnmev) ! UOB values for each report, including all events
+    467      +,       vob_ev(max_reps,mxnmev) ! VOB values for each report, including all events
+    468      +,       wqm_ev(max_reps,mxnmev) ! WQM values for each report, including all events
+    469      +,       wpc_ev(max_reps,mxnmev) ! WPC values for each report, including all events
+    470      +,       wrc_ev(max_reps,mxnmev) ! WRC values for each report, including all events
+    471      +,       ddo_ev(max_reps,mxnmev) ! DDO values for each report, including all events
+    472      +,       ffo_ev(max_reps,mxnmev) ! FFO values for each report, including all events
+    473      +,       dfq_ev(max_reps,mxnmev) ! DFQ values for each report, including all events
+    474      +,       dfp_ev(max_reps,mxnmev) ! DFP values for each report, including all events
+    475      +,       dfr_ev(max_reps,mxnmev) ! DFR values for each report, including all events
+    476 
+    477      +,       hdr(max_reps,15)        ! SID XOB YOB DHR ELV TYP T29 TSB ITP SQN PROCN RPT
+    478                                       !  TCOR RSRD EXRSRD
+    479      +,       acid(max_reps)          ! ACID
+    480      +,       rct(max_reps)           ! RCT
+    481      +,       mstq(max_reps)          ! MSTQ
+    482      +,       cat(max_reps)           ! CAT
+    483 
+    484      +,       pbg(max_reps,3)         ! POE PFC PFCMOD
+    485      +,       zbg(max_reps,3)         ! ZOE ZFC ZFCMOD
+    486      +,       tbg(max_reps,3)         ! TOE TFC TFCMOD
+    487      +,       qbg(max_reps,3)         ! QOE QFC QFCMOD
+    488      +,       wbg(max_reps,5)         ! WOE UFC VFC UFCMOD VFCMOD
+    489 
+    490      +,       ppp(max_reps,3)         ! PAN PCL PCS
+    491      +,       zpp(max_reps,3)         ! ZAN ZCL ZCS
+    492      +,       tpp(max_reps,3)         ! TAN TCL TCS
+    493      +,       qpp(max_reps,3)         ! QAN QCL QCS
+    494      +,       wpp(max_reps,6)         ! UAN VAN UCL VCL UCS VCS
+    495 
+    496      +,       drinfo(max_reps,3)      ! XOB YOB DHR
+    497      +,       acft_seq(max_reps,2)    ! PCAT POAF
+    498 
+    499       real*8  acid_last_profile       ! ACID (aircraft flight number) for last (or only)
+    500                                       !  MDCRS or AMDAR (LATAM only) report in profile (passed
+    501                                       !  into subroutine sub2mem_mer)
+    502 
+    503       character*9  c_acftid_last_profile  ! aircraft flight number (as processed by NRL QC
+    504                                           !  procesing) for last (or only) report in profile
+    505                                           !  (passed into subroutine sub2mem_mer for printing
+    506                                           !  purposes only)
+    507 
+    508       character*8  c_acftreg_last_profile ! aircraft tail number (as processed by NRL QC
+    509                                           !  procesing) for last (or only) report in profile
+    510                                           !  (passed into subroutine sub2mem_mer for printing
+    511                                           !  purposes only)
+    512 
+    513       real    del_time                ! report time difference between two levels, used by
+
+Page 10          Source Listing                  OUTPUT_ACQC_PROF
+2017-04-18 11:09                                 output_acqc_prof.f
+
+    514                                       !  profile gross check
+    515      +,       del_hght                ! report time difference between two levels, used by
+    516                                       !  profile gross check
+    517      +,       vvel                    ! vertical velocity between two levels, used by profile
+    518                                       !  gross check
+    519 
+    520 c Misc.
+    521 c -----
+    522       integer i_option                ! Duplicate pressure removal option (1 or 2)
+    523      +,       lwr                     ! machine word length in bytes (either 4 or 8)
+    524 
+    525       real    nrlacqc_pc              ! PREPBUFR program code for the NRLACQC step
+    526 
+    527 ccccc integer iprint                  ! Switch controlling extra diagnostic printout
+    528 
+    529 c *******************************************************************
+    530 
+    531 c Initialize variables
+    532 c --------------------
+    533 
+    534       tail_prev = 'XXXXXXXX'
+    535       flt_prev = 'XXXXXXXXX'
+    536       elv_prev = 99999
+    537       idt_prev = 99999
+    538       idz_prev = 99999
+    539 
+    540       mxe4prof       = 0
+    541       nlvinprof      = 0
+    542       nlvinprof_last = 0
+    543 
+    544       lvlsinprof = 99999
+    545 
+    546       pevn_accum = bmiss 
+    547       pbg_accum  = bmiss 
+    548       ppp_accum  = bmiss 
+    549 	
+    550       tevn_accum = bmiss 
+    551       tbg_accum  = bmiss 
+    552       tpp_accum  = bmiss 
+    553 
+    554       qevn_accum = bmiss 
+    555       qbg_accum  = bmiss 
+    556       qpp_accum  = bmiss 
+    557 	
+    558       zevn_accum = bmiss 
+    559       zbg_accum  = bmiss 
+    560       zpp_accum  = bmiss 
+    561 
+    562       wuvevn_accum = bmiss 
+    563       wuvbg_accum  = bmiss 
+    564       wuvpp_accum  = bmiss 
+    565 
+    566       wdsevn_accum = bmiss 
+    567 
+    568       drinfo_accum   = bmiss
+    569       acft_seq_accum = bmiss
+    570       mstq_accum     = bmiss 
+
+Page 11          Source Listing                  OUTPUT_ACQC_PROF
+2017-04-18 11:09                                 output_acqc_prof.f
+
+    571       cat_accum      = bmiss 
+    572       elv_accum      = bmiss 
+    573       rpt_accum      = bmiss 
+    574       tcor_accum     = bmiss 
+    575       rct_accum      = bmiss 
+    576 
+    577       c_qc_accum = 'XXXXXXXXXXX'
+    578 
+    579       hdr2wrt = bmiss 
+    580 
+    581       acid_last_profile      = bmiss
+    582       c_acftid_last_profile  = '         '
+    583       c_acftreg_last_profile = '        '
+    584 
+    585       nprofiles         = 0
+    586       nprofiles_encoded = 0
+    587       mevwrt            = 0 ! DAK: This is a "dummy" variable, not used anywhere.  For some
+    588                             !      reason if one removes this, moves its declaration (look
+    589                             !      above) to any other place in this subr., changes the
+    590                             !      dimension, or does not initialize it as zero (here) the
+    591                             !      CCS XLF compiler can fail under -O3 with debugging turned
+    592                             !      on ("An error occurred during code generation.  The code
+    593                             !      generation return code was 40." "Compilation failed for
+    594                             !      file output_acqc_prof.f."  -- Not sure what might happen
+    595                             !      with ifort compiler on WCOSS
+    596 
+    597       elim_knt          = 0
+    598       num_events_prof   = 0
+    599 
+    600 
+    601 c Start subroutine
+    602 c ----------------
+    603       write(*,*)
+    604       write(*,*) '***************************'
+    605       write(*,*) 'Welcome to output_acqc_prof'
+    606       call system('date')
+    607       write(*,*) '***************************'
+    608       write(*,*)
+    609 
+    610       write(*,*)
+    611       write(*,'(" --> Output to PREPBUFR-like file (holding merged QCd",
+    612      +          " aircraft profile rpts & when l_prof1lvl=T single",
+    613      +          "(flight)-level aircraft rpts)")')
+    614       write(*,*)
+    615 
+    616       if(.not.l_operational) then  ! this is currently invoked because l_operational
+    617                                    !  is hardwired to F for l_ncep=T
+    618 
+    619 c Write merged profile reports and resulting QC decisions to an output file for later perusal
+    620 c -------------------------------------------------------------------------------------------
+    621 
+    622         open(52,file='merged.profile_reports.post_acftobs_qc.sorted',
+    623      +       form='formatted')
+    624         write(52,*)
+    625         write(52,'(" Final listing of all aircraft profile reports in ",
+    626      +             "pseudo-PREPBUFR file after NRLACQC")')
+    627         write(52,'(" -------------------------------------------------",
+
+Page 12          Source Listing                  OUTPUT_ACQC_PROF
+2017-04-18 11:09                                 output_acqc_prof.f
+
+    628      +             "----------------------------------")')
+    629         write(52,*)
+    630         write(52,'(" TAMDAR reports here replace characters 1-3 of ",
+    631      +             "manufactured flight # (''000'') with (''TAM'') in ",
+    632      +             "order to create truncated tail # ''TAM'' for ",
+    633      +             "NRLACQC sorting - the PREPBUFR file continues to ",
+    634      +             "encode ''000'' in")')
+    635         write(52,'("  characters 1-3 of manufactured flight # for ",
+    636      +             "TAMDAR (stored as both ''SID'' and ''ACID'')")')
+    637 
+    638         write(52,*)
+    639         write(52,'(" AIREP and PIREP reports report only a flight # ",
+    640      +             "(manufactured for PIREPs) - a tail # for NRLACQC ",
+    641      +             "sorting is created by truncating the flight # - ",
+    642      +             "the PREPBUFR file will not encode these truncated ",
+    643      +             "tail #''s")')
+    644 
+    645         write(52,*)
+    646         write(52,'(" All AMDAR reports except LATAM report only a tail",
+    647      +            " # - this is stored as both flight # and tail # for",
+    648      +             " NRLACQC sorting - the PREPBUFR file continues to ",
+    649      +             "encode only tail # (stored in ''SID'')")')
+    650         write(52,*)
+    651         write(52,'(" AMDAR reports from LATAM report both a tail # and",
+    652      +             " a flight # - these are used as reported for ",
+    653      +             "NRLACQC sorting - the PREPBUFR file continues to ",
+    654      +             "encode both tail # and flight # (as ''SID'' and ",
+    655      +             "''ACID'',")')
+    656         write(52,*) 'resp.)'
+    657         write(52,*)
+    658         write(52,'(" MDCRS reports from ARINC report both a tail # and",
+    659      +             " a flight # - these are used as reported for",
+    660      +             " NRLACQC sorting - the PREPBUFR file continues to ",
+    661      +             "encode both tail # and flight # (as ''SID'' and ",
+    662      +             "''ACID'',")')
+    663         write(52,*) 'resp.)'
+    664 
+    665         write(52,*)
+    666         write(52,3001)
+    667  3001   format(172x,'! _PREPBUFR_QMs_!NRLACQC_REASON_CODE'/
+    668      +         'index flight    tail num itp pf       lat       lon',
+    669      +         '    time  hght   pres temp/evnt spec_h/evnt  uwnd   ',
+    670      +         'vwnd/evnt t-prec !__qc_flag__!rcptm mstq cat  wspd ',
+    671      +         'wdir rtyp         ! Pq Zq Tq Qq Wq!Prc Zrc Trc Qrc ',
+    672      +         'Wrc'/
+    673      +         '----- --------- -------- --- --   -------- --------',
+    674      +         '- ------ ----- ------ --------- ----------- ------  ',
+    675      +         '--------- ------  -----------!----- ---- --- ----- ',
+    676      +         '---- ----         ! -- -- -- -- --!--- --- --- --- ',
+    677      +         '---')
+    678       endif
+    679 C--------------------------------------------------------------------------------------------
+    680 C  Options for handling duplicate pressures read in for a profile:
+    681 C  Option 1: For duplicate pressures read in for a profile, the first duplicate read in is
+    682 C            tossed and the second one is kept.  Note: This is how the code originally
+    683 C            performed this duplicate check.  Updated logic to make code run faster may cause
+    684 C            this option to not always work as expected - not sure.  Also, when debugging is
+
+Page 13          Source Listing                  OUTPUT_ACQC_PROF
+2017-04-18 11:09                                 output_acqc_prof.f
+
+    685 C            turned on, this option may not compile unless -qhot is added to FFLAGS in
+    686 C            makefile (not always the case, however).
+    687 C  Option 2: For duplicate pressures read in for a profile, the second duplicate read in is
+    688 C            tossed.  This appears to be less problematic than option 1.
+    689 C  Currently Option 2 is selected in this code.
+    690       i_option = 2
+    691 C--------------------------------------------------------------------------------------------
+    692 
+    693 c Now, loop over NRLACQC arrays and write aircraft type reports to output file in sorted
+    694 c  order as specified by sortidx
+    695 c --------------------------------------------------------------------------------------
+    696       loop1: do i = 1,nrpts4QC_pre
+    697         j = sortidx(i)
+    698 
+    699 ccccc   print 4077, j,acid(j),rct(j)
+    700 c4077   format(1x,'for j = ',i6,', acid(j) = ',a8,', rct(j) = ',f10.3)
+    701 
+    702 c Check to be sure the report is within the requested time window (defined by namelist switch
+    703 c  trad) and it is within the requested geographical domain (here north of 20S latitude, if
+    704 c  namelist switch l_nhonly is true)
+    705 c  {Note: alat(j) and idt(j) will have already been updated with rehabilitated values if
+    706 c         NRLACQC performed this task, so these checks will be more precise ...}
+    707 c -------------------------------------------------------------------------------------------
+    708 
+    709         if(l_otw) then ! check if report is outside time window (prior to any geographical
+    710                        !  domain checking)
+    711           if(idt(j).lt.-trad*3600..or.idt(j).gt.trad*3600.) then
+    712 	    elim_knt(1) = elim_knt(1) + 1
+    713             cycle ! skip processing of this report, move on to next report
+    714           endif
+    715         endif
+    716 
+    717         if(l_nhonly) then ! if report passed time window radius check, then check to see if
+    718                           !  it is outside geographical domain (i.e., south of 20S)
+    719           if(alat(j).lt.-20.0) then
+    720 	    elim_knt(2) = elim_knt(2) + 1
+    721             cycle ! skip processing of this report, move on to next report
+    722           endif
+    723         endif
+    724 
+    725 c If this point is reached, the report is not to be eliminated
+    726 c ------------------------------------------------------------
+    727 ccccc   print *, 'keep this report!'
+    728 
+    729 c Counter for number of merged reports kept
+    730         elim_knt(3) = elim_knt(3) + 1
+    731 
+    732 c Check if this ob should be included in current profile
+    733 c ------------------------------------------------------
+    734         l_newprofile = .false.
+    735 
+    736         tail_curr = c_acftreg(j)
+    737         flt_curr  = c_acftid(j)
+    738         elv_curr  = ht_ft(j)
+    739         idt_curr  = idt(j)
+    740         idz_curr  = zob_ev(j,nevents(j,4))
+    741 
+
+Page 14          Source Listing                  OUTPUT_ACQC_PROF
+2017-04-18 11:09                                 output_acqc_prof.f
+
+    742         if(tail_curr.eq.tail_prev .and.flt_curr.eq.flt_prev) then   ! report may be part of current profile; need to make
+    743                                         !  sure it's not the start of a separate profile from
+    744                                         !  the same aircraft and flight
+    745 
+    746 ccccc     iprint=0
+    747 ccccc     if(tail_curr.eq.'MSHWUURA ') iprint=1
+    748 ccccc     if(flt_curr.eq.'AFZA41   ') iprint=1
+    749 
+    750 c By this point, reports have been sorted with a sort key of:
+    751 c
+    752 c  type//phase-of-flight//tail//flight//time//elevation//lat//lon
+    753 c
+    754 c  (see csort_wbad in main program) - phase-of-flight in c_qc(11:11) indicates that the
+    755 c  report is indeed part of an ascent or descent - if tail and flight number are equal, check
+    756 c  for elev(n)<= for ascents (c_qc(11:11) = a or A) and for elev(n) >=elev(n-1) for descents
+    757 c  (c_qc(11:11) = d or D) -- reaching these elevation criteria will signal the start of a new
+    758 c  profile
+    759 c -------------------------------------------------------------------------------------------
+    760           if(
+    761      +	   ((c_qc(j)(11:11).eq.'a' .or.
+    762      +	     c_qc(j)(11:11).eq.'A') .and.
+    763      +	    (elv_curr .lt. elv_prev)) .or.  ! new profile from the same aircraft/flight
+    764      +       c_qc(j)(11:11).eq.'I'    .or.  !  perhaps the aircraft made a stop
+    765      +       c_qc(j)(11:11).eq.'L'    .or.  !  somewhere and the flight number didn't
+    766      +       c_qc(j)(11:11).eq.'N'    .or.  !  change - or, this report is isolated (I),
+    767      +       c_qc(j)(11:11).eq.'U'    .or.  !  level (L), or its ascent/descent status is
+    768      +	     c_qc(j)(11:11).eq.'-'    .or.  !  unknown (U).  Need to close off the
+    769      +	   ((c_qc(j)(11:11).eq.'d' .or.     !  current profile, write it to output,
+    770      +	     c_qc(j)(11:11).eq.'D') .and.   !  and start a new one
+    771      +	    (elv_curr .gt. elv_prev))     
+    772      +	    ) then
+    773 
+    774 ccccc       if(iprint.eq.1)  print *,'new profile - same flight number'
+    775 
+    776 	    l_newprofile = .true.
+    777 	    nprofiles = nprofiles + 1
+    778 
+    779           else  
+    780 
+    781 ccccc       if(iprint.eq.1)  print *,'keep accumulating'
+    782 
+    783                  ! keep accumulating data into the current profile
+    784 
+    785 c Perform a gross check on the report times of adjacent levels in the "profile" ...
+    786 C  Stop accumulating levels and start a new profile on this level if either:
+    787 C     1) The report time difference between this level and the previous level is > 1500 sec
+    788 C     2) The report time difference between this level and the previous level is > 1000 sec
+    789 C        and </= 1500 sec and the calculated vertical velocity magnitude is < 1.0 m/s {where
+    790 C        vertical velocity magnitude = abs(altitude this level minus altitude previous level)
+    791 C        divided by abs(time this level minus time previous level)}
+    792 
+    793             if(abs(idt_curr-idt_prev).gt.1000) then
+    794               if(abs(idt_curr-idt_prev).le.1500) then
+    795                 del_time = abs(idt_curr-idt_prev)
+    796                 del_hght = abs(idz_curr-idz_prev)
+    797                 vvel = del_hght/del_time
+    798                 if(vvel.lt.1.00) then
+
+Page 15          Source Listing                  OUTPUT_ACQC_PROF
+2017-04-18 11:09                                 output_acqc_prof.f
+
+    799                   print 66, idt_curr,idt_prev,tail_curr,flt_curr,j,
+    800      +                      sortidx(i-1),idz_curr,idz_prev,vvel
+    801    66 format(' Gross time chk exceeded (start new profile): idt_curr ',
+    802      + 'idt_prev tail_curr flt_curr index_curr index_prev idz_curr ',
+    803      + 'idz_prev vvel(m/s)'/48x,i6,3x,i6,2x,a8,2x,a9,2x,i6,5x,i6,4x,i5,
+    804      + 4x,i5,3x,f7.3/)
+    805 	          l_newprofile = .true.
+    806 	          nprofiles = nprofiles + 1
+    807                 endif
+    808               else
+    809                 print 67, idt_curr,idt_prev,tail_curr,flt_curr,j,
+    810      +                    sortidx(i-1)
+    811    67 format(' Gross time chk exceeded (start new profile): idt_curr ',
+    812      + 'idt_prev tail_curr flt_curr index_curr index_prev'/,48x,i6,3x,
+    813      + i6,2x,a8,2x,a9,2x,i6,5x,i6/)
+    814 	        l_newprofile = .true.
+    815 	        nprofiles = nprofiles + 1
+    816               endif
+    817             endif
+    818 
+    819           endif
+    820 
+    821         else ! tail, flights not equal, start a new profile
+    822 
+    823 ccccc     if(iprint.eq.1)  print *,'new profile - new flight number'
+    824 
+    825 
+    826 	  l_newprofile = .true.
+    827 	  nprofiles = nprofiles + 1
+    828 
+    829         endif ! check if tail, flights equal for current and previous reports
+    830 
+    831 	if(l_newprofile.and.nprofiles.gt.1) then ! need to close off current profile and
+    832                                                  !  write to output
+    833           if(l_prof1lvl.or.nlvinprof.gt.1) then
+    834 
+    835 c Open message if necessary
+    836 c -------------------------
+    837             call openmb(proflun,msgtyp2wrt,icdtg_an)
+    838 
+    839 c Store contents of the current observation (profile or single/flight-level) into BUFRLIB
+    840 c  memory via subroutine sub2mem_mer
+    841 c ---------------------------------------------------------------------------------------
+    842 
+    843 ccccc       if(iprint.eq.1)  print *,'call sub2mem_mer - 1st location'
+    844 
+    845 ccccc       print 4078, sortidx(i-1),acid(sortidx(i-1)),acid_last_profile
+    846 c4078       format(1x,'1-call sub2mem_mer, last report j-1 = ',i6,
+    847 ccccc+             ', acid(j-1) = ',a8,', acid_last_profile = ',a8)
+    848 ccccc       if(iprint.eq.1)
+    849 ccccc+       print *, 'rct_accum: ',rct_accum(1,1),rct_accum(1,2),
+    850 ccccc+                rct_accum(1,3),rct_accum(1,4),
+    851 ccccc+                rct_accum(1,5),rct_accum(1,6),
+    852 ccccc+                rct_accum(1,7),rct_accum(1,8),
+    853 ccccc+                rct_accum(1,9),rct_accum(1,10),
+    854 ccccc+                rct_accum(1,11),rct_accum(1,12)
+    855 
+
+Page 16          Source Listing                  OUTPUT_ACQC_PROF
+2017-04-18 11:09                                 output_acqc_prof.f
+
+    856             call sub2mem_mer(proflun,bmiss,mxlv,mxnmev,maxmandlvls,
+    857      +                       mandlvls,msgtyp2wrt,hdr2wrt,
+    858      +	                     acid_last_profile, ! use ACID of last (or only) report in profile
+    859      +	                     c_acftid_last_profile, ! use aircraft flight # (from NRLACQC) of
+    860                                                     ! last (or only) report in profile
+    861      +                       c_acftreg_last_profile,! use aircraft tail # (from NRLACQC) of
+    862                                                     ! last (or only) report in profile
+    863      +                       rct_accum,drinfo_accum,acft_seq_accum,
+    864      +                       mstq_accum,cat_accum,elv_accum,rpt_accum,
+    865      +                       tcor_accum,
+    866      +                       pevn_accum,pbg_accum,ppp_accum,
+    867      +                       qevn_accum,qbg_accum,qpp_accum,
+    868      +                       tevn_accum,tbg_accum,tpp_accum,
+    869      +                       zevn_accum,zbg_accum,zpp_accum,
+    870      +                       wuvevn_accum,wuvbg_accum,wuvpp_accum,
+    871      +                       wdsevn_accum,mxe4prof,c_qc_accum,
+    872      +                       num_events_prof,lvlsinprof,nlvinprof,
+    873      +                       nrlacqc_pc,l_mandlvl,tsplines,
+    874      +                       l_operational,lwr)
+    875 
+    876 c Write the current profile to output
+    877 c -----------------------------------
+    878             if(hdr2wrt(6).gt.399.or.l_prof1lvl) then  ! sometimes reports with nlvinprof > 1
+    879                                                       !  still come back as single-level
+    880                                                       !  reports - this check keeps them
+    881                                                       !  out of PREPBUFR-like file when
+    882                                                       !  l_prof1lvl=F
+    883               nprofiles_encoded = nprofiles_encoded + 1
+    884 
+    885 ccccc         if(iprint.eq.1)  print *,'call writsb - 1st location'
+    886 
+    887               call writsb(proflun)
+    888             endif
+    889           endif
+    890 
+    891 c Clear out accumulation arrays and start over with clear arrays for next profile
+    892 c -------------------------------------------------------------------------------
+    893           nlvinprof      = 0
+    894           nlvinprof_last = 0
+    895 
+    896           lvlsinprof = 99999
+    897 
+    898           pevn_accum = bmiss 
+    899           pbg_accum  = bmiss 
+    900           ppp_accum  = bmiss 
+    901 
+    902           qevn_accum = bmiss 
+    903           qbg_accum  = bmiss 
+    904           qpp_accum  = bmiss 
+    905 
+    906           tevn_accum = bmiss 
+    907           tbg_accum  = bmiss 
+    908           tpp_accum  = bmiss 
+    909 
+    910           zevn_accum = bmiss 
+    911           zbg_accum  = bmiss 
+    912           zpp_accum  = bmiss 
+
+Page 17          Source Listing                  OUTPUT_ACQC_PROF
+2017-04-18 11:09                                 output_acqc_prof.f
+
+    913 
+    914     	  wuvevn_accum = bmiss 
+    915           wuvbg_accum  = bmiss 
+    916           wuvpp_accum  = bmiss
+    917 
+    918           wdsevn_accum = bmiss 
+    919 
+    920           drinfo_accum   = bmiss 
+    921           acft_seq_accum = bmiss
+    922           mstq_accum     = bmiss 
+    923           cat_accum      = bmiss 
+    924           elv_accum      = bmiss
+    925           rpt_accum      = bmiss
+    926           tcor_accum     = bmiss
+    927           rct_accum      = bmiss
+    928 
+    929           c_qc_accum = 'XXXXXXXXXXX'
+    930 
+    931           hdr2wrt = bmiss 
+    932 
+    933 	  mxe4prof = 0
+    934 
+    935 	endif ! l_newprofile
+    936 
+    937 c Determine message date and type for output PREPBUFR-like file
+    938 c -------------------------------------------------------------
+    939 	read(cdtg_an,'(i10.10)') icdtg_an
+    940         if(mod(int(hdr(j,6)),100).eq.33) then
+    941           msgtyp2wrt = 'AIRCAR'
+    942         else
+    943           msgtyp2wrt = 'AIRCFT'
+    944         endif
+    945 
+    946         if(i_option.eq.1) then
+    947           nlvinprof = nlvinprof_last + 1
+    948         else
+    949           nlvinprof = nlvinprof + 1
+    950         endif
+    951 
+    952         if(nlvinprof.gt.mxlv) then
+    953 C.......................................................................
+    954 C There are more levels in profile than "mxlv" -- do not process any more levels
+    955 C ------------------------------------------------------------------------------
+    956           print 53, mxlv,mxlv
+    957    53 format(/' #####> WARNING: THERE ARE MORE THAN ',I6,' LEVELS IN ',
+    958      + 'THIS PROFILE -- WILL CONTINUE ON PROCESSING ONLY ',I6,' LEVELS',
+    959      + ' FOR THIS PROFILE'/)
+    960           write(cmxlv,'(i6)') mxlv
+    961           call system('[ -n "$jlogfile" ] && $DATA/postmsg'//
+    962      +     ' "$jlogfile" "***WARNING:'//cmxlv//' AIRCRAFT PROFILE '//
+    963      +     'LEVEL LIMIT EXCEEDED IN PREPOBS_PREPACQC, ONLY '//
+    964      +     cmxlv//' LEVELS PROCESSED"')
+    965           exit loop1
+    966 C.......................................................................
+    967         endif
+    968 
+    969 c Subroutine sub2mem_um will update events in memory for this single-level "merged" report -
+
+Page 18          Source Listing                  OUTPUT_ACQC_PROF
+2017-04-18 11:09                                 output_acqc_prof.f
+
+    970 c  upon output the *_ev arrays will contain the events generated from the NRLACQC decisions
+    971 c ------------------------------------------------------------------------------------------
+    972 
+    973 ccccc   if(iprint.eq.1)  print *,'call sub2mem_um'
+    974 
+    975 	call sub2mem_um(c_qc(j),max_reps,mxnmev,j,nevents,
+    976      +                  pob_ev,pqm_ev,ppc_ev,prc_ev,
+    977      +                  zob_ev,zqm_ev,zpc_ev,zrc_ev,
+    978      +                  tob_ev,tqm_ev,tpc_ev,trc_ev,
+    979      +                  qob_ev,qqm_ev,qpc_ev,qrc_ev,
+    980      +                  uob_ev,vob_ev,wqm_ev,wpc_ev,wrc_ev,
+    981      +                  nrlacqc_pc,l_allev_pf)
+    982 
+    983         mxe4prof = max(mxe4prof,nevents(j,1),nevents(j,2),nevents(j,3),
+    984      +                          nevents(j,4),nevents(j,5),nevents(j,6))
+    985 
+    986 
+    987 c Gather data into profile arrays before actually writing profile to output file
+    988 c ------------------------------------------------------------------------------
+    989 
+    990 c Get header data
+    991 c ---------------
+    992         hdr2wrt(:) = hdr(j,:) 
+    993 
+    994 ccccc   if(iprint.eq.1)  print *,'HDR2WRT: ',hdr2wrt
+    995 
+    996 c ------------------------------------------------------------
+    997 c Store pressure events, background data, analysis, climo data
+    998 c ------------------------------------------------------------
+    999         lvlsinprof(nlvinprof) = int(pob_ev(j,nevents(j,1))*10)
+   1000         if(i_option.eq.1) nlvinprof_last = nlvinprof
+   1001         nlvinprof_temp = 0
+   1002 
+   1003 ccccc   if(iprint.eq.1)  print *,'nlvinprof = ',nlvinprof
+   1004 
+   1005         if(nlvinprof.gt.1) then
+   1006           do ii=1,nlvinprof-1
+   1007 
+   1008 ccccc       if(iprint.eq.1)  print *,'new ii: lvlsinprof(nlvinprof), ',
+   1009 ccccc+                               'lvlsinprof(ii): ',
+   1010 ccccc+                               lvlsinprof(nlvinprof),
+   1011 ccccc+                               lvlsinprof(ii)
+   1012 
+   1013             if(lvlsinprof(nlvinprof).eq.lvlsinprof(ii)) then
+   1014 
+   1015 ccccc         if(i_option.eq.1) then
+   1016 ccccc           print'(" WARNING: Pressure level ",I0," was previously",
+   1017 ccccc+                 " filled for this report - index ",I0," refill ",
+   1018 ccccc+                 "with this one !!")', lvlsinprof(nlvinprof),ii
+   1019 ccccc         else
+   1020 ccccc           print'(" WARNING: Pressure level ",I0," was previously",
+   1021 ccccc+                 " filled for this report - index ',I0,'keep it,",
+   1022 ccccc+                 " toss this one !!")', lvlsinprof(nlvinprof),ii
+   1023 ccccc         endif
+   1024 ccccc         print *, hdr2wrt
+   1025 
+   1026               nlvinprof_temp = ii
+
+Page 19          Source Listing                  OUTPUT_ACQC_PROF
+2017-04-18 11:09                                 output_acqc_prof.f
+
+   1027               exit
+   1028             endif
+   1029           enddo
+   1030         endif
+   1031         if(nlvinprof_temp.gt.0) then
+   1032           if(i_option.eq.1) then
+   1033             nlvinprof_last = nlvinprof - 1
+   1034             nlvinprof = nlvinprof_temp ! DAK: W/ DEBUG ON **MAY** NOT COMPFILE UNLESS ADD
+   1035                                        !      -qhot
+   1036           else
+   1037             nlvinprof = nlvinprof - 1
+   1038             cycle ! skip processing
+   1039           endif
+   1040         endif
+   1041 
+   1042         if(l_prof1lvl.or.nlvinprof.gt.1) then
+   1043           acid_last_profile = acid(j)
+   1044           c_acftid_last_profile = c_acftid(j)
+   1045           c_acftreg_last_profile = c_acftreg(j)
+   1046         endif
+   1047 
+   1048 c Store non-NRLACQC events in the "profile" arrays before adding any new events (done later
+   1049 c  in subroutine sub2mem_mer)
+   1050 c -----------------------------------------------------------------------------------------
+   1051         pevn_accum(1,nlvinprof,1:nevents(j,1))= pob_ev(j,1:nevents(j,1))
+   1052 	pevn_accum(2,nlvinprof,1:nevents(j,1))= pqm_ev(j,1:nevents(j,1))
+   1053 	pevn_accum(3,nlvinprof,1:nevents(j,1))= ppc_ev(j,1:nevents(j,1))
+   1054 	pevn_accum(4,nlvinprof,1:nevents(j,1))= prc_ev(j,1:nevents(j,1))
+   1055 
+   1056 c Background info
+   1057 c ---------------
+   1058 	pbg_accum(:,nlvinprof) = pbg(j,:) ! single-level upon input
+   1059 
+   1060 c Post processing info
+   1061 c --------------------
+   1062         ppp_accum(:,nlvinprof) = ppp(j,:) ! single-level upon input
+   1063 
+   1064 c ------------------------------------------------------------
+   1065 c Store altitude events, background data, analysis, climo data
+   1066 c ------------------------------------------------------------
+   1067 
+   1068 c Store non-NRLACQC events in the "profile" arrays before adding any new events (done later
+   1069 c  in subroutine sub2mem_mer)
+   1070 c -----------------------------------------------------------------------------------------
+   1071         zevn_accum(1,nlvinprof,1:nevents(j,4))= zob_ev(j,1:nevents(j,4))
+   1072         zevn_accum(2,nlvinprof,1:nevents(j,4))= zqm_ev(j,1:nevents(j,4))
+   1073         zevn_accum(3,nlvinprof,1:nevents(j,4))= zpc_ev(j,1:nevents(j,4))
+   1074         zevn_accum(4,nlvinprof,1:nevents(j,4))= zrc_ev(j,1:nevents(j,4))
+   1075 
+   1076 c Background info
+   1077 c ---------------
+   1078         zbg_accum(:,nlvinprof) = zbg(j,:) ! single-level upon input
+   1079 
+   1080 c Post processing info
+   1081 c --------------------
+   1082         zpp_accum(:,nlvinprof) = zpp(j,:) ! single-level upon input
+   1083 
+
+Page 20          Source Listing                  OUTPUT_ACQC_PROF
+2017-04-18 11:09                                 output_acqc_prof.f
+
+   1084 c Get drift data - use XOB YOB DHR for drift coordinates when accumulating data into profiles
+   1085 c -------------------------------------------------------------------------------------------
+   1086 	drinfo_accum(:,nlvinprof) = drinfo(j,:)
+   1087 
+   1088 c Get time correction factor
+   1089 c --------------------------
+   1090         tcor_accum(1,nlvinprof) = hdr(j,13)
+   1091 
+   1092 c -------------------------------------------------------------------------
+   1093 c -------------------------------------------------------------------------
+   1094 c Take into account possible rehabilitation of certain paramters by NRLACQC
+   1095 c  - these will be written into profiles rather than original values
+   1096 c  - Note: Right now we do not encode updates to XORG, XCOR, YORG or YCOR
+   1097 c          into PREPBUFR-like profiles file!!
+   1098 c -------------------------------------------------------------------------
+   1099 
+   1100 
+   1101         if(c_qc(j)(2:2).eq.'R'.or.           ! time reabilitated
+   1102      +     c_qc(j)(3:3).eq.'R'.or.           ! latitude reabilitated
+   1103      +     c_qc(j)(4:4).eq.'R'.or.           ! longitude reabilitated
+   1104      +     c_qc(j)(5:5).eq.'R'.or.           ! pressure/altitude reabilitated
+   1105      +     c_qc(j)(6:6).eq.'R'.or.           ! temperature reabilitated
+   1106      +     c_qc(j)(5:5).eq.'r') then         ! pressure/altitude reabilitated
+   1107           print 61
+   1108    61     format(131('v'))
+   1109 
+   1110           if(c_qc(j)(2:2).eq.'R') then
+   1111 
+   1112 c Case where time was rehabiltated by NRLACQC, make note of it
+   1113 c ------------------------------------------------------------
+   1114             print 62, j,hdr(j,1),hdr(j,3),hdr(j,2),hdr(j,4),
+   1115      +                nint(hdr(j,5)),c_qc(j)
+   1116    62 format(' TIME rehab. (prof): input rpt # ',i6,': id ',a8,', lat ',
+   1117      + f9.5,', lon ',f9.5,', dhr ',f10.5,', hght(m)',i6,', NRLQMS "',
+   1118      + A11,'"')
+   1119             print 63, hdr(j,4),nint(hdr(j,4)*3600.)
+   1120    63 format(' INPUT time from PRE-QC PREPBUFR file [DHR,idt(sec)] ',
+   1121      + 'is: ',f10.5,i8)
+   1122             print 64, idt(j)/3600.,idt(j)
+   1123    64 format(' REHAB. (prof) time from  acftobs_qc  [DHR,idt(sec)] ',
+   1124      + 'is: ',f10.5,i8,' use this in profile if created')
+   1125             hdr2wrt(4) = idt(j)/3600.
+   1126             drinfo_accum(3,nlvinprof) = idt(j)/3600.
+   1127             hdr2wrt(13) = 3
+   1128             tcor_accum(1,nlvinprof) = 3 ! Set time correction indicator (TCOR) to 3
+   1129             print 44, tcor_accum(1,nlvinprof)
+   1130    44 format('   --> Time correction indicator (TCOR) changed to ',f3.0)
+   1131           endif
+   1132           if(c_qc(j)(3:3).eq.'R') then
+   1133 
+   1134 c Case where latitude was rehabiltated by NRLACQC, make note of it
+   1135 c ----------------------------------------------------------------
+   1136             print 72, j,hdr(j,1),hdr(j,3),hdr(j,2),hdr(j,4),
+   1137      +                nint(hdr(j,5)),c_qc(j)
+   1138    72 format(' LAT  rehab. (prof): input rpt # ',i6,': id ',A8,', lat ',
+   1139      + f9.5,', lon ',f9.5,', dhr ',f10.5,', hght(m)',i6,', NRLQMS "',
+   1140      + A11,'"')
+
+Page 21          Source Listing                  OUTPUT_ACQC_PROF
+2017-04-18 11:09                                 output_acqc_prof.f
+
+   1141             print 73, hdr(j,3)
+   1142    73 format(' INPUT latitude from PRE-QC PREPBUFR file (YOB) is: ',
+   1143      + f9.5)
+   1144             print 74, alat(j)
+   1145    74 format(' REHAB. (prof) latitude from  acftobs_qc  (YOB) is: ',
+   1146      + f9.5,' use this in profile if created')
+   1147             hdr2wrt(3) = alat(j)
+   1148 	    drinfo_accum(2,nlvinprof) = alat(j)
+   1149           endif
+   1150           if(c_qc(j)(4:4).eq.'R') then
+   1151 
+   1152 c Case where longitude was rehabiltated by NRLACQC, make note of it
+   1153 c -----------------------------------------------------------------
+   1154             print 82, j,hdr(j,1),hdr(j,3),hdr(j,2),hdr(j,4),
+   1155      +                nint(hdr(j,5)),c_qc(j)
+   1156    82 format(' LON  rehab. (prof): input rpt # ',i6,': id ',A8,', lat ',
+   1157      + f9.5,', lon ',f9.5,', dhr ',f10.5,', hght(m)',i6,', NRLQMS "',
+   1158      + A11,'"')
+   1159             print 83, hdr(j,2)
+   1160    83 format(' INPUT longitude from PRE-QC PREPBUFR file (XOB) is: ',
+   1161      + f9.5)
+   1162             print 84, alon(j)
+   1163    84 format(' REHAB. (prof) longitude from  acftobs_qc  (XOB) is: ',
+   1164      + f9.5,' use this in profile if created')
+   1165             hdr2wrt(2) = alon(j)
+   1166 	    drinfo_accum(1,nlvinprof) = alon(j)
+   1167           endif
+   1168           if(c_qc(j)(5:5).eq.'R'.or.c_qc(j)(5:5).eq.'r') then
+   1169 
+   1170 c Case where pressure/altitude was rehabiltated by NRLACQC, make note of it
+   1171 c -------------------------------------------------------------------------
+   1172             print 92, j,hdr(j,1),hdr(j,3),hdr(j,2),hdr(j,4),
+   1173      +                nint(hdr(j,5)),c_qc(j)
+   1174    92 format(' P/A  rehab. (prof): input rpt # ',i6,': id ',A8,', lat ',
+   1175      + f9.5,', lon ',f9.5,', dhr ',f10.5,', hght(m)',i6,', NRLQMS "',
+   1176      + A11,'"')
+   1177             print 93
+   1178    93 format(' %%%%%%%%%%'/' %%%%% Currently not accounted for in ',
+   1179      + 'output PREPBUFR-like profiles file'/' %%%%%%%%%%')
+   1180           endif
+   1181           if(c_qc(j)(6:6).eq.'R') then
+   1182 
+   1183 c Case where temperature was rehabiltated by NRLACQC, make note of it
+   1184 c -------------------------------------------------------------------
+   1185             print 102, j,hdr(j,1),hdr(j,3),hdr(j,2),hdr(j,4),
+   1186      +                 nint(hdr(j,5)),c_qc(j)
+   1187   102 format(' TMP  rehabilitated: input rpt # ',i6,': id ',A8,', lat ',
+   1188      + f9.5,', lon ',f9.5,', dhr ',f10.5,', hght(m)',i6,', NRLQMS "',
+   1189      + A11,'"')
+   1190             print 93
+   1191           endif
+   1192           print 65
+   1193    65     format(131('^'))
+   1194         endif
+   1195 c -------------------------------------------------------------------------
+   1196 c -------------------------------------------------------------------------
+   1197 
+
+Page 22          Source Listing                  OUTPUT_ACQC_PROF
+2017-04-18 11:09                                 output_acqc_prof.f
+
+   1198 c Get ACFT_SEQ data
+   1199 c -----------------
+   1200 	acft_seq_accum(:,nlvinprof) = acft_seq(j,:)
+   1201 
+   1202 c Get MSTQ
+   1203 c --------
+   1204         mstq_accum(1,nlvinprof) = mstq(j)
+   1205 
+   1206 c Get level category, elevation, reported observation time
+   1207 c --------------------------------------------------------
+   1208         cat_accum(1,nlvinprof)  = cat(j)
+   1209         elv_accum(1,nlvinprof)  = hdr(j,5)
+   1210         rpt_accum(1,nlvinprof)  = hdr(j,12)
+   1211         rct_accum(1,nlvinprof)  = rct(j)
+   1212 
+   1213 c Check for mandatory levels (CAT = 1), present temperatures (CAT = 2), missing temperatures
+   1214 c  (CAT = 3)
+   1215 
+   1216         if(ob_t(j).eq.-9999.) then ! temperature is missing
+   1217 	  cat_accum(1,nlvinprof) = 3
+   1218 	else
+   1219 	  cat_accum(1,nlvinprof) = 2
+   1220 	endif
+   1221 
+   1222 c Mandatory level can override other CAT settings
+   1223 
+   1224 	do k = 1,maxmandlvls
+   1225 	  if(lvlsinprof(nlvinprof).eq.mandlvls(k)) then
+   1226 	    cat_accum(1,nlvinprof) = 1
+   1227 	    exit ! exit do loop
+   1228 	  endif
+   1229 	enddo 
+   1230 
+   1231 c Get NRLACQC quality string for this ob in the profile
+   1232 c -----------------------------------------------------
+   1233 	c_qc_accum(nlvinprof) = c_qc(j)
+   1234 
+   1235 c ----------------------------------------------------------
+   1236 c Get moisture events, background data, analysis, climo data
+   1237 c ----------------------------------------------------------
+   1238 
+   1239 c Store non-NRLACQC events in the "profile" arrays before adding any new events (done later
+   1240 c  in subroutine sub2mem_mer)
+   1241 c -----------------------------------------------------------------------------------------
+   1242         qevn_accum(1,nlvinprof,1:nevents(j,2))= qob_ev(j,1:nevents(j,2))
+   1243         qevn_accum(2,nlvinprof,1:nevents(j,2))= qqm_ev(j,1:nevents(j,2))
+   1244         qevn_accum(3,nlvinprof,1:nevents(j,2))= qpc_ev(j,1:nevents(j,2))
+   1245         qevn_accum(4,nlvinprof,1:nevents(j,2))= qrc_ev(j,1:nevents(j,2))
+   1246 
+   1247 c Background info
+   1248 c ---------------
+   1249         qbg_accum(:,nlvinprof) = qbg(j,:) ! single-level upon input
+   1250 
+   1251 c Post processing info
+   1252 c --------------------
+   1253         qpp_accum(:,nlvinprof) = qpp(j,:) ! single-level upon input
+   1254 
+
+Page 23          Source Listing                  OUTPUT_ACQC_PROF
+2017-04-18 11:09                                 output_acqc_prof.f
+
+   1255 c -------------------------------------------------------------
+   1256 c Get temperature events, background data, analysis, climo data
+   1257 c -------------------------------------------------------------
+   1258 
+   1259 c Store non-NRLACQC events in the "profile" arrays before adding any new events (done later
+   1260 c  in subroutine sub2mem_mer)
+   1261 c -----------------------------------------------------------------------------------------
+   1262         tevn_accum(1,nlvinprof,1:nevents(j,3))= tob_ev(j,1:nevents(j,3))
+   1263         tevn_accum(2,nlvinprof,1:nevents(j,3))= tqm_ev(j,1:nevents(j,3))
+   1264         tevn_accum(3,nlvinprof,1:nevents(j,3))= tpc_ev(j,1:nevents(j,3))
+   1265         tevn_accum(4,nlvinprof,1:nevents(j,3))= trc_ev(j,1:nevents(j,3))
+   1266 
+   1267 c Background info
+   1268 c ---------------
+   1269         tbg_accum(:,nlvinprof) = tbg(j,:) ! single-level upon input
+   1270 
+   1271 c Post processing info
+   1272 c --------------------
+   1273         tpp_accum(:,nlvinprof) = tpp(j,:) ! single-level upon input
+   1274 
+   1275 c -----------------------------------------------------------------------
+   1276 c Get wind (u/v components) events, background data, analysis, climo data
+   1277 c -----------------------------------------------------------------------
+   1278 
+   1279 c Store non-NRLACQC events in the "profile" arrays before adding any new events (done later
+   1280 c  in subroutine sub2mem_mer)
+   1281 c -----------------------------------------------------------------------------------------
+   1282         wuvevn_accum(1,nlvinprof,1:nevents(j,5)) =
+   1283      +  uob_ev(j,1:nevents(j,5))
+   1284         wuvevn_accum(2,nlvinprof,1:nevents(j,5)) =
+   1285      +   vob_ev(j,1:nevents(j,5))
+   1286         wuvevn_accum(3,nlvinprof,1:nevents(j,5)) =
+   1287      +   wqm_ev(j,1:nevents(j,5))
+   1288         wuvevn_accum(4,nlvinprof,1:nevents(j,5)) =
+   1289      +   wpc_ev(j,1:nevents(j,5))
+   1290         wuvevn_accum(5,nlvinprof,1:nevents(j,5)) =
+   1291      +   wrc_ev(j,1:nevents(j,5))
+   1292 
+   1293 c Background info
+   1294 c ---------------
+   1295         wuvbg_accum(:,nlvinprof) = wbg(j,:) ! single-level upon input
+   1296 
+   1297 c Post Processing info
+   1298 c --------------------
+   1299         wuvpp_accum(:,nlvinprof) = wpp(j,:) ! single-level upon input
+   1300 
+   1301 c ---------------------------
+   1302 c Get wind (dir/speed) events
+   1303 c ---------------------------
+   1304         wdsevn_accum(1,nlvinprof,1:nevents(j,6)) =
+   1305      +   ddo_ev(j,1:nevents(j,6))
+   1306         wdsevn_accum(2,nlvinprof,1:nevents(j,6)) =
+   1307      +   ffo_ev(j,1:nevents(j,6))
+   1308         wdsevn_accum(3,nlvinprof,1:nevents(j,6)) =
+   1309      +   dfq_ev(j,1:nevents(j,6))
+   1310         wdsevn_accum(4,nlvinprof,1:nevents(j,6)) =
+   1311      +   dfp_ev(j,1:nevents(j,6))
+
+Page 24          Source Listing                  OUTPUT_ACQC_PROF
+2017-04-18 11:09                                 output_acqc_prof.f
+
+   1312         wdsevn_accum(5,nlvinprof,1:nevents(j,6)) =
+   1313      +   dfr_ev(j,1:nevents(j,6))
+   1314      
+   1315 c Set tail_prev, flt_prev, elv_prev, idt_prev for comparison to next report to see if we need
+   1316 c  to start a new profile - also set idz_prev for possible gross check
+   1317 c -------------------------------------------------------------------------------------------
+   1318         tail_prev = c_acftreg(j)
+   1319         flt_prev  = c_acftid(j)
+   1320         elv_prev  = ht_ft(j)
+   1321         idt_prev  = idt(j)
+   1322         idz_prev  = zob_ev(j,nevents(j,4))
+   1323 
+   1324 c Close loops here
+   1325 c ----------------
+   1326       enddo loop1 ! i=1,nrpts4QC_pre 
+   1327 
+   1328       if(l_prof1lvl.or.nlvinprof.gt.1) then
+   1329 
+   1330 c Close out last remaining profile and write it to output - open message if necessary
+   1331 c -----------------------------------------------------------------------------------
+   1332         call openmb(proflun,msgtyp2wrt,icdtg_an)
+   1333 
+   1334 c Store contents of the current observation (profile or single/flight-level) into BUFRLIB
+   1335 c  memory via subroutine sub2mem_mer
+   1336 c ---------------------------------------------------------------------------------------
+   1337 
+   1338 ccccc     print 4079, sortidx(i-1),acid(sortidx(i-1)),acid_last_profile
+   1339 c4079     format(1x,'2-call sub2mem_mer, last report j-1 = ',i6,
+   1340 ccccc+     ', acid(j-1) = ',a8,', acid_last_profile = ',a8)
+   1341 
+   1342         call sub2mem_mer(proflun,bmiss,mxlv,mxnmev,maxmandlvls,mandlvls,
+   1343      +                   msgtyp2wrt,hdr2wrt,
+   1344      +	                 acid_last_profile, ! use ACID of last (or only) report in profile
+   1345      +	                 c_acftid_last_profile, ! use aircraft flight # (from NRLACQC) of
+   1346                                                 ! last (or only) report in profile
+   1347      +                   c_acftreg_last_profile,! use aircraft tail # (from NRLACQC) of last
+   1348                                                 ! (or only) report in profile
+   1349      +                   rct_accum,drinfo_accum,acft_seq_accum,
+   1350      +                   mstq_accum,cat_accum,elv_accum,rpt_accum,
+   1351      +                   tcor_accum,
+   1352      +                   pevn_accum,pbg_accum,ppp_accum,
+   1353      +                   qevn_accum,qbg_accum,qpp_accum,
+   1354      +                   tevn_accum,tbg_accum,tpp_accum,
+   1355      +                   zevn_accum,zbg_accum,zpp_accum,
+   1356      +                   wuvevn_accum,wuvbg_accum,wuvpp_accum,
+   1357      +                   wdsevn_accum,mxe4prof,c_qc_accum,
+   1358      +                   num_events_prof,lvlsinprof,nlvinprof,
+   1359      +                   nrlacqc_pc,l_mandlvl,tsplines,
+   1360      +                   l_operational,lwr)
+   1361 
+   1362 c Write the current profile to output
+   1363 c -----------------------------------
+   1364         if(hdr2wrt(6).gt.399.or.l_prof1lvl) then  ! sometimes reports with nlvinprof > 1
+   1365                                                   !  still come back as single-level reports
+   1366                                                   !  - this check keeps them out of PREPBUFR-
+   1367                                                   !  like file when when l_prof1lvl=F
+   1368           nprofiles_encoded = nprofiles_encoded + 1
+
+Page 25          Source Listing                  OUTPUT_ACQC_PROF
+2017-04-18 11:09                                 output_acqc_prof.f
+
+   1369           call writsb(proflun)
+   1370         endif
+   1371       endif
+   1372 
+   1373       if(.not.l_operational) close(52)
+   1374 
+   1375 c Output counts
+   1376 c -------------
+   1377 
+   1378 c Detailed counts of reports eliminated from final PREPBUFR-like file
+   1379 c -------------------------------------------------------------------
+   1380       print *
+   1381       print *, '----------------------------------------------------'
+   1382       print *, 'Info about merged aircraft reports not encoded into '
+   1383       print *, 'output PREPBUFR-like (profiles) file:'
+   1384       print *, '----------------------------------------------------'
+   1385       print *
+   1386       if(l_otw) then
+   1387         print 76, trad,elim_knt(1)
+   1388    76 format(' Number of merged reports tossed because outside req. ',
+   1389      +       'time window radius of',F6.2,'hrs (prior to geographical ',
+   1390      +       'domain checking):',i6/)
+   1391       else
+   1392         print *, 'Time window radius check NOT performed, l_otw=',l_otw,
+   1393      +           ' (ZERO reports tossed)'
+   1394       endif
+   1395       print *
+   1396       if(l_nhonly) then
+   1397         print'(" Number of merged reports passing time window radius ",
+   1398      +         "chk but tossed because outside geographical domain ",
+   1399      +         "(i.e., S of 20S lat): ",I0)', elim_knt(2)
+   1400       else
+   1401         print *, 'Geographical domain check not performed, l_nhonly=',
+   1402      +           l_nhonly,' (ZERO reports tossed)'
+   1403       endif
+   1404       print *
+   1405       print *, 'Number of merged reports passing checks and kept: ',
+   1406      +         elim_knt(3)
+   1407       print *
+   1408 
+   1409 c Info about PREPBUFR-like files containing merged profile and (maybe) single(flight)-level
+   1410 c  reports
+   1411 c -----------------------------------------------------------------------------------------
+   1412       print *
+   1413       print'(" -------------------------------------------------------",
+   1414      +       "-------------------------")'
+   1415       print'(" Info about QMs applied to merged mass and wind reports",
+   1416      +       " in the PREPBUFR-like file")'
+   1417       print'(" -------------------------------------------------------",
+   1418      +       "-------------------------")'
+   1419       print *
+   1420       print'(" Number of merged ""profile"" reports written to output ",
+   1421      +       "PREPBUFR-like file = "I0)', nprofiles_encoded
+   1422       print *
+   1423 ! DAK: num_events_prof does not seem to be the right number when single level reports are not
+   1424 !      encoded...
+   1425       print'(" Total number of events for an ob type, across all ",
+
+Page 26          Source Listing                  OUTPUT_ACQC_PROF
+2017-04-18 11:09                                 output_acqc_prof.f
+
+   1426      +       "levels, across all reports, written to output PREPBUFR-",
+   1427      +       "like")'
+   1428       print'("  (profiles) file = ",I0," (this value is the same for ",
+   1429      +       "each ob type)")',  num_events_prof
+   1430       print *
+   1431 
+   1432       write(*,*)
+   1433       write(*,*) '**************************'
+   1434       write(*,*) 'output_acqc_prof has ended'
+   1435       call system('date')
+   1436       write(*,*) '**************************'
+   1437       write(*,*)
+   1438 
+   1439       return
+   1440 
+   1441       end
+
+
+ENTRY POINTS
+
+  Name                         
+                               
+ output_acqc_prof_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ 102                        Label  1187                                                           1185                              
+ 3001                       Label  667                                                            666                               
+ 44                         Label  1130                                                           1129                              
+ 53                         Label  957                                                            956                               
+ 61                         Label  1108                                                           1107                              
+ 62                         Label  1116                                                           1114                              
+ 63                         Label  1120                                                           1119                              
+ 64                         Label  1123                                                           1122                              
+ 65                         Label  1193                                                           1192                              
+ 66                         Label  801                                                            799                               
+ 67                         Label  811                                                            809                               
+ 72                         Label  1138                                                           1136                              
+ 73                         Label  1142                                                           1141                              
+ 74                         Label  1145                                                           1144                              
+ 76                         Label  1388                                                           1387                              
+ 82                         Label  1156                                                           1154                              
+ 83                         Label  1160                                                           1159                              
+ 84                         Label  1163                                                           1162                              
+ 92                         Label  1174                                                           1172                              
+ 93                         Label  1178                                                           1177,1190                         
+ ABS                        Func   793                                  scalar                    793,794,795,796                   
+ ACFT_SEQ                   Dummy  166      R(8)            8     2     0        ARG,INOUT        1200                              
+ ACFT_SEQ_ACCUM             Local  348      R(8)            8     2     0                         569,863,921,1200,1349             
+ ACID                       Dummy  166      R(8)            8     1     0        ARG,INOUT        1043                              
+ ACID_LAST_PROFILE          Local  499      R(8)            8           scalar                    581,858,1043,1344                 
+ ALAT                       Dummy  163      R(8)            8     1     0        ARG,INOUT        719,1144,1147,1148                
+ ALON                       Dummy  163      R(8)            8     1     0        ARG,INOUT        1162,1165,1166                    
+ BMISS                      Dummy  163      R(8)            8           scalar   ARG,INOUT        546,547,548,550,551,552,554,555,55
+
+Page 27          Source Listing                  OUTPUT_ACQC_PROF
+2017-04-18 11:09 Symbol Table                    output_acqc_prof.f
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+                                                                                                  6,558,559,560,562,563,564,566,568,
+                                                                                                  569,570,571,572,573,574,575,579,58
+                                                                                                  1,856,898,899,900,902,903,904,906,
+                                                                                                  907,908,910,911,912,914,915,916,91
+                                                                                                  8,920,921,922,923,924,925,926,927,
+                                                                                                  931,1342                          
+ CAT                        Dummy  166      R(8)            8     1     0        ARG,INOUT        1208                              
+ CAT_ACCUM                  Local  353      R(8)            8     2     0                         571,864,923,1208,1217,1219,1226,13
+                                                                                                  50                                
+ CDTG_AN                    Dummy  163      CHAR            10          scalar   ARG,INOUT        939                               
+ CMXLV                      Local  303      CHAR            6           scalar                    960,962,964                       
+ C_ACFTID                   Dummy  165      CHAR            9     1     0        ARG,INOUT        737,1044,1319                     
+ C_ACFTID_LAST_PROFILE      Local  503      CHAR            9           scalar                    582,859,1044,1345                 
+ C_ACFTREG                  Dummy  165      CHAR            8     1     0        ARG,INOUT        736,1045,1318                     
+ C_ACFTREG_LAST_PROFILE     Local  508      CHAR            8           scalar                    583,861,1045,1347                 
+ C_QC                       Dummy  164      CHAR            11    1     0        ARG,INOUT        761,762,764,765,766,767,768,769,77
+                                                                                                  0,975,1101,1102,1103,1104,1105,110
+                                                                                                  6,1110,1115,1132,1137,1150,1155,11
+                                                                                                  68,1173,1181,1186,1233            
+ C_QC_ACCUM                 Local  414      CHAR            11    1     0                         577,871,929,1233,1357             
+ C_SID                      Local  342      CHAR            8           scalar                                                      
+ DDO_EV                     Dummy  172      R(8)            8     2     0        ARG,INOUT        1305                              
+ DEL_HGHT                   Local  515      R(4)            4           scalar                    796,797                           
+ DEL_TIME                   Local  513      R(4)            4           scalar                    795,797                           
+ DFP_EV                     Dummy  172      R(8)            8     2     0        ARG,INOUT        1311                              
+ DFQ_EV                     Dummy  172      R(8)            8     2     0        ARG,INOUT        1309                              
+ DFR_EV                     Dummy  173      R(8)            8     2     0        ARG,INOUT        1313                              
+ DRINFO                     Dummy  166      R(8)            8     2     0        ARG,INOUT        1086                              
+ DRINFO_ACCUM               Local  345      R(8)            8     2     0                         568,863,920,1086,1126,1148,1166,13
+                                                                                                  49                                
+ ELIM_KNT                   Local  287      I(4)            4     1     3                         597,712,720,730,1387,1399,1406    
+ ELV_ACCUM                  Local  355      R(8)            8     2     0                         572,864,924,1209,1350             
+ ELV_CURR                   Local  331      R(4)            4           scalar                    738,763,771                       
+ ELV_PREV                   Local  332      R(4)            4           scalar                    536,763,771,1320                  
+ FFO_EV                     Dummy  172      R(8)            8     2     0        ARG,INOUT        1307                              
+ FLT_CURR                   Local  328      CHAR            9           scalar                    737,742,799,809                   
+ FLT_PREV                   Local  329      CHAR            9           scalar                    535,742,1319                      
+ HDR                        Dummy  165      R(8)            8     2     0        ARG,INOUT        940,992,1090,1114,1115,1119,1136,1
+                                                                                                  137,1141,1154,1155,1159,1172,1173,
+                                                                                                  1185,1186,1209,1210               
+ HDR2WRT                    Local  340      R(8)            8     1     15                        579,857,878,931,992,1125,1127,1147
+                                                                                                  ,1165,1343,1364                   
+ HT_FT                      Dummy  163      R(4)            4     1     0        ARG,INOUT        738,1320                          
+ I                          Local  216      I(4)            4           scalar                    696,697,800,810                   
+ ICDTG_AN                   Local  212      I(4)            4           scalar                    837,939,1332                      
+ IDT                        Dummy  164      I(4)            4     1     0        ARG,INOUT        711,739,1122,1125,1126,1321       
+ IDT_CURR                   Local  334      I(4)            4           scalar                    739,793,794,795,799,809           
+ IDT_PREV                   Local  335      I(4)            4           scalar                    537,793,794,795,799,809,1321      
+ IDZ_CURR                   Local  337      I(4)            4           scalar                    740,796,800                       
+ IDZ_PREV                   Local  338      I(4)            4           scalar                    538,796,800,1322                  
+ II                         Local  216      I(4)            4           scalar                    1006,1013,1026                    
+ INT                        Func   940                                  scalar                    940,999                           
+ I_OPTION                   Local  522      I(4)            4           scalar                    690,946,1000,1032                 
+ J                          Local  216      I(4)            4           scalar                    697,711,719,736,737,738,739,740,76
+                                                                                                  1,762,764,765,766,767,768,769,770,
+
+Page 28          Source Listing                  OUTPUT_ACQC_PROF
+2017-04-18 11:09 Symbol Table                    output_acqc_prof.f
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+                                                                                                  799,809,940,975,983,984,992,999,10
+                                                                                                  43,1044,1045,1051,1052,1053,1054,1
+                                                                                                  058,1062,1071,1072,1073,1074,1078,
+                                                                                                  1082,1086,1090,1101,1102,1103,1104
+                                                                                                  ,1105,1106,1110,1114,1115,1119,112
+                                                                                                  2,1125,1126,1132,1136,1137,1141,11
+                                                                                                  44,1147,1148,1150,1154,1155,1159,1
+                                                                                                  162,1165,1166,1168,1172,1173,1181,
+                                                                                                  1185,1186,1200,1204,1208,1209,1210
+                                                                                                  ,1211,1216,1233,1242,1243,1244,124
+                                                                                                  5,1249,1253,1262,1263,1264,1265,12
+                                                                                                  69,1273,1282,1283,1284,1285,1286,1
+                                                                                                  287,1288,1289,1290,1291,1295,1299,
+                                                                                                  1304,1305,1306,1307,1308,1309,1310
+                                                                                                  ,1311,1312,1313,1318,1319,1320,132
+                                                                                                  1,1322                            
+ K                          Local  216      I(4)            4           scalar                    1224,1225                         
+ LOOP1                      Label  696                                  scalar                    965,1326                          
+ LVLSINPROF                 Local  307      I(4)            4     1     0                         544,872,896,999,1013,1225,1358    
+ LWR                        Dummy  175      I(4)            4           scalar   ARG,INOUT        874,1360                          
+ L_ALLEV_PF                 Dummy  173      L(4)            4           scalar   ARG,INOUT        981                               
+ L_MANDLVL                  Dummy  174      L(4)            4           scalar   ARG,INOUT        873,1359                          
+ L_NEWPROFILE               Local  310      L(4)            4           scalar                    734,776,805,814,826,831           
+ L_NHONLY                   Dummy  164      L(4)            4           scalar   ARG,INOUT        717,1396,1402                     
+ L_OPERATIONAL              Dummy  175      L(4)            4           scalar   ARG,INOUT        616,874,1360,1373                 
+ L_OTW                      Dummy  164      L(4)            4           scalar   ARG,INOUT        709,1386,1392                     
+ L_PROF1LVL                 Dummy  174      L(4)            4           scalar   ARG,INOUT        833,878,1042,1328,1364            
+ MANDLVLS                   Local  431      I(4)            4     1     9                         434,857,1225,1342                 
+ MAX                        Func   983                                  scalar                    983                               
+ MAXMANDLVLS                Param  427      I(4)            4           scalar                    431,856,1224,1342                 
+ MAX_REPS                   Dummy  162      I(4)            4           scalar   ARG,INOUT        221,224,237,238,239,241,242,244,24
+                                                                                                  6,441,450,451,452,453,454,455,456,
+                                                                                                  457,458,459,460,461,462,463,464,46
+                                                                                                  5,466,467,468,469,470,471,472,473,
+                                                                                                  474,475,477,479,480,481,482,484,48
+                                                                                                  5,486,487,488,490,491,492,493,494,
+                                                                                                  496,497,975                       
+ MEVWRT                     Local  178      I(4)            4     1     1                         587                               
+ MOD                        Func   940                                  scalar                    940                               
+ MSGTYP2WRT                 Local  299      CHAR            8           scalar                    837,857,941,943,1332,1343         
+ MSTQ                       Dummy  166      R(8)            8     1     0        ARG,INOUT        1204                              
+ MSTQ_ACCUM                 Local  351      R(8)            8     2     0                         570,864,922,1204,1350             
+ MXE4PROF                   Local  315      I(4)            4           scalar                    540,871,933,983,1357              
+ MXLV                       Dummy  163      I(4)            4           scalar   ARG,INOUT        307,345,348,351,353,355,357,359,36
+                                                                                                  1,364,366,369,373,375,378,382,384,
+                                                                                                  387,391,393,396,400,403,406,410,41
+                                                                                                  4,856,952,956,960,1342            
+ MXNMEV                     Dummy  162      I(4)            4           scalar   ARG,INOUT        364,373,382,391,400,410,450,451,45
+                                                                                                  2,453,454,455,456,457,458,459,460,
+                                                                                                  461,462,463,464,465,466,467,468,46
+                                                                                                  9,470,471,472,473,474,475,856,975,
+                                                                                                  1342                              
+ NEVENTS                    Dummy  165      I(4)            4     2     0        ARG,INOUT        740,975,983,984,999,1051,1052,1053
+                                                                                                  ,1054,1071,1072,1073,1074,1242,124
+                                                                                                  3,1244,1245,1262,1263,1264,1265,12
+
+Page 29          Source Listing                  OUTPUT_ACQC_PROF
+2017-04-18 11:09 Symbol Table                    output_acqc_prof.f
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+                                                                                                  82,1283,1284,1285,1286,1287,1288,1
+                                                                                                  289,1290,1291,1304,1305,1306,1307,
+                                                                                                  1308,1309,1310,1311,1312,1313,1322
+ NINT                       Func   1115                                 scalar                    1115,1119,1137,1155,1173,1186     
+ NLVINPROF                  Local  319      I(4)            4           scalar                    541,833,872,893,947,949,952,999,10
+                                                                                                  00,1005,1006,1013,1033,1034,1037,1
+                                                                                                  042,1051,1052,1053,1054,1058,1062,
+                                                                                                  1071,1072,1073,1074,1078,1082,1086
+                                                                                                  ,1090,1126,1128,1129,1148,1166,120
+                                                                                                  0,1204,1208,1209,1210,1211,1217,12
+                                                                                                  19,1225,1226,1233,1242,1243,1244,1
+                                                                                                  245,1249,1253,1262,1263,1264,1265,
+                                                                                                  1269,1273,1282,1284,1286,1288,1290
+                                                                                                  ,1295,1299,1304,1306,1308,1310,131
+                                                                                                  2,1328,1358                       
+ NLVINPROF_LAST             Local  320      I(4)            4           scalar                    542,894,947,1000,1033             
+ NLVINPROF_TEMP             Local  322      I(4)            4           scalar                    1001,1026,1031,1034               
+ NPROFILES                  Local  312      I(4)            4           scalar                    585,777,806,815,827,831           
+ NPROFILES_ENCODED          Local  313      I(4)            4           scalar                    586,883,1368,1421                 
+ NRLACQC_PC                 Dummy  173      R(4)            4           scalar   ARG,INOUT        873,981,1359                      
+ NRPTS4QC_PRE               Dummy  162      I(4)            4           scalar   ARG,INOUT        696                               
+ NUM_EVENTS_PROF            Local  420      I(4)            4           scalar                    598,872,1358,1429                 
+ OB_T                       Dummy  165      R(4)            4     1     0        ARG,INOUT        1216                              
+ OPENMB                     Subr   837                                                            837,1332                          
+ OUTPUT_ACQC_PROF           Subr   162                                                                                              
+ PBG                        Dummy  167      R(8)            8     2     0        ARG,INOUT        1058                              
+ PBG_ACCUM                  Local  366      R(8)            8     2     0                         547,866,899,1058,1352             
+ PEVN_ACCUM                 Local  364      R(8)            8     3     0                         546,866,898,1051,1052,1053,1054,13
+                                                                                                  52                                
+ POB_EV                     Dummy  167      R(8)            8     2     0        ARG,INOUT        976,999,1051                      
+ PPC_EV                     Dummy  167      R(8)            8     2     0        ARG,INOUT        976,1053                          
+ PPP                        Dummy  167      R(8)            8     2     0        ARG,INOUT        1062                              
+ PPP_ACCUM                  Local  369      R(8)            8     2     0                         548,866,900,1062,1352             
+ PQM_EV                     Dummy  167      R(8)            8     2     0        ARG,INOUT        976,1052                          
+ PRC_EV                     Dummy  167      R(8)            8     2     0        ARG,INOUT        976,1054                          
+ PROFLUN                    Dummy  162      I(4)            4           scalar   ARG,INOUT        837,856,887,1332,1342,1369        
+ QBG                        Dummy  170      R(8)            8     2     0        ARG,INOUT        1249                              
+ QBG_ACCUM                  Local  375      R(8)            8     2     0                         555,867,903,1249,1353             
+ QEVN_ACCUM                 Local  373      R(8)            8     3     0                         554,867,902,1242,1243,1244,1245,13
+                                                                                                  53                                
+ QOB_EV                     Dummy  170      R(8)            8     2     0        ARG,INOUT        979,1242                          
+ QPC_EV                     Dummy  170      R(8)            8     2     0        ARG,INOUT        979,1244                          
+ QPP                        Dummy  170      R(8)            8     2     0        ARG,INOUT        1253                              
+ QPP_ACCUM                  Local  378      R(8)            8     2     0                         556,867,904,1253,1353             
+ QQM_EV                     Dummy  170      R(8)            8     2     0        ARG,INOUT        979,1243                          
+ QRC_EV                     Dummy  170      R(8)            8     2     0        ARG,INOUT        979,1245                          
+ RCT                        Dummy  166      R(8)            8     1     0        ARG,INOUT        1211                              
+ RCT_ACCUM                  Local  361      R(8)            8     2     0                         575,863,927,1211,1349             
+ RPT_ACCUM                  Local  357      R(8)            8     2     0                         573,864,925,1210,1350             
+ SORTIDX                    Dummy  164      I(4)            4     1     0        ARG,INOUT        697,800,810                       
+ SUB2MEM_MER                Subr   856                                                            856,1342                          
+ SUB2MEM_UM                 Subr   975                                                            975                               
+ SYSTEM                     Subr   606                                                            606,961,1435                      
+ TAIL_CURR                  Local  325      CHAR            8           scalar                    736,742,799,809                   
+ TAIL_PREV                  Local  326      CHAR            8           scalar                    534,742,1318                      
+
+Page 30          Source Listing                  OUTPUT_ACQC_PROF
+2017-04-18 11:09 Symbol Table                    output_acqc_prof.f
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ TBG                        Dummy  169      R(8)            8     2     0        ARG,INOUT        1269                              
+ TBG_ACCUM                  Local  384      R(8)            8     2     0                         551,868,907,1269,1354             
+ TCOR_ACCUM                 Local  359      R(8)            8     2     0                         574,865,926,1090,1128,1129,1351   
+ TEVN_ACCUM                 Local  382      R(8)            8     3     0                         550,868,906,1262,1263,1264,1265,13
+                                                                                                  54                                
+ TOB_EV                     Dummy  169      R(8)            8     2     0        ARG,INOUT        978,1262                          
+ TPC_EV                     Dummy  169      R(8)            8     2     0        ARG,INOUT        978,1264                          
+ TPP                        Dummy  169      R(8)            8     2     0        ARG,INOUT        1273                              
+ TPP_ACCUM                  Local  387      R(8)            8     2     0                         552,868,908,1273,1354             
+ TQM_EV                     Dummy  169      R(8)            8     2     0        ARG,INOUT        978,1263                          
+ TRAD                       Dummy  164      R(4)            4           scalar   ARG,INOUT        711,1387                          
+ TRC_EV                     Dummy  169      R(8)            8     2     0        ARG,INOUT        978,1265                          
+ TSPLINES                   Dummy  174      L(4)            4           scalar   ARG,INOUT        873,1359                          
+ UOB_EV                     Dummy  171      R(8)            8     2     0        ARG,INOUT        980,1283                          
+ VOB_EV                     Dummy  171      R(8)            8     2     0        ARG,INOUT        980,1285                          
+ VVEL                       Local  517      R(4)            4           scalar                    797,798,800                       
+ WBG                        Dummy  172      R(8)            8     2     0        ARG,INOUT        1295                              
+ WDSEVN_ACCUM               Local  410      R(8)            8     3     0                         566,871,918,1304,1306,1308,1310,13
+                                                                                                  12,1357                           
+ WPC_EV                     Dummy  171      R(8)            8     2     0        ARG,INOUT        980,1289                          
+ WPP                        Dummy  172      R(8)            8     2     0        ARG,INOUT        1299                              
+ WQM_EV                     Dummy  171      R(8)            8     2     0        ARG,INOUT        980,1287                          
+ WRC_EV                     Dummy  171      R(8)            8     2     0        ARG,INOUT        980,1291                          
+ WRITSB                     Subr   887                                                            887,1369                          
+ WUVBG_ACCUM                Local  403      R(8)            8     2     0                         563,870,915,1295,1356             
+ WUVEVN_ACCUM               Local  400      R(8)            8     3     0                         562,870,914,1282,1284,1286,1288,12
+                                                                                                  90,1356                           
+ WUVPP_ACCUM                Local  406      R(8)            8     2     0                         564,870,916,1299,1356             
+ ZBG                        Dummy  168      R(8)            8     2     0        ARG,INOUT        1078                              
+ ZBG_ACCUM                  Local  393      R(8)            8     2     0                         559,869,911,1078,1355             
+ ZEVN_ACCUM                 Local  391      R(8)            8     3     0                         558,869,910,1071,1072,1073,1074,13
+                                                                                                  55                                
+ ZOB_EV                     Dummy  168      R(8)            8     2     0        ARG,INOUT        740,977,1071,1322                 
+ ZPC_EV                     Dummy  168      R(8)            8     2     0        ARG,INOUT        977,1073                          
+ ZPP                        Dummy  168      R(8)            8     2     0        ARG,INOUT        1082                              
+ ZPP_ACCUM                  Local  396      R(8)            8     2     0                         560,869,912,1082,1355             
+ ZQM_EV                     Dummy  168      R(8)            8     2     0        ARG,INOUT        977,1072                          
+ ZRC_EV                     Dummy  168      R(8)            8     2     0        ARG,INOUT        977,1074                          
+
+Page 31          Source Listing                  OUTPUT_ACQC_PROF
+2017-04-18 11:09 Subprograms/Common Blocks       output_acqc_prof.f
+
+
+
+SUBPROGRAMS/COMMON BLOCKS
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ OUTPUT_ACQC_PROF           Subr   162                                                                                              
+
+COMPILER OPTIONS BEING USED
+
+       -align noall                          -align nonone
+       -align nocommons                      -align nodcommons
+       -align noqcommons                     -align nozcommons
+       -align records                        -align nosequence
+       -align norec1byte                     -align norec2byte
+       -align norec4byte                     -align norec8byte
+       -align norec16byte                    -align norec32byte
+       -align norec64byte                    -align noarray8byte
+       -align noarray16byte                  -align noarray32byte
+       -align noarray64byte                  -align noarray128byte
+       -align noarray256byte                 -altparam
+       -assume accuracy_sensitive            -assume nobscc
+       -assume nobuffered_io                 -assume nobuffered_stdout
+       -assume nobyterecl                    -assume nocc_omp
+       -assume nocstring                     -assume nodummy_aliases
+       -assume nofpe_summary                 -assume noieee_fpe_flags
+       -assume nominus0                      -assume noold_boz
+       -assume old_complex_align             -assume old_unit_star
+       -assume noold_ldout_format            -assume noold_logical_ldio
+       -assume old_maxminloc                 -assume old_xor
+       -assume noprotect_allocates           -assume protect_constants
+       -assume noprotect_parens              -assume split_common
+       -assume source_include                -assume nostd_intent_in
+       -assume std_minus0_rounding           -assume nostd_mod_proc_name
+       -assume std_value                     -assume norealloc_lhs
+       -assume underscore                    -assume no2underscores
+  no   -auto                                 -auto_scalar
+  no   -bintext                              -ccdefault default
+       -check noargs                         -check noarg_temp_created
+       -check noassume                       -check nobounds
+       -check noformat                       -check nooutput_conversion
+       -check nooverflow                     -check nopointers
+       -check power                          -check noshape
+       -check nostack                        -check nounderflow
+       -check nouninitialized                -coarray-num-procs 0
+  no   -coarray-config-file                  -convert big_endian
+       -cross_reference                      -D __INTEL_COMPILER=1600
+       -D __INTEL_COMPILER_UPDATE=3          -D __unix__
+       -D __unix                             -D __linux__
+       -D __linux                            -D __gnu_linux__
+       -D unix                               -D linux
+       -D __ELF__                            -D __x86_64
+       -D __x86_64__                         -D __amd64
+       -D __amd64__                          -D __INTEL_COMPILER_BUILD_DATE=20160415
+       -D __INTEL_OFFLOAD                    -D __i686
+       -D __i686__                           -D __pentiumpro
+       -D __pentiumpro__                     -D __pentium4
+
+Page 32          Source Listing                  OUTPUT_ACQC_PROF
+2017-04-18 11:09                                 output_acqc_prof.f
+
+       -D __pentium4__                       -D __tune_pentium4__
+       -D __SSE2__                           -D __SSE2_MATH__
+       -D __SSE__                            -D __SSE_MATH__
+       -D __MMX__                            -double_size 64
+  no   -d_lines                         no   -Qdyncom
+       -error_limit 30                  no   -f66
+  no   -f77rtl                          no   -fast
+       -fpscomp nofilesfromcmd               -fpscomp nogeneral
+       -fpscomp noioformat                   -fpscomp noldio_spacing
+       -fpscomp nologicals                   -fixed
+  no   -fpconstant                           -fpe3
+       -fprm nearest                    no   -ftz
+       -fp_model noprecise                   -fp_model fast
+       -fp_model nostrict                    -fp_model nosource
+       -fp_model nodouble                    -fp_model noextended
+       -fp_model novery_fast                 -fp_model noexcept
+       -fp_model nono_except                 -heap_arrays 0
+  no   -threadprivate_compat                 -g2
+       -iface nomixed_str_len_arg            -iface nono_mixed_str_len_arg
+       -init noarrays                        -init noinf
+       -init nonan                           -init nosnan
+       -init nozero                     no   -intconstant
+       -integer_size 32                 no   -mixed_str_len_arg
+  no   -module                               -names lowercase
+  no   -noinclude                            -offload-build=host
+       -O2                              no   -pad_source
+       -real_size 32                    no   -recursive
+       -reentrancy none                 no   -sharable_localsaves
+       -vec=simd                             -show noinclude
+       -show map                             -show options
+  no   -syntax_only                     no   -threadcom
+  no   -U                               no   -vms
+       -w noall                              -w nonone
+       -w alignments                         -w noargument_checking
+       -w nodeclarations                     -w general
+       -w noignore_bounds                    -w noignore_loc
+       -w nointerfaces                       -w notruncated_source
+       -w uncalled                           -w uninitialized
+       -w nounused                           -w usage
+  no   -wrap-margins
+
+       -includepath : /usrx/local/intel/2016SP3/daal/include/,/usr/include/,.FOR,./.FOR,/usrx/local/intel/2016SP3/ipp/include/.FOR,
+           /usrx/local/intel/2016SP3/mkl/include/.FOR,/usrx/local/intel/2016SP3/tbb/include/.FOR,/usrx/local/intel/2016SP3/daal/include/.FOR,
+           /gpfs/tp1/usrx/local/intel/2016SP3/compilers_and_libraries_2016.3.210/linux/compiler/include/intel64/.FOR,
+           /gpfs/tp1/usrx/local/intel/2016SP3/compilers_and_libraries_2016.3.210/linux/compiler/include/.FOR,/usr/local/include/.FOR,
+           /usr/lib/gcc/x86_64-redhat-linux/4.4.7/include/.FOR,/usr/include/.FOR,/usr/include/.FOR,/usr/include/.FOR
+       -list filename : output_acqc_prof.lst
+       -o    filename : none
+
+COMPILER: Intel(R) Fortran 16.0-1633

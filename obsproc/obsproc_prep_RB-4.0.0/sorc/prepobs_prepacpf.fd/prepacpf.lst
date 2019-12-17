@@ -1,0 +1,1932 @@
+Page 1           Source Listing                  PREPOBS_PREPACPF
+2017-04-18 11:07                                 prepacpf.f
+
+      1 C$$$  MAIN PROGRAM DOCUMENTATION BLOCK
+      2 C
+      3 C MAIN PROGRAM:  PREPOBS_PREPACPF
+      4 C   PRGMMR: D. Keyser        ORG: NP22        DATE: 2017-01-12
+      5 C
+      6 C ABSTRACT: This program reads in aircraft profile data as output from
+      7 C   the NRL-based prepobs_prepacqc program and appends the nearest (in
+      8 C   time and distance) surface data available.  Surface data is pulled
+      9 C   from METAR reports in the corresponding ADPSFC dump file. 
+     10 C
+     11 C PROGRAM HISTORY LOG:
+     12 C 2011-03-10  J. Whiting -- Original code copied from offline mk_coloc
+     13 C              routine of 10 Mar 2011 15:03
+     14 C 2011-03-10  J. Whiting -- Adapted to run operationally; added W3TAG*
+     15 C              and ERREXIT calls; added docblock and comments
+     16 C 2012-11-20  J. Woollen -- Initial port to WCOSS
+     17 C 2013-02-12  D. Keyser  -- Final changes to run on WCOSS: Set BUFRLIB
+     18 C              missing (BMISS) to 10E8 rather than 10E10 to avoid
+     19 C              integer overflow; rename all REAL(8) variables as *_8;
+     20 C              use formatted print statements where previously
+     21 C              unformatted print was > 80 characters; traps to avoid
+     22 C              manipulating BUFRLIB missing values prior to encoding
+     23 C              them into output BUFR file (to avoid floating point
+     24 C              invalid error in BUFRLIB routine IPKS when debugging
+     25 C              turned on)
+     26 C 2017-01-12  D. Stokes  -- Check for, and skip, all comment lines when
+     27 C             reading contents of METAR station dictionary file ("!" in
+     28 C             character 1). Also fix to avoid a divide by zero which
+     29 C             slips by on tide/gyre with version 12.1 of the compiler,
+     30 C             but gets caught by newer compilers.
+     31 C             BENEFIT: Code more robust.  Comment lines were added to
+     32 C                      METAR dictionary on November 22, 2016 and since
+     33 C                      that time this program has been silently aborting
+     34 C                      due to an internal formatted read error.
+     35 C 2017-01-12  D. Keyser  -- Increase the maximum number of stations that
+     36 C             can be read from METAR station dictionary (MAXSTN) from
+     37 C             8000 to 20000.
+     38 C             BENEFIT: There are currently 7790 stations in the METAR
+     39 C                      dictionary. There are still stations missing that
+     40 C                      will need to be added.  A 20000 limit should
+     41 C                      suffice for quite some time,
+     42 C
+     43 C USAGE:
+     44 C   INPUT FILES:
+     45 C     UNIT 11  - METAR station dictionary file, sorted by longitude
+     46 C     UNIT 12  - ADPSFC dump file containing METAR surface reports
+     47 C     UNIT 13  - BUFR output from prepobs_prepacqc program containing
+     48 C                aircraft profile data with no surface level
+     49 C                information
+     50 C
+     51 C   OUTPUT FILES:  (INCLUDING SCRATCH FILES)
+     52 C     UNIT 51  - BUFR file as in unit 13, except now with nearest METAR
+     53 C                surface report appended to each aircraft profile
+     54 C
+     55 C   SUBPROGRAMS CALLED:
+     56 C     UNIQUE:    - GCIRC_QC (function) -- computes great circle 
+     57 C                  distances using the Haversine formula
+
+Page 2           Source Listing                  PREPOBS_PREPACPF
+2017-04-18 11:07                                 prepacpf.f
+
+     58 C     UNIQUE:    - 
+     59 C     LIBRARY:
+     60 C       W3NCO    - W3TAGB  W3TAGE ERREXIT W3MOVDAT W3DIFDAT
+     61 C       W3EMC    - ORDERS
+     62 C       BUFRLIB  - DATELEN  UFBTAB UFBMEM  UFBTAM OPENBF   UFBSEQ 
+     63 C                  UFBINT   OPENMB WRITSB  COPYMG CLOSMG   CLOSBF
+     64 C                  IBFMS    SETBMISS GETBMISS
+     65 C
+     66 C   EXIT STATES:
+     67 C     COND =   0 - SUCCESSFUL RUN
+     68 C          =   9 - wrong input BUFR message type encounted, failure
+     69 C          =  99 - memory allocation error, failure
+     70 C
+     71 C REMARKS: None.
+     72 C
+     73 C ATTRIBUTES:
+     74 C   LANGUAGE: FORTRAN 90
+     75 C   MACHINE:  NCEP WCOSS
+     76 C
+     77 C$$$
+     78       program PREPOBS_PREPACPF
+     79 
+     80 c quick look at msgs in BUFR files (mcl == read aircraft)
+     81 
+     82       real*8     bmiss       ! BUFR missing value
+     83       real*8     getbmiss    ! Function to return current bmiss value
+     84 
+     85 c-- station table vars
+     86       character    line*132
+     87       logical      eof        / .false. /
+     88       CHARACTER    sid*8, si4*4, sname*32, st*2, cn*2, chrx*20
+     89    
+     90       parameter    (MAXSTN=20000 )               ! max # stations
+     91 c     character*8  stid(MAXSTN)                  ! stn ID
+     92       character*4  stid(MAXSTN)                  ! stn ID - 4char metar
+     93       real         slat(MAXSTN), slon(MAXSTN)    ! stn lat, lon
+     94       integer      ishgt(MAXSTN)                 ! stn height
+     95 
+     96 c     parameter    (NPTR=72 )       ! 5-degree bins
+     97 c     parameter    (NPTR=120)       ! 3-degree bins
+     98       parameter    (NPTR=180)       ! 2-degree bins
+     99 c     parameter    (NPTR=360)       ! 1-degree bins
+    100       integer      lptr(NPTR)       ! pointers into longitude array
+    101 
+    102 c-- logical unit numbers
+    103       integer      lunstn   / 11 /  ! input, surface station table
+    104       integer      luntru   / 12 /  ! input, ground truth file (adpsfc)
+    105       integer      lunpro   / 13 /  ! input, profile file
+    106       integer      lunout   / 51 /  ! output profile file
+    107 
+    108 
+    109 c-- ground truth file vars
+    110       parameter    (MXTS=9, MXPS=7)
+    111       real(8)      usr8_8 
+    112       character*80 tstr,pstr
+    113       data         tstr /'YEAR MNTH DAYS HOUR MINU RPID CLAT CLON SELV'/  ! MXTS
+    114       data         pstr /'ALSE PMSL PRLC  TMDP TMDB  WDIR WSPD'/          ! MXPS
+
+Page 3           Source Listing                  PREPOBS_PREPACPF
+2017-04-18 11:07                                 prepacpf.f
+
+    115       REAL(8),ALLOCATABLE :: gtru_t_8(:,:)
+    116       REAL(8),ALLOCATABLE :: gtru_p_8(:,:)
+    117       INTEGER,ALLOCATABLE :: NDX(:)
+    118       parameter (PI=3.14159274, DEG_RAD=PI/180.)   ! conversion factors
+    119 
+    120 
+    121 c-- profile file vars
+    122       character*80 cnem
+    123       character*8  ctyp, ctyp0
+    124       character*8  cval(5), rpid, cstr
+    125       real*8       rval_8(5), rstr_8, prlc_8
+    126       equivalence (cval(1),rval_8(1)), (cstr,rstr_8)
+    127       parameter    (MXNM=25)
+    128       real*8       hdr_8(MXNM),out1_8(MXNM),pro2_8(MXNM,255),
+    129      &             out2_8(MXNM,255)
+    130 c     real(8)      pro3_8(MXNM,255,255)
+    131       real*8       usr_8(MXNM),usr2_8(MXNM,255)
+    132 c     real*8       usr3d_8(20,10000,255) ! events: #mnems, #levs, #evnts
+    133       real*8       t_tru_dp_8,t_tru_db_8,p_tru_8,altim_8,z_tru_8,pstn_8,
+    134      &             ws_tru_8,wd_tru_8,w_u_8,w_v_8,ws_tru_k_8,x_gtru_8,
+    135      &             x_tru_8,y_tru_8,dt_tru_8,dtlow_8,rpt_8,dhr_8
+    136 
+    137 
+    138 c-- time arrays
+    139       integer idat(8)    ! cycle time (yr,mon,day,tzone,hr,min,sec,msec)
+    140       real    rinc(5)    ! time increment (day,hr,min,sec,msec)
+    141       integer itob(8)    ! obs time == cycle time + time increment
+    142       integer itru0(8)   ! gr truth ob time
+    143       integer itru(8)    ! matching gr truth ob time
+    144 
+    145 c-- print output flags
+    146       logical   bylev/.false./
+    147       logical   wr_hdr/.true./, wr_stn/.true./, wr_match/.true./
+    148       logical   wr_prof/.true./
+    149 
+    150 c-- Function to convert Altimeter Setting to Station Pressure
+    151 c -   from prepdata.f (of Jun 03 [2008] 09:58, lines 13907-11);
+    152 C     subprogram SFCDTA
+    153 c -  formula ultimately from Smithsonian Meteorological Tables
+    154 c
+    155 C FCN P_f_A GETS PSTN (MB) FROM ALTIMETER SETTING (MB) AND ELEVATION (M)
+    156       P_f_A(ALT,ELEV) = (ALT**0.190284 - (((1013.25**0.190284)*
+    157      $ 0.0065/288.15)*ELEV))**5.2553026
+    158 ccccc      P_f_A(ALT,ELEV) = (ALT**0.190284 - (((1013.25**0.190284)*
+    159 ccccc     $ 0.0065/288.15)*ELEV))**5.2553026 + 0.3
+    160 
+    161 
+    162 c====67=10========20========30========40========50========60========70=2
+    163 
+    164       CALL W3TAGB('PREPOBS_PREPACPF',2017,012,71,'NP20')
+    165 
+    166       write(*,*) 'Welcome to PREPOBS_PREPACPF - Version 01-12-2017'
+    167 
+    168 C On WCOSS should always set BUFRLIB missing (BMISS) to 10E8 to avoid
+    169 C  overflow when either an INTEGER*4 variable is set to BMISS or a
+    170 C  REAL*8 (or REAL*4) variable that is missing is NINT'd
+    171 C -------------------------------------------------------------------
+
+Page 4           Source Listing                  PREPOBS_PREPACPF
+2017-04-18 11:07                                 prepacpf.f
+
+    172 ccccc call setbmiss(10E10_8)
+    173       call setbmiss(10E8_8)
+    174       bmiss = getbmiss()
+    175       print *
+    176       print *, 'BUFRLIB value for missing is: ',bmiss
+    177       print *
+    178 
+    179 c     wr_hdr=.false.
+    180 c     wr_stn=.false.
+    181       bylev=.true.
+    182 c     wr_match=.false.
+    183 c     wr_prof=.false.
+    184 
+    185 c   - read static station file (sfile) into memory, sort/index
+    186 c-------------------------------------------------------------
+    187 c--Read Station Table
+    188       OPEN(LUNSTN,FORM='FORMATTED')
+    189 
+    190       ns=0                                         ! station counter
+    191       do while ( .not. eof ) 
+    192         read(lunstn,'(a)',end=200) line
+    193         if(line(1:1).eq.'!')cycle
+    194         ns=ns+1
+    195 
+    196         if (ns .gt. MAXSTN) then
+    197           write(*,*) 'ERROR - too many stations', ns, MAXSTN
+    198           exit
+    199         endif ! ns > MAXSTN
+    200 
+    201         if ( ns .lt. 10 .and. .false. )            ! diagnostic print
+    202      &    write(*,'(1x,i4,1x,a)') ns,"'" // line(1:96) // "'"
+    203 
+    204         read(line,1500)      ! format from subroutine tbastn.f (gemlib)
+    205      &         sid, isn, sname,st,cn, lat,lon,   ihgt,  ispr, chrx
+    206  1500   format( a, 1x,i6, 3(1x,a),  1x,i5,1x,i6, 1x,i5, 1x,i2, a )
+    207 
+    208         stid(ns)=sid(1:4)                          ! metar ids - 4char
+    209         slat(ns)=float(lat)/100.
+    210         slon(ns)=float(lon)/100.
+    211         ishgt(ns)=ihgt
+    212 
+    213       enddo ! while not eof
+    214       write(*,*) 'eof reached; ns=',ns
+    215 
+    216  200  continue
+    217       write(*,*) '--rd Station Table: #stns=',ns
+    218 
+    219       nstot=ns  ! total # of stations
+    220 
+    221       close(lunstn)
+    222 
+    223 
+    224 c--set up pointers into lon array
+    225 c--- [ lptr(n) == metar line number of first lon w/in bin 'n' ]
+    226 c
+    227       binwidth=360./float(NPTR)
+    228       write(*,'(1x,a,1x,f6.2)') ' -pointer binwidth=',binwidth
+
+Page 5           Source Listing                  PREPOBS_PREPACPF
+2017-04-18 11:07                                 prepacpf.f
+
+    229       lptr0=0
+    230       ns=1
+    231       do j=1,NPTR
+    232         b1=  ( float(j-1) * binwidth ) - 180.
+    233         do while ( slon(ns) .lt. b1 )
+    234           ns=ns+1
+    235         enddo ! while slon(ns) < b1
+    236         lptr(j)=ns
+    237 
+    238         if ( .false. ) then ! write diagnostic for station tbl pointers
+    239           nl=lptr(j)-lptr0
+    240           lptr0=lptr(j)
+    241           b2=  b1 + binwidth
+    242           write(*,'(1x,i3," ==",1x,i4,2(1x,f6.1),1x,i3,2f8.2)')
+    243      &      j,ns,b1,b2,nl,slon(lptr(j)),slon(ns-1)
+    244         endif ! true/false -- stn tbl pointers diagnostics
+    245 
+    246       enddo ! j=1,NPTR
+    247 
+    248 
+    249 c--Read ground truth file
+    250 c------------------------
+    251       call DATELEN(10)                          ! set dates to 10-digit
+    252       OPEN(luntru,FORM='UNFORMATTED')
+    253 
+    254 
+    255 c--Read Gr Truth value into memory
+    256       write(*,'(a,$)') ' --rd GrTru file: ' 
+    257       call ufbtab(-luntru,usr8_8,1,1,MXTRU,' ')      ! gets # of rpts
+    258       call ufbmem(luntru,0,imsg,munit)
+    259       write(*,*) ' #rpts=',MXTRU,' #msgs=',imsg
+    260 
+    261       allocate(gtru_t_8(MXTS,MXTRU),STAT=I);IF(I.NE.0) GOTO 901
+    262       call ufbtam(gtru_t_8,MXTS,MXTRU,ntab,tstr)
+    263       write(*,'("  -tstr=""",A,"""")') tstr
+    264 
+    265       allocate(gtru_p_8(MXPS,MXTRU),STAT=I);IF(I.NE.0) GOTO 901
+    266       call ufbtam(gtru_p_8,MXPS,MXTRU,ntab,pstr)
+    267       write(*,'("  -pstr=""",A,"""")') pstr
+    268 
+    269       allocate(ndx(MXTRU)        ,STAT=I);IF(I.NE.0) GOTO 901
+    270       do i=1,MXTRU ; ndx(i)=i ; enddo
+    271 
+    272 
+    273 
+    274       if (.false.) then ! true/false skip (sorting)
+    275          write(*,*) ' -gtru arrays sorted'
+    276 
+    277 c--Sort GrTru values (RPID CLON CLAT DAYS HOUR MINU)
+    278 c ---sort keys go from low to high priority (ie, last call is highest)
+    279 
+    280       call orders(12,ndx,gtru_t_8(1,1),ntab,MXTS,8,2)   ! MINU
+    281       call orders(12,ndx,gtru_t_8(2,1),ntab,MXTS,8,2)   ! HOUR
+    282       call orders(12,ndx,gtru_t_8(3,1),ntab,MXTS,8,2)   ! DAYS
+    283       call orders(12,ndx,gtru_t_8(7,1),ntab,MXTS,8,2)   ! CLAT
+    284       call orders(12,ndx,gtru_t_8(8,1),ntab,MXTS,8,2)   ! CLON
+    285       call orders(10,ndx,gtru_t_8(6,1),ntab,MXTS,8,2)   ! RPID
+
+Page 6           Source Listing                  PREPOBS_PREPACPF
+2017-04-18 11:07                                 prepacpf.f
+
+    286 
+    287       write(*,'(a,$)') 'ndx(1-10): '
+    288       write(*,'(1x,i5,$)') (ndx(i),i=1,10)
+    289 c...jaw -- sorting
+    290 
+    291       else  ! true/false skip it (sorting)
+    292          write(*,*) ' -gtru arrays NOT sorted'
+    293       endif ! true/false skip it (sorting)
+    294 
+    295 
+    296 c debug print
+    297 c     gtru_t_8      YEAR MNTH DAYS HOUR MINU RPID CLAT CLON SELV
+    298 c                     1    2    3    4    5    6    7    8    9
+    299 c     gtru_p_8      ALSE PRES PRLC  TMDP TMDB  WDIR WSPD
+    300 c     gtru_p_8      ALSE PMSL PRLC  TMDP TMDB  WDIR WSPD
+    301 c                     1    2    3     4    5     6    7
+    302       if ( .false. ) then  ! skip it true/false -- debug gtru
+    303       write(*,'(1x,a)') '-debug echo of gtru values'
+    304       write(*,'(1x,a)') ' tstr >'//tstr//'<'
+    305       write(*,'(1x,a)') ' pstr >'//pstr//'<'
+    306       j1=16044  ; j2=j1+5
+    307       j1=1      ; j2=j1+5
+    308       j1=1      ; j2=MXTRU
+    309 c     nprlc=0                                      ! track PRLC content
+    310       do j=j1,j2
+    311 
+    312         prlc_8=gtru_p_8( 3,j)                      ! track PRLC content
+    313         if (ibfms(prlc_8).ne.0) cycle
+    314         nprlc=nprlc+1 ; if (nprlc.gt.10) cycle
+    315 
+    316 c       if ( ( j.gt.3 .and. j.lt.16046 ) .or.      ! sample each dtyp
+    317 c    &       ( j.gt.16048 .and. j.lt.16728 ) .or. 
+    318 c    &         j.gt.16730 ) cycle
+    319 
+    320 c       write(*,'(2x,$)')
+    321         write(*,'(1x,i5,$)') j                              ! rpt #
+    322         write(*,6) (int(gtru_t_8(i,j)),i=1,5)               ! date/time
+    323         write(*,'(2x,f6.2,1x,f7.2,$)') (gtru_t_8(i,j),i=7,8)! CLAT,CLON
+    324         rval_8(1)=gtru_t_8(6,j) ; write(*,'(2x,a,$)')cval(1)! RPID
+    325         write(*,'(1x,i5,$)') int( gtru_t_8(9,j) )           ! SELV
+    326 
+    327 
+    328         write(*,'(1x,a,$)') '|p'
+    329         write(*,'(3(1x,f7.0),$)') (gtru_p_8(i,j),i=1,3)! ALSE,PMSL,PRLC
+    330         write(*,'(1x,a,$)') '|t'
+    331         write(*,'(1x,f6.2,$)') gtru_p_8( 4,j)          ! TMDP
+    332         write(*,'(1x,f6.2,$)') gtru_p_8( 5,j)          ! TMDB
+    333         write(*,'(1x,a,$)') '|w'
+    334         write(*,9) (gtru_p_8(i,j),i= 6, 7)             ! WDIR WSPD
+    335         write(*,*) ! linefeed
+    336       enddo
+    337     6 format (1x,i4,2i2.2,".",2i2.2,$)
+    338     9 format (1x,f4.0,1x,f5.1,$)
+    339 
+    340       write(*,'(1x,a,2i6)') '-nprlc,MXTRU=',nprlc,MXTRU   ! track PRLC
+    341                                                           !  content
+    342 
+
+Page 7           Source Listing                  PREPOBS_PREPACPF
+2017-04-18 11:07                                 prepacpf.f
+
+    343       write(*,'(  1x,a)') '--debug stop' ; stop
+    344       endif ! true/false skip it -- debug gtru
+    345 
+    346 
+    347       write(*,*) '--closing GrTru',luntru
+    348       close(luntru)
+    349 
+    350 
+    351       if ( .not. wr_prof ) write(*,*) '--NOT writing prof file',lunpro
+    352 
+    353 c--Read aircraft profile prepbufr file
+    354 c-------------------------------------
+    355       if ( .true. ) then ! false/true skip it (lunpro)
+    356 
+    357       dxymax=0   ! counter for max xy separation
+    358 
+    359 c-- Open input a/c profile file
+    360 c     OPEN(lunpro,FORM='UNFORMATTED')
+    361 c     CALL OPENBF(0,'QUIET',1)                  ! debug
+    362 c     CALL MESGBC(lunpro,MSGT,ICOMP)
+    363 
+    364       write(*,*) '--open input a/c profile', lunpro
+    365       call OPENBF(lunpro,'IN',lunpro)
+    366 
+    367 
+    368 c-- Open output a/c profile file
+    369 c     OPEN(lunout,FORM='UNFORMATTED')
+    370       if ( wr_prof ) then
+    371         write(*,*) '--open output a/c profile', lunout
+    372         call OPENBF(lunout,'OUT',lunpro)
+    373       endif ! wr_prof
+    374 
+    375 
+    376 c--Loop thru aircraft profile prepbufr file
+    377       jmmin=400 ! counter for RPID matches in GTru
+    378       jmmax=0   ! counter for RPID matches in GTru
+    379       njm0=0    ! cntr for # profs where jm=0 -- rejected for output
+    380 
+    381       nr=0                        ! rpt counter
+    382       nmsg=0                      ! msg counter
+    383       nr1=0                       ! rpt counter -- non-skipped
+    384       nmsg1=0                     ! msg counter -- non-skipped
+    385       nhi=0                       ! rpt counter -- rejected high (idhgt)
+    386       nrare=0                     ! rpt counter -- rejected high ( )
+    387       nfar=0                      ! rpt counter -- rejected far (dmin)
+    388       nt3=0                       ! rpt counter -- rejected typ=3xx
+    389       nro=0                       ! rpt counter -- # written out
+    390 
+    391       ctyp0=" "
+    392       do while( IREADMG(lunpro,ctyp,idate).EQ.0 )
+    393       nmsg=nmsg+1
+    394       msub = nmsub(lunpro)
+    395 
+    396       if ( ctyp(1:6) .ne. 'AIRCFT' .and. ctyp(1:6) .ne. 'AIRCAR' ) then 
+    397         write(*,*)
+    398         write(*,*) 'ctyp=>',ctyp,'< -- not supported - exiting'
+    399 c       stop 9
+
+Page 8           Source Listing                  PREPOBS_PREPACPF
+2017-04-18 11:07                                 prepacpf.f
+
+    400         CALL W3TAGE('PREPOBS_PREPACPF')
+    401         call errexit(9)
+    402       endif ! ctyp != AIRCFT or AIRCAR
+    403 
+    404       if ( ctyp .ne. ctyp0 ) then 
+    405         if ( ctyp0 .ne. " " .and. .false. ) write(*,*) ! linefeed
+    406         ctyp0=ctyp
+    407         write(*,*) ' ctyp="'//ctyp//'" idate=',idate
+    408       endif ! ctyp != ctyp0
+    409 
+    410 c-- skip AIRCFT reports
+    411 ccc   if ( ctyp(1:6) .ne. 'AIRCAR' .and. .true. ) then 
+    412       if ( ctyp(1:6) .eq. 'AIRCFT' .and. .false. ) then 
+    413         nr=nr+msub
+    414         cycle
+    415       endif ! not AIRCFT
+    416       nmsg1=nmsg1+1
+    417 
+    418 
+    419       do while (iREADSB(lunpro) .eq. 0) 
+    420       nr=nr+1
+    421 
+    422 c     if ( nr .lt. 524                  ) cycle          ! poaf=6
+    423 ccc   if ( nr .lt. 397 .or. nr .gt. 397 ) cycle
+    424 ccc   if ( nr .lt. 236 .or. nr .gt. 238 ) cycle
+    425 ccc   if ( nr.ne.236 .and. nr.ne.237 .and. .false. .and. ! nrmin, nrmax
+    426 ccc  &     nr.ne.238 .and. nr.ne.257 .and. nr.ne.270 ) cycle
+    427 ccc   if ( nr1.gt.5 .and. nr.ne.270 .and. nr.ne.272 .and.        ! jm=0
+    428 ccc  &     nr.ne.289 .and. nr.ne.296 .and. nr.ne.302 ) cycle
+    429 
+    430 c...jaw -- special prof filtering
+    431       nr1=nr1+1
+    432 
+    433 c+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    434 c AIRCFT/AIRCAR processing
+    435 
+    436 c AIRCAR/AIRCFT == HEADR ACID/RCT {PRSLEVLA}
+    437 c HEADR ==
+    438 c  SID  XOB YOB DHR ELV TYP T29 TSB  ITP  SQN PROCN  RPT  TCOR <RSRD_SEQ>
+    439 c      lon lat                     instr           otime
+    440       
+    441       call ufbseq(lunpro,hdr_8,MXNM,1,nhdr,'HEADR')
+    442       rval_8(1)=hdr_8(1)                               ! SID
+    443       rlon0 = hdr_8(2)
+    444       if ( rlon0 .gt. 180 ) rlon0=rlon0-360.
+    445       rlat0 = hdr_8(3)
+    446 
+    447       dhr_8 = hdr_8(4)                                 ! t_ob - t_cycle
+    448       iz0 = int( hdr_8(5) )                            ! elev (ELV)
+    449 
+    450 c--         lon lat drft_t ph_flt turb Pres Temp Hgt PrQM HgtQM nrlQM
+    451 c     cnem='XDR YDR HRDR    POAF  DGOT  POB TOB  ZOB  DDO FFO UOB VOB'
+    452        ! v1 btab
+    453 
+    454       cnem='XDR YDR HRDR    POAF  TRBX  POB TOB  ZOB  DDO FFO UOB VOB'
+    455        ! v2 btab
+    456 
+
+Page 9           Source Listing                  PREPOBS_PREPACPF
+2017-04-18 11:07                                 prepacpf.f
+
+    457       usr2_8=bmiss
+    458       call ufbint(lunpro,usr2_8,MXNM,255,nlev,cnem)
+    459 
+    460 
+    461 c-- Get lat/lon/elev for minimum height ob
+    462 c--- assume minimum height obs occur at 1st replication (lev=1)
+    463 
+    464       llow=1
+    465       izmin = int( usr2_8(8,llow) )  ! DAK: could usr2_8(8,llow) missing
+    466                                      !      cause a problem here??
+    467       MAXHGT=5000
+    468       if ( izmin.gt.MAXHGT .and. .false. ) then  ! exclude 'high' rpts
+    469         nhi=nhi+1                        ! max hgt in metar.tbl = 4057
+    470         nr1=nr1-1   ! reset counter
+    471         cycle
+    472       endif ! izmin > MAXHGT
+    473 
+    474       ityp=int( hdr_8(6) )
+    475       if ( ityp/100 .eq. 3 .and. .true. ) then        ! exclude typ=3xx 
+    476         nt3=nt3+1
+    477         cycle
+    478       endif ! ityp/100 = 3
+    479 
+    480       rlonmin = usr2_8(1,llow)
+    481       if ( rlonmin .gt. 180 ) rlonmin=rlonmin-360.
+    482       rlatmin = usr2_8(2,llow)
+    483         dtlow_8 = usr2_8(3,llow)                    ! hrdr of low prof
+    484 
+    485 
+    486 c--Begin output
+    487 
+    488 c---Columns header
+    489       if (wr_hdr) then 
+    490         wr_hdr = .false.
+    491         write(*,50) 'rpt','XOB','YOB','ZOB'
+    492         write(*,51) 'stn','lon','lat','hgt'
+    493 c       write(*,52) 'dXY','dhgt'
+    494       endif ! wr_hdr
+    495    50 format(/,1x,a,3(4x,a),$)
+    496    51 format(3x,a,1x,2(4x,a),3x,a,$)
+    497    52 format(3x,a,3x,a,$)
+    498 
+    499 
+    500 c--Test: what is max delta xy (j-1 -> j) for lowest levs? 
+    501       if ( .false. ) then  ! true/false skip it -- dxy
+    502         dxyjmax=0
+    503         do j=2,min( nlev, 6 )
+    504           dxyj = dsqrt( ( usr2_8(1,j) - usr2_8(1,j-1) )**2 + 
+    505      &                  ( usr2_8(2,j) - usr2_8(2,j-1) )**2 )
+    506           if ( abs(dxyj) .gt. dxyjmax ) then 
+    507             dxyjmax=abs(dxyj)
+    508             jmax=j
+    509           endif
+    510         enddo ! j=2,nlev
+    511         write(*,'(1x,a,1x,f6.1,1x,i3, $)') 'x=',dxyjmax*111., jmax
+    512         if ( dxyjmax .gt. 5./111. .and. .false. ) bylev = .true.
+    513       endif ! true/false -- dxy
+
+Page 10          Source Listing                  PREPOBS_PREPACPF
+2017-04-18 11:07                                 prepacpf.f
+
+    514 
+    515 
+    516 c--Find Nearest Station in Table
+    517 c--- lon,lat,hgt == rlonmin, rlatmin, izmin
+    518 c ( b1 + 180 ) / binwidth + 1 = j
+    519 
+    520 c-find index into station table to start search
+    521       rlon= rlonmin - binwidth              ! backup 1 bw (ease factor)
+    522       j=  int( (rlon + 180.)/binwidth ) + 1
+    523       b1= slon(lptr(j))                     ! j bin start
+    524       b2= b1 + binwidth * 3.                ! start lon + 3 bins
+    525 c     write(*,'(1x,a,1x,f7.2,1x,i3,2(1x,f7.2),$)') '|',rlon,j, b1,b2
+    526 c     write(*,'(a,3(1x,i4),$)')' ||',lptr(j),lptr(j+3),lptr(j+3)-lptr(j)
+    527 
+    528 c-loop thru stations & calc xy distance.
+    529 c     write(*,*) ! linefeed
+    530       ns=0
+    531       dmin=1.d5
+    532       l=lptr(j)
+    533 c     l=1                                     ! *** debug: all stns
+    534       lmin=l
+    535 cppppppppppppppp
+    536 cdak  print *, 'initially: l,ns = ',l,ns
+    537 cppppppppppppppp
+    538       do while (slon(l) .le. b2 .or. .false.) ! *** db: true == all stns
+    539 
+    540         slon2 = slon(l)
+    541         slat2 = slat(l)
+    542         d = gcirc_qc(slat2,slon2,rlatmin,rlonmin)/ 1.d3  ! dist in km
+    543         if ( d .lt. dmin) then 
+    544           dmin = d
+    545           lmin = l
+    546         endif ! d < dmin
+    547 
+    548 c       write(*,'(/,3x,i4,3x,i4,1x,f7.2,1x,f6.2,1x,f9.3,$)')
+    549 c    &    ns,l,slon2,slat2,d
+    550 
+    551         l=l+1
+    552         ns=ns+1
+    553 cppppppppppppppp
+    554 cdak  print *, 'l,ns,nstot = ',l,ns,nstot
+    555 cppppppppppppppp
+    556         if ( l.gt.nstot ) then  ! added by DAK 3/6/13 to avoid slon array
+    557                                 !  overflow
+    558            print *, 'WARNING: l in loop exceeds nstot - exit loop'
+    559 cccccccc   print *, ' -- Jeff Whiting needs to look into this!!!!!'
+    560            exit
+    561         endif
+    562 c       if ( ns.ge.nstot ) exit                  ! *** db: ck all stns
+    563       enddo ! while slon < b2
+    564 
+    565 c-write out results of search
+    566       idhgt=izmin-ishgt(lmin)                    ! dHgt = ZOB(1)-stnHgt
+    567 
+    568       if (wr_stn) then
+    569 
+    570 c     write(*,'(/,i3,i4,$)') nmsg, nr
+
+Page 11          Source Listing                  PREPOBS_PREPACPF
+2017-04-18 11:07                                 prepacpf.f
+
+    571       write(*,'(/,   i4,$)')       nr
+    572 
+    573 c     write(*,'(1x,a,$)') cval(1)                ! SID
+    574       write(*,61) rlonmin ,rlatmin               ! XOB(1), YOB(1)
+    575    61 format(1x,f7.2,1x,f6.2,$)
+    576 
+    577       write(*,'(1x,i5,$)') izmin                 ! ZOB(1)
+    578 c     write(*,'(1x,f9.5 ,$)') dtlow_8            ! HRDR(1) (hrs)
+    579 
+    580       write(*,85)  ' |',stid(lmin),slon(lmin),slat(lmin),ishgt(lmin)
+    581    85 format(a,1x,a,1x,f7.2,1x,f6.2,1x,i4                ,$)
+    582       write(*,'(1x,a,i4,$)') '|| #stn chkd=',ns
+    583       write(*,86)  ' |',dmin,idhgt                       ! Far, Hi
+    584    86 format(                             a,1x,f4.1,1x,i5,$)
+    585       endif ! wr_stn
+    586 
+    587 
+    588 c-skip profs that are too high (meters/pressure) or too far (km)
+    589       if (.true.) then ! true/false skip it -- rejections
+    590       LOW=300 ; RARE=30 ; rNEAR=10
+    591       if (idhgt.gt.LOW .and. .true.) then
+    592         if (wr_stn) write(*,'(2(1x,a,i5),$)') '||hi:',idhgt,'>',LOW
+    593         nhi=nhi+1
+    594         cycle
+    595       endif ! Idhgt<LOW
+    596           ! DAK: to avoid compiler initialization warning, set dpres to
+    597           !      zero - appears if-test below never satisfied anyway
+    598           !      since .false. in if-test
+    599              dpres = 0.
+    600       if ( dpres.gt.RARE .and. .false.) then
+    601         if (wr_stn) write(*,'(2(1x,a,i5),$)') '||dp:',dpres,'>',RARE
+    602         nrare=nrare+1
+    603         cycle
+    604       endif ! dpres<RARE
+    605       if (dmin.gt.rNEAR .and. .true.) then
+    606         nfar=nfar+1
+    607         if (wr_stn) 
+    608      &    write(*,'(1x,a,f4.1,1x,a,f4.1,$)') '||far:',dmin,'>',rNEAR
+    609         cycle
+    610       endif ! dmin<rNEAR
+    611       endif ! true/false skip it -- rejections
+    612 
+    613 c ---400mb total column height
+    614 c ...jaw - GDiMego suggests above filter
+    615 
+    616 
+    617 c--Output by level
+    618       if ( bylev ) then 
+    619 
+    620       nlevpr=min(nlev,5)      ! number of levs to print
+    621       nlevpr=min(nlev,255)    ! number of levs to print
+    622 c     if ( nmsg.eq.31 .and. nr.eq.117 ) nlevpr=nlev
+    623       if ( nlevpr.gt.1 ) 
+    624      &  write(*,'(/, 3x,a,i3,1x,2a,$)') 'n=',nlev,
+    625      &    ' lon    lat   Z(m)     hrdr   dX(km) dt(min)',
+    626      &    '  kph   dZ(m)  phF  P(mb)    T(c)' //
+    627      &    '  W(deg) W(m/s)   W-u   W-v'
+
+Page 12          Source Listing                  PREPOBS_PREPACPF
+2017-04-18 11:07                                 prepacpf.f
+
+    628 
+    629       do k=1,nlevpr
+    630         j=k                               ! print out 1st nlevpr-2 levs
+    631         if (k.eq.nlevpr-1) j=nlev-1       !  followed by the nlevpr-1 &
+    632         if (k.eq.nlevpr) j=nlev           !  nlevpr levs
+    633 
+    634         if ( nlev.gt.1 ) then 
+    635 c         write(*,'(/,i3,i4 ,$)') nmsg, nr                  ! nmsg, nr
+    636           write(*,'(/,3x,1x,i2 ,$)') j                      ! j
+    637 
+    638           rlon=usr2_8(1,j)
+    639           if ( rlon .gt. 180 ) rlon=rlon-360.
+    640           write(*,'(1x,f7.2,1x,f6.2 ,$)') rlon, usr2_8(2,j) ! lon(XDR),
+    641                                                             ! lat(YDR)
+    642 
+    643 c-- Observation height
+    644           iz = int(usr2_8(8,j))
+    645           write(*,'(1x,i5 ,$)') iz                  ! hgt (m) (ZOB)
+    646 
+    647 c-- Drift time (t_drift - t_cycle)
+    648           t = usr2_8(3,j)
+    649           write(*,'(1x,f9.5 ,$)') t                 ! time (HRDR)
+    650 
+    651 c-- horizontal offset in km (plane geometry)
+    652           dxy = dsqrt( ( rlon-rlon0 )**2 + ( usr2_8(2,j)-rlat0 )**2 )
+    653           dxy = dxy * 1.11d2
+    654           write(*,'(1x,f6.1 ,$)') dxy               ! horiz dist (km)
+    655 
+    656           if (dxy.gt.dxymax .and. .true.) dxymax=dxy
+    657 
+    658 c-- time offset in minutes
+    659 c      (t_drift-t_cycle) - (t_ob-t_cycle) == t_drift-t_ob
+    660           dt = (usr2_8(3,j) - dhr_8) * 60.d0
+    661           write(*,'(1x,f6.2 ,$)') dt                ! elapsed time (hr)
+    662 
+    663 c-- horizontal velocity
+    664           if ( j .gt. 1 ) then 
+    665             dTj   = ( usr2_8(3,j) - usr2_8(3,j-1) ) * 60.d0 !! dT in min
+    666             dlonj = usr2_8(1,j) - usr2_8(1,j-1)
+    667             dlatj = usr2_8(2,j) - usr2_8(2,j-1)
+    668             dXj = dsqrt( ( usr2_8(1,j) - usr2_8(1,j-1) )**2 + 
+    669      &                   ( usr2_8(2,j) - usr2_8(2,j-1) )**2 ) * 1.11d2
+    670                                                          !! dX in km
+    671 c           write(*,'(1x,f6.1,1x,f8.5 ,$)') dXj, dTj     ! dX(km),
+    672                                                          ! dT(min)
+    673             if ( dTj .gt. 1.d-5 ) then
+    674               vj = dXj / dTj * 60.d0                       !! v in kph
+    675               write(*,'(1x,f7.1 ,$)') vj * 1.d5 / 2.54 / 12. / 5280.
+    676                                                     ! velocity in kph
+    677             else
+    678               write(*,'(1x,a7 ,$)') 'n/a '
+    679             endif ! dTj > .00001
+    680           else
+    681 ccccccccc   write(*,'( 8x ,$)')
+    682             write(*,'(1x,a7 ,$)') '       '
+    683           endif ! j ne 0
+    684 
+
+Page 13          Source Listing                  PREPOBS_PREPACPF
+2017-04-18 11:07                                 prepacpf.f
+
+    685         endif ! nlev > 1
+    686 
+    687 c-- hgts offset from elevation
+    688         idz = iz - iz0                              ! ZOB - ELV
+    689 c       idz = int( float(idz) / 2.54d-2 / 12.d0 )   ! convert hgt to ft
+    690         write(*,'(1x,i6 ,$)') idz
+    691 
+    692 c-- Phase of aircraft flight
+    693 c  POAF == 0-1:RSV 2:UNS 3:LVL 4:LVw/W 5:ASC 6:DES 7:MSG' # 0-08-004
+    694         ipoaf = int(usr2_8(4,j))
+    695         if (ibfms(usr2_8(4,j)).ne.0) ipoaf = -1
+    696         write(*,62) ipoaf                 ! phase of flight (POAF)
+    697    62 format(1x,i3, $)
+    698 
+    699         write(*,63) usr2_8(6,j)           ! pressure (mb) (POB)
+    700    63 format(1x,f7.1, $)
+    701 
+    702         write(*,64) usr2_8(7,j)           ! temperature (c) (TOB)
+    703    64 format(1x,f7.1, $)
+    704 
+    705         write(*,65) (usr2_8(i,j),i=9,10)  ! wind dir, spd (DDO, FFO)
+    706    65 format(2x, 1x,f4.0,1x,f5.1,$)
+    707 
+    708         write(*,66) (usr2_8(i,j),i=11,12) ! wind u-, v-  (UOB, VOB)
+    709    66 format(2x,    2(1x,f5.1),$)
+    710 
+    711       enddo ! k=1,nlev
+    712 
+    713       endif ! bylev
+    714 c+++++
+    715 
+    716 c     if ( nr .ge. 3 .and. .true.  ) then 
+    717 c       print '(/,a)', "debug stop"
+    718 c       stop
+    719 c     endif
+    720 
+    721 c AIRCFT/AIRCAR processing
+    722 c+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    723 
+    724 
+    725 c---Get time of lowest profile observation
+    726 c --- dtlow_8 == t(1) == hrdr(1) == usr2_8(3,1) == t{lowest ob}-t{cyc} (hr)
+    727 
+    728 c     write(*,'(/,8x,a,$)') 'dtlow_8, dtlow_8*60, dhr_8, dhr_8*60: '
+    729 c     write(*,'(2(1x,f9.5,1x,f6.3,$)') dtlow_8,dtlow_8*6.d1,dhr_8,
+    730 c    &                                 dhr_8*6.d1
+    731 
+    732 c--cycle time (idat: year, mon, day, tzone, hr, min, sec, msec)
+    733       iyr=idate/1000000
+    734       imm=mod(idate/10000,100)
+    735       idd=mod(idate/100,100)
+    736       ihr=mod(idate,100)
+    737 
+    738 c     integer idat(8)   ! cycle time (yr,mon,day,tzone,hr,min,sec,msec)
+    739       idat=0
+    740       idat(1)=iyr
+    741       idat(2)=imm
+
+Page 14          Source Listing                  PREPOBS_PREPACPF
+2017-04-18 11:07                                 prepacpf.f
+
+    742       idat(3)=idd
+    743       idat(5)=ihr
+    744 
+    745 c--time increment (rinc: day, hr, min, sec, msec)
+    746 c     real    rinc(5)     ! time increment (day,hr,min,sec,msec)
+    747       rinc=0
+    748       rinc(2)=dtlow_8     ! HRDR(1): dt of low prof
+    749       
+    750 c--time of (lowest) ob
+    751 c  w3movdat(rinc,idat,itob): itob(ymd/hmss)= idat(ymd/hmss)+rinc(dh/mss)
+    752       call w3movdat(rinc,idat,itob)
+    753       if (wr_match) then
+    754         write(*,'(/,1x,a,$)') 't_ob_low:'
+    755         write(*,7) (itob(i),i=1,3),(itob(i),i=5,8)! low ob date/time
+    756         write(*,'(1x     ,f8.5,$)') dtlow_8       ! dt: low prof - cycle
+    757       endif ! wr_match
+    758 
+    759 
+    760 c---Search GTru array for match
+    761       rpid=stid(lmin) 
+    762       jm=0                     ! counter for # of matching gtru stns
+    763       tdif0=120.               ! minimum time diff threshold (hrs)
+    764       do l=1,MXTRU
+    765         j=ndx(l)
+    766         rval_8(1)=gtru_t_8(6,j)        ! RPID
+    767         if ( rpid.eq.cval(1) ) then 
+    768           jm=jm+1
+    769 
+    770 c-Gr Truth Time in NCEP time format (yr,mon,d,t_zone,h,min,s,ms)
+    771           itru0=0
+    772           itru0(1)=int(gtru_t_8(1,j))  ! year
+    773           itru0(2)=int(gtru_t_8(2,j))  ! month
+    774           itru0(3)=int(gtru_t_8(3,j))  ! day
+    775           itru0(5)=int(gtru_t_8(4,j))  ! hour
+    776           itru0(6)=int(gtru_t_8(5,j))  ! minute
+    777 
+    778 c-low profile time - gr_tru time
+    779           rinc=0
+    780           call w3difdat(itob,itru0,0,rinc)        ! rinc = itob - itru0
+    781 
+    782           tdif = (( rinc(5)/1.d3 + rinc(4) ) / 60.d0 ! secs to minutes
+    783      &            +                rinc(3) ) / 60.d0 ! minutes to hours
+    784      &            +                rinc(2)           ! hours
+    785      &            +                rinc(1) * 24.d0   ! days to hours
+    786 
+    787 c-find minimum time diff & note g_tru record #
+    788           if ( abs(tdif).lt.abs(tdif0) ) then 
+    789             tdif0=tdif                      ! min t: low prof - gr_tru
+    790             ngtru=j                         ! gtru record w/ min tdif
+    791             itru=itru0                      ! matching gtru time values
+    792           endif ! tdif < tdif0
+    793 
+    794 
+    795 c--Echo all matching stations
+    796 c tstr        YEAR MNTH DAYS HOUR MINU RPID CLAT CLON SELV
+    797 c gtru_t_8      1    2    3    4    5    6    7    8    9
+    798           if ( wr_match ) then  
+
+Page 15          Source Listing                  PREPOBS_PREPACPF
+2017-04-18 11:07                                 prepacpf.f
+
+    799             write(*,'(/,2x,i2,$)') jm                      ! match #
+    800             write(*,'(1x,i5,$)') j                         ! rpt #
+    801 c           write(*,7) (int(gtru_t_8(i,j)),i=1,5),0,0      ! date/time
+    802             write(*,7) (itru0(i),i=1,3),(itru0(i),i=5,8)   ! date/time
+    803 c           write(*,'(2x,f6.2,1x,f7.2,$)') (gtru_t_8(i,j),i=7,8)! CLAT,
+    804                                                                 ! CLON
+    805             write(*,'(2x,f7.2,1x,f6.2,$)')(gtru_t_8(i,j),i=8,7,-1)!CLON,
+    806                                                                   !CLAT
+    807                            write(*,'(2x,a,$)') cval(1)(1:4)     ! RPID
+    808             write(*,'(1x,i5,$)') int( gtru_t_8(9,j) )           ! SELV
+    809 
+    810 c           write(*,'(  1x,a,$)') '|| tdif:'
+    811 c           write(*,28) (abs(int(rinc(i))),i=1,5)
+    812 c  28 format (1x,    i2.2,".",3i2.2,'.',i3.3,$)        ! packed print
+    813 cj          write(*,18) (int(rinc(i)),i=1,5)
+    814 cj 18 format (1x,  i2,3(1x,i3.2),1x,i4.3,$)            ! unpacked print
+    815 
+    816             write(*,'(1x,a,1x,f8.5,$)') '| dt:',tdif
+    817             write(*,'(1x,a,1x,f8.5,1x,i6,$)') '||',tdif0, ngtru
+    818 
+    819           endif ! wr_match
+    820         endif ! rpid = cval(1) [matching gtru stns]
+    821       enddo ! l=1,MXTRU
+    822       if ( jm.lt.jmmin ) then ; jmmin=jm ; nrmin=nr ; endif
+    823       if ( jm.gt.jmmax ) then ; jmmax=jm ; nrmax=nr ; endif
+    824 
+    825 
+    826 c Trap case where no matching station is found
+    827       if ( jm.eq.0 ) then 
+    828         njm0=njm0+1
+    829         if ( .true. ) write(*,'(/,a,2(1x,i4),$)') 
+    830      &    'ERROR -- no matches found; jm,njm0: ',jm,njm0
+    831         cycle                               ! break out of lunpro loop
+    832 c...jaw -- is this right?
+    833       endif ! jm=0
+    834 
+    835 
+    836 c--Designate parms for output
+    837 c  tstr        YEAR MNTH DAYS HOUR MINU RPID CLAT CLON SELV
+    838 c  gtru_t_8      1    2    3    4    5    6    7    8    9
+    839 c  pstr        ALSE PMSL PRLC  TMDP TMDB  WDIR WSPD        ! metar-ish
+    840 c  gtru_p_8      1    2    3     4    5     6    7
+    841 
+    842 c-time (drift info)       ! DHR(rinc) = cycletime(idat) - stntime(itru)
+    843       rinc=0
+    844       call w3difdat(itru,idat,0,rinc)            ! dt: stn - cycle time
+    845       dt_tru_8 =                                 ! DHR (hr)
+    846      &           (( rinc(5)/1.d3 + rinc(4) ) / 60.d0  ! secs to minutes
+    847      &            +                rinc(3) ) / 60.d0  ! minutes to hours
+    848      &            +                rinc(2)            ! hours
+    849      &            +                rinc(1) * 24.d0    ! days to hours
+    850 
+    851 
+    852 c-location (CLON, CLAT, ...  izmin SELV)
+    853       x_gtru_8=gtru_t_8(8,ngtru)                  ! CLON (deg)
+    854       x_tru_8=x_gtru_8
+    855       if (x_tru_8.lt.0.) x_tru_8=x_tru_8+360.     ! XOB/XDR (deg 0-360)
+
+Page 16          Source Listing                  PREPOBS_PREPACPF
+2017-04-18 11:07                                 prepacpf.f
+
+    856       y_tru_8=gtru_t_8(7,ngtru)                   ! CLAT (deg)
+    857       z_tru_8=gtru_t_8(9,ngtru)                   ! SELV (m)
+    858 
+    859 c-pressure -- convert Altimeter Setting (ALSE) to Station Pressure
+    860 c     p_tru_8=gtru_p_8(2,ngtru)                   ! PMSL (P)
+    861       altim_8=gtru_p_8(1,ngtru)                   ! ALSE (P)
+    862 
+    863       if(ibfms(z_tru_8).eq.0 .and. ibfms(altim_8).eq.0)  then
+    864          pstn_8=p_f_a(altim_8*0.01, z_tru_8)      ! stn pres (mb)
+    865          p_tru_8=pstn_8
+    866       else
+    867          p_tru_8=bmiss
+    868       endif
+    869 
+    870 c-temperature (dewpoint & dry bulb)
+    871       t_tru_dp_8=gtru_p_8(4,ngtru)                ! TMDP (K)
+    872       t_tru_db_8=gtru_p_8(5,ngtru)                ! TMDB (K)
+    873 
+    874 c-winds (dir & spd)
+    875       wd_tru_8=gtru_p_8(6,ngtru)                  ! WDIR (deg)
+    876       ws_tru_8=gtru_p_8(7,ngtru)                  ! WSPD (m/s)
+    877 
+    878       if(ibfms(ws_tru_8).eq.0 .and. ibfms(wd_tru_8).eq.0) then
+    879          w_u_8=ws_tru_8 * cos(wd_tru_8*DEG_RAD)   ! u- wind (m/s)
+    880          w_v_8=ws_tru_8 * sin(wd_tru_8*DEG_RAD)   ! v- wind (m/s)
+    881       else
+    882          w_u_8=bmiss
+    883          w_v_8=bmiss
+    884       endif
+    885 
+    886       if(ibfms(ws_tru_8).eq.0) then
+    887          ws_tru_k_8=ws_tru_8 * 1.944d0            ! wspd (knots)
+    888       else                                        ! (1 m/s= 1.944 knots)
+    889          ws_tru_k_8=bmiss
+    890       endif
+    891 
+    892 c--Echo matching station info
+    893       if (wr_stn) then 
+    894 
+    895 ccc     write(*,'(/,3x,1x,i2 ,$)') 0
+    896 ccc     write(*,'(1x,f7.2,1x,f6.2 ,$)') x_gtru_8,y_tru_8  ! stn lon,lat
+    897 ccc     write(*,'(1x,i5 ,$)') int(z_tru_8)                ! stn elv (m)
+    898 ccc     write(*,'(1x,f9.5 ,$)') t                         ! time (hrdr)
+    899 
+    900 c       write(*,'(/,1x,a,1x,i5,$)') 'stn |#',ngtru
+    901         write(*,'(/,1x,a,1x,i5,$)') 'Stn:',ngtru
+    902 
+    903 c       write(*,'(1x,a,$)') '| xyz:'
+    904         write(*,'(1x,f7.2,1x,f6.2,$)') x_gtru_8,y_tru_8  ! stn lon,lat
+    905         write(*,'(2x,a,$)') rpid(1:4)                    ! gr stn id (rpid)
+    906         cstr=rpid                                  ! -- equiv to rstr_8
+    907         write(*,'(1x,i5,$)') int(z_tru_8)            ! stn elv (m)
+    908 
+    909 c       write(*,'(1x,a,$)') 't_ob:'
+    910 c       write(*,7) (itob(i),i=1,3),(itob(i),i=5,8)   ! low prof time
+    911 
+    912 c- Pres,Temp,Winds
+
+Page 17          Source Listing                  PREPOBS_PREPACPF
+2017-04-18 11:07                                 prepacpf.f
+
+    913         write(*,'(1x,a        ,$)') '|P'
+    914 c       write(*,'(1x     ,f6.1,$)')       p_tru_8/1.d2  ! pressure (mb)
+    915         write(*,'(1x     ,f6.1,$)')       p_tru_8       ! pressure (mb)
+    916 c       write(*,'(1x,a        ,$)') '|T'
+    917         write(*,'(1x     ,f5.2,$)')      t_tru_db_8-273.15 ! temp db (c)
+    918         write(*,'(     1x,f5.2,$)')      t_tru_dp_8-273.15 ! temp dp (c)
+    919 c       write(*,'(1x,a,$)') '|W'
+    920         write(*,9)                wd_tru_8,ws_tru_8      ! wind dir,spd
+    921 c       write(*,'(1x,a,$)') '|uv'
+    922         write(*,'(2(1x,f5.1,$))') w_u_8,w_v_8       ! wind u-, v- (m/s)
+    923 
+    924 c- Times
+    925 c       write(*,'(/,1x,a,$)') 'stn_t:'
+    926 c       write(*,'(1x,a,$)') '|t'
+    927 c       write(*,8) (idat(i),i=1,3),(idat(i),i=5,6)  ! cycle time
+    928 c...jaw -- dt_tru_8 needs work
+    929         write(*,8) (itru(i),i=1,3),(itru(i),i=5,6)  ! matching gtru time
+    930         write(*,'(1x     ,f8.5,$)') dt_tru_8        ! dt: cycle - gtru
+    931 c       write(*,'(1x,a,1x,f5.3,$)') '|dt',tdif0
+    932 c       write(*,'(1x,a,1x,f8.5,$)') '|td0',tdif0
+    933         write(*,'(1x     ,f8.5,$)') tdif0           ! dt: low prof - gtru
+    934 
+    935         write(*,'(1x     ,f8.5,$)') tdif0-dt_tru_8  ! dt: low prof - cycle
+    936 
+    937     7 format (1x,i4,2i2.2,".",3i2.2,'.',i3.3,$)   ! ccyymmdd.hhmiss.msec
+    938     8 format (1x,i4,2i2.2,".",2i2.2         ,$)   ! ccyymmdd.hhmi
+    939 
+    940 c-jaw #gt_mtch sometimes = 0  -- mod: make stn tbl from gtru file
+    941         write(*,'(1x,a,i3,$)') '|| #gt=', jm
+    942 
+    943         if ( ( nr.eq.nrmin .or. nr.eq.nrmax ) .and. .false. ) 
+    944      &    write(*,'(/,3x,a,2x,a,4(2x,i5),$)') '-> ',
+    945      &    rpid,jm,jmmin,jmmax,nr
+    946 
+    947         write(*,*)
+    948       endif ! wr_stn
+    949 
+    950 
+    951 
+    952 c-- Write output prepbufr profile records
+    953 
+    954       if ( wr_prof ) then 
+    955 
+    956 c-open output message as needed
+    957       call openmb(lunout,ctyp,idate)
+    958 
+    959 c AIRCAR => HEADR ACID {PRSLEVLA}
+    960 
+    961 c HEADR =>
+    962 C     SID XOB YOB DHR ELV TYP T29 TSB ITP SQN PROCN RPT TCOR <RSRD_SEQ>
+    963 c     write(*,'(/,a,$)') '-headr'
+    964 c     rval_8(1)=hdr_8(1)
+    965 c     write(*,*) cval(1),(hdr_8(i),i=2,13)
+    966 ccc   call ufbseq(lunout,hdr_8,MXNM,1,iret,'HEADR')
+    967       usr_8=bmiss
+    968       cnem='SID XOB YOB DHR ELV TYP T29 TSB ITP SQN PROCN RPT TCOR'
+    969       call ufbint(lunpro,usr_8,MXNM,1,iret,cnem)
+
+Page 18          Source Listing                  PREPOBS_PREPACPF
+2017-04-18 11:07                                 prepacpf.f
+
+    970 c--populate HEADR output mnems w/ ground stn info
+    971 c     usr_8(1)=bmiss                                ! stn id -> SID
+    972       usr_8(2)=x_tru_8                              ! stn lat -> XOB
+    973       usr_8(3)=y_tru_8                              ! stn lon -> YOB
+    974 c     usr_8(4)=dt_tru_8                             ! stn time offset -> DHR
+    975       usr_8(4)=dtlow_8                              ! low obs time -> DHR
+    976       if(ibfms(z_tru_8).eq.0) usr_8(5)=int(z_tru_8) ! stn SELV -> ELV
+    977 
+    978 c -- synch RPT w/ ground stn time (not lev1 from prof)..done to here JAW
+    979       rpt_8=dt_tru_8 ; if ( rpt_8.lt.0 ) rpt_8=rpt_8+24.
+    980       usr_8(12)=rpt_8                  ! t_tru - t_cycle (24hr) -> RPT
+    981 
+    982       call ufbint(lunout,usr_8,MXNM,1,iret,cnem)
+    983 
+    984 c RSRD_SEQ == RSRD EXPRSRD
+    985       cnem='RSRD EXPRSRD'     
+    986       call ufbint(lunpro,usr_8,MXNM,1,iret,cnem)
+    987 
+    988 c SID (gr stn ID), ACID (tail #)
+    989       cnem='SID ACID'                  ! in: SID == tail#; ACID == flt#
+    990       call ufbint(lunpro,usr_8,MXNM,1,iret,cnem)
+    991 
+    992       usr_8(2)=usr_8(1)                  ! ACID <- tail# (SID)
+    993       usr_8(1)=rstr_8                    ! SID <- gr stn ID (rpid)
+    994       call ufbint(lunout,usr_8,MXNM,1,iret,cnem)
+    995 
+    996 c PRSLEVLA =>
+    997 c   RCT ROLF MSTQ IALR CAT 
+    998 c       <P___INFO> <Q___INFO> <T___INFO> <Z___INFO> <W___INFO>
+    999 c       <DRFTINFO> <ACFT_SEQ> <TURB1SEQ> <TURB2SEQ> {TURB3SEQ}  ! ver2
+   1000 c       {PREWXSEQ} {CLOUDSEQ} {AFIC_SEQ}  NRLQMS                ! ver2
+   1001 
+   1002       nnem=5        ! # of mnemonics
+   1003       cnem='RCT ROLF MSTQ IALR CAT'
+   1004       call ufbint(lunpro,pro2_8,MXNM, 255,nlev,cnem)
+   1005       out2_8=bmiss 
+   1006       out2_8(1:nnem,2:nlev+1)=pro2_8(1:nnem,1:nlev)
+   1007       out2_8(5,1)=0                ! CAT = 0 == surface report
+   1008       nlev=nlev+1
+   1009       call ufbint(lunout,out2_8,MXNM,nlev,iret,cnem)
+   1010 
+   1011 c P___INFO == [P__EVENT] <P__BACKG> <P__POSTP>
+   1012 c == [POB PQM PPC PRC] <POE PFC <PFCMOD>> <PAN <PCL PCS> POETU PVWTG
+   1013 C     PVWTA>
+   1014       nnem=13       ! # of mnemonics
+   1015       cnem='POB PQM PPC PRC POE PFC PFCMOD PAN PCL PCS ' // 
+   1016      &     'POETU PVWTG PVWTA'
+   1017       call ufbint(lunpro,pro2_8,MXNM, 255,nlev,cnem)
+   1018       out2_8=bmiss
+   1019       out2_8(1:nnem,2:nlev+1)=pro2_8(1:nnem,1:nlev)
+   1020 c     out2_8(1,1)=p_tru_8/1.d2       ! p_tru_8 (mb)
+   1021       out2_8(1,1)=p_tru_8            ! p_tru_8 (mb)
+   1022       nlev=nlev+1
+   1023       call ufbint(lunout,out2_8,MXNM,nlev,iret,cnem)
+   1024 c     write(*,'(a,$)') 'pr'; write(*,'(f8.2,$)')(pro2_8(1,j),j=1,nlev)
+   1025 c     write(*,'(/,a,$)') 'pr'; write(*,'(f8.2,$)')(out2_8(1,j),j=1,nlev)
+   1026 
+
+Page 19          Source Listing                  PREPOBS_PREPACPF
+2017-04-18 11:07                                 prepacpf.f
+
+   1027 c Q___INFO == [Q__EVENT] TDO <Q__BACKG> <Q__POSTP>
+   1028 c == [QOB QQM QPC QRC] TDO <QOE QFC <QFCMOD>> <QAN <QCL QCS> QOETU
+   1029 c     QVWTG QVWTA ESBAK>
+   1030       nnem=15
+   1031       cnem='QOB QQM QPC QRC TDO QOE QFC QFCMOD QAN QCL QCS ' //
+   1032      &     'QOETU QVWTG QVWTA ESBAK'
+   1033       call ufbint(lunpro,pro2_8,MXNM, 255,nlev,cnem)
+   1034       out2_8=bmiss
+   1035       out2_8(1:nnem,2:nlev+1)=pro2_8(1:nnem,1:nlev)
+   1036                                     ! t_tru_dp_8 = gtru_p_8(TMDP)-273.15
+   1037       if(ibfms(t_tru_dp_8).eq.0) out2_8(5,1)=t_tru_dp_8-273.15
+   1038       nlev=nlev+1
+   1039       call ufbint(lunout,out2_8,MXNM,nlev,iret,cnem)
+   1040 
+   1041 c T___INFO == [T__EVENT] TVO <T__BACKG> <T__POSTP>
+   1042 c  == [TOB TQM TPC TRC] TVO <TOE TFC <TFCMOD>> <TAN <TCL TCS> TOETU
+   1043 c      TVWTG TVWTA>
+   1044 
+   1045       nnem=14
+   1046       cnem='TOB TQM TPC TRC TVO TOE TFC TFCMOD TAN TCL TCS ' // 
+   1047      &     'TOETU TVWTG TVWTA'
+   1048       call ufbint(lunpro,pro2_8,MXNM, 255,nlev,cnem)
+   1049       out2_8=bmiss
+   1050       out2_8(1:nnem,2:nlev+1)=pro2_8(1:nnem,1:nlev)
+   1051                                     ! t_tru_db_8 = gtru_p_8(TMDB)-273.15
+   1052       if(ibfms(t_tru_db_8).eq.0) out2_8(1,1)=t_tru_db_8-273.15
+   1053       nlev=nlev+1
+   1054       call ufbint(lunout,out2_8,MXNM,nlev,iret,cnem)
+   1055 
+   1056 c Z___INFO == [Z__EVENT] <Z__BACKG> <Z__POSTP>
+   1057 c  == [ZOB ZQM ZPC ZRC] <ZFC <ZFCMOD>> <ZAN <ZCL ZCS>>
+   1058       nnem=9
+   1059       cnem='ZOB ZQM ZPC ZRC ZFC ZFCMOD ZAN ZCL ZCS'
+   1060       call ufbint(lunpro,pro2_8,MXNM, 255,nlev,cnem)
+   1061       out2_8=bmiss
+   1062       out2_8(1:nnem,2:nlev+1)=pro2_8(1:nnem,1:nlev)
+   1063       out2_8(1,1)=ishgt(lmin)                  ! sfc hgt -> ZOB(1)
+   1064       nlev=nlev+1
+   1065       call ufbint(lunout,out2_8,MXNM,nlev,iret,cnem)
+   1066 
+   1067 c W___INFO == [W__EVENT] [DF_EVENT] <W__BACKG> <W__POSTP> 
+   1068 c  == [UOB VOB WQM WPC WRC] [DDO FFO DFQ DFP DFR] 
+   1069 c        <WOE UFC VFC <UFCMOD VFCMOD>> <UAN VAN <UCL UCS VCL VCS> 
+   1070 c           WOETU WVWTG WVWTA RF10M>
+   1071 
+   1072       nnem=10
+   1073       cnem='UOB VOB WQM WPC WRC DDO FFO DFQ DFP DFR '
+   1074       call ufbint(lunpro,pro2_8,MXNM, 255,nlev,cnem)
+   1075       out2_8=bmiss
+   1076       out2_8(1:nnem,2:nlev+1)=pro2_8(1:nnem,1:nlev)
+   1077       out2_8(1,1)=w_u_8       ! wind u- == f(WDIR,WSPD) (m/s)
+   1078       out2_8(2,1)=w_v_8       ! wind v- == f(WDIR,WSPD) (m/s)
+   1079       out2_8(6,1)=wd_tru_8    ! ddo = wd_tru_8 = gtru_p_8(WDIR)
+   1080       out2_8(7,1)=ws_tru_k_8  ! ffo = ws_tru_k_8 = gtru_p_8(WSPD) (knots)
+   1081                               !  (1 m/s = 1.944 knots)
+   1082       nlev=nlev+1
+   1083       call ufbint(lunout,out2_8,MXNM,nlev,iret,cnem)
+
+Page 20          Source Listing                  PREPOBS_PREPACPF
+2017-04-18 11:07                                 prepacpf.f
+
+   1084 
+   1085       nnem=15
+   1086       cnem='WOE UFC VFC UFCMOD VFCMOD UAN VAN UCL UCS VCL VCS ' //
+   1087      &     'WOETU WVWTG WVWTA RF10M'
+   1088       call ufbint(lunpro,pro2_8,MXNM, 255,nlev,cnem)
+   1089       out2_8=bmiss
+   1090       out2_8(1:nnem,2:nlev+1)=pro2_8(1:nnem,1:nlev)
+   1091 c     no changes to surface level in this sequence
+   1092       nlev=nlev+1
+   1093       call ufbint(lunout,out2_8,MXNM,nlev,iret,cnem)
+   1094 
+   1095 c <DRFTINFO> <ACFT_SEQ> <TURB1SEQ> <TURB2SEQ> =>
+   1096 c  == XDR YDR HRDR  PCAT POAF  TRBX  TRBX10 TRBX21 TRBX32 TRBX43
+   1097       nnem=10
+   1098       cnem='XDR YDR HRDR PCAT POAF TRBX TRBX10 TRBX21 TRBX32 TRBX43'
+   1099       call ufbint(lunpro,pro2_8,MXNM, 255,nlev,cnem)
+   1100       out2_8=bmiss
+   1101       out2_8(1:nnem,2:nlev+1)=pro2_8(1:nnem,1:nlev)
+   1102       out2_8(1,1)=x_tru_8                          ! stn lat -> XDR(1)
+   1103       out2_8(2,1)=y_tru_8                          ! stn lon -> YDR(1)
+   1104       out2_8(3,1)=dt_tru_8                         ! stn dt -> HRDR(1)
+   1105       nlev=nlev+1
+   1106       call ufbint(lunout,out2_8,MXNM,nlev,iret,cnem)
+   1107 
+   1108 
+   1109 c {TURB3SEQ} => DGOT HBOT HTOT
+   1110       nnem=3
+   1111       cnem='DGOT HBOT HTOT'
+   1112       call ufbint(lunpro,pro2_8,MXNM, 255,nlev,cnem)
+   1113       out2_8=bmiss
+   1114       out2_8(1:nnem,2:nlev+1)=pro2_8(1:nnem,1:nlev)
+   1115 c     no changes to surface level in this sequence
+   1116       nlev=nlev+1
+   1117       call ufbint(lunout,out2_8,MXNM,nlev,iret,cnem)
+   1118 c ...jaw -- this needs updating for full replication output
+   1119 
+   1120 
+   1121 c {PREWXSEQ} => PRWE
+   1122       nnem=1
+   1123       cnem='PRWE'
+   1124       call ufbint(lunpro,pro2_8,MXNM, 255,nlev,cnem)
+   1125       out2_8=bmiss
+   1126       out2_8(1:nnem,2:nlev+1)=pro2_8(1:nnem,1:nlev)
+   1127 c     no changes to surface level in this sequence
+   1128       nlev=nlev+1
+   1129       call ufbint(lunout,out2_8,MXNM,nlev,iret,cnem)
+   1130 c ...jaw -- this needs updating for full replication output
+   1131 
+   1132 c {CLOUDSEQ} =>
+   1133 c  == VSSO CLAM CLTP  HOCB HOCT
+   1134       nnem=5
+   1135       cnem='VSSO CLAM CLTP HOCB HOCT'
+   1136       call ufbint(lunpro,pro2_8,MXNM, 255,nlev,cnem)
+   1137       out2_8=bmiss
+   1138       out2_8(1:nnem,2:nlev+1)=pro2_8(1:nnem,1:nlev)
+   1139 c     no changes to surface level in this sequence
+   1140       nlev=nlev+1
+
+Page 21          Source Listing                  PREPOBS_PREPACPF
+2017-04-18 11:07                                 prepacpf.f
+
+   1141       call ufbint(lunout,out2_8,MXNM,nlev,iret,cnem)
+   1142 c ...jaw -- this needs updating for full replication output
+   1143  
+   1144 
+   1145 c {AFIC_SEQ} == AFIC HBOI HTOI
+   1146       nnem=3
+   1147       cnem='AFIC HBOI HTOI'
+   1148       call ufbint(lunpro,pro2_8,MXNM, 255,nlev,cnem)
+   1149       out2_8=bmiss
+   1150       out2_8(1:nnem,2:nlev+1)=pro2_8(1:nnem,1:nlev)
+   1151 c     no changes to surface level in this sequence
+   1152       nlev=nlev+1
+   1153       call ufbint(lunout,out2_8,MXNM,nlev,iret,cnem)
+   1154 c ...jaw -- this needs updating for full replication output
+   1155 
+   1156 
+   1157 c NRLQMS
+   1158       nnem=1
+   1159       cnem='NRLQMS'
+   1160       call ufbint(lunpro,pro2_8,MXNM, 255,nlev,cnem)
+   1161       out2_8=bmiss
+   1162       out2_8(1:nnem,2:nlev+1)=pro2_8(1:nnem,1:nlev)
+   1163 c     no changes to surface level in this sequence
+   1164       nlev=nlev+1
+   1165       call ufbint(lunout,out2_8,MXNM,nlev,iret,cnem)
+   1166 c ...jaw -- this needs updating for full replication output
+   1167 
+   1168 
+   1169 cjaw -- for writing out event stack
+   1170 cjaw  *** DKeyser suggests using UFBCPY then UFBINT ***
+   1171 cjaw  cnem='NRLQM'
+   1172 cjaw  call ufbevn(lunpro,pro3_8,MXNM, 255,nlev,nevn,cnem)
+   1173 cjaw  call ufbseq(lunout,pro3_8,MXNM,nlev,iret,nevn,'NRLQMSEQ')
+   1174 cjaw  write(*,*) 'nrlqm',nlev,nevn,iret
+   1175 cjaw -- for writing out event stack
+   1176 
+   1177 c...jaw -- done to here
+   1178 
+   1179 c *** to repeat events, use UFBIN3 ***
+   1180 c ************************************
+   1181 cjaw  cnem='POB PQM PPC PRC'
+   1182 cjaw  call ufbin3(lunpro,pro3_8,20,10000,255,nlev,nevn,cnem)
+   1183 cjaw  write(*,'(1x,a,2i3,$)') 'P_ev',nlev,nevn
+   1184 
+   1185 cjaw  do j=1,nlev
+   1186 cjaw  write(*,'(/,i2,$)')  j
+   1187 cjaw  write(*,'(i2,4(1x,f7.2,$))') (k,(pro3_8(i,j,k),i=1,4),k=1,nevn)
+   1188 cjaw  enddo ! j=1,nlev
+   1189 c ************************************
+   1190 c *** to repeat events, use UFBIN3 ***
+   1191 
+   1192 
+   1193 
+   1194 c-commit subset/report to output file
+   1195       call writsb(lunout) 
+   1196 
+   1197       nro=nro+1                ! increment counter, # rpts written out
+
+Page 22          Source Listing                  PREPOBS_PREPACPF
+2017-04-18 11:07                                 prepacpf.f
+
+   1198 
+   1199       endif ! wr_prof
+   1200 
+   1201 
+   1202 c--Exit on print or outfile thresholds
+   1203       nr1max=4
+   1204       nr1max=0
+   1205       if ( nr1 .ge. nr1max .and. nr1max.ne.0 ) exit ! debug
+   1206 
+   1207       nromax=12
+   1208       nromax=0
+   1209       if ( nro .ge. nromax .and. nromax.ne.0 ) exit ! debug
+   1210 
+   1211 
+   1212 c--- end of read subset loop -------------------------------------------
+   1213       end do ! while ireadsb
+   1214 
+   1215 c-make exact copy to output
+   1216       if ( .false. ) then  ! skip it (copymg)
+   1217         call copymg(lunpro,lunout)
+   1218       endif ! skip it (copymg)
+   1219 
+   1220       nr1max=4
+   1221       nr1max=0
+   1222       if ( nr1 .ge. nr1max .and. nr1max.ne.0 ) then
+   1223         write(*,*)
+   1224         write(*,*) ' -exiting w/ nr1=',nr1
+   1225         exit ! debug
+   1226       endif ! nr1 > nr1max
+   1227 
+   1228       nromax=12
+   1229       nromax=0
+   1230       if ( nro .ge. nromax .and. nromax.ne.0 ) then
+   1231         write(*,*)
+   1232         write(*,*) ' -exiting w/ nro=',nro
+   1233         exit ! debug
+   1234       endif ! nro > nromax
+   1235 
+   1236       if ( nmsg1.ge.  3 .and. .false.) then 
+   1237         write(*,*)
+   1238         write(*,*) ' -exiting w/ nmsg1=',nmsg1
+   1239         exit ! debug
+   1240       endif ! nmsg1 > 3
+   1241 
+   1242       end do ! while ireadmg
+   1243 
+   1244       if ( wr_prof) call closmg(lunout)
+   1245       if ( wr_prof) call closbf(lunout)
+   1246 
+   1247       write(*,*) ! closing linefeed, debug?
+   1248       write(*,*) '# prof considered =',nr1
+   1249       if (nhi.ne.0) write(*,*) '# rejected: hgt (maxhgt) =',nhi,LOW
+   1250       if (nrare.ne.0) write(*,*) '# rejected: hgt (maxdP) =',nrare,RARE
+   1251       if (nfar.ne.0) write(*,*) '# rejected: far (maxdXY) =',nfar,rNEAR
+   1252       if (nt3.ne.0) write(*,*) '# rejected: typ 3xx =',nt3
+   1253       if (njm0.ne.0) write(*,*) '# rejected: no stn match(njm0):',njm0
+   1254       write(*,*) '# prof output=',nro
+
+Page 23          Source Listing                  PREPOBS_PREPACPF
+2017-04-18 11:07                                 prepacpf.f
+
+   1255 
+   1256       write(*,'(" max dxy=",F12.5)'), dxymax
+   1257 
+   1258       endif ! false/true skip it (lunpro)
+   1259 
+   1260 
+   1261 c-number of matching stations found in gtru
+   1262 c     write(*,*) 'nrmin,jmmin=',nrmin,jmmin
+   1263 c     write(*,*) 'nrmax,jmmax=',nrmax,jmmax
+   1264 
+   1265       write(*,*) 'Normal end of program PREPOBS_PREPACPF'
+   1266       CALL W3TAGE('PREPOBS_PREPACPF')
+   1267       stop
+   1268 
+   1269  901  write(*,*) 'error alloc gtru_*, stat=',i
+   1270       write(*,*) '######ABNORMAL end of program PREPOBS_PREPACPF'
+   1271 c     stop 99
+   1272       CALL W3TAGE('PREPOBS_PREPACPF')
+   1273       call errexit(99)
+   1274 
+   1275       end ! program PREPOBS_PREPACPF
+
+
+ENTRY POINTS
+
+  Name              
+                    
+ MAIN__             
+
+Page 24          Source Listing                  PREPOBS_PREPACPF
+2017-04-18 11:07 Symbol Table                    prepacpf.f
+
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ 1500                       Label  206                                                            204                               
+ 200                        Label  216                                                            192                               
+ 50                         Label  495                                                            491                               
+ 51                         Label  496                                                            492                               
+ 52                         Label  497                                                                                              
+ 6                          Label  337                                                            322                               
+ 61                         Label  575                                                            574                               
+ 62                         Label  697                                                            696                               
+ 63                         Label  700                                                            699                               
+ 64                         Label  703                                                            702                               
+ 65                         Label  706                                                            705                               
+ 66                         Label  709                                                            708                               
+ 7                          Label  937                                                            755,802                           
+ 8                          Label  938                                                            929                               
+ 85                         Label  581                                                            580                               
+ 86                         Label  584                                                            583                               
+ 9                          Label  338                                                            334,920                           
+ 901                        Label  1269                                                           261,265,269                       
+ ABS                        Func   506                                  scalar                    506,507,788                       
+ ALTIM_8                    Local  133      R(8)            8           scalar                    861,863,864                       
+ B1                         Local  232      R(4)            4           scalar                    232,233,241,243,523,524           
+ B2                         Local  241      R(4)            4           scalar                    241,243,524,538                   
+ BINWIDTH                   Local  227      R(4)            4           scalar                    227,228,232,241,521,522,524       
+ BMISS                      Local  82       R(8)            8           scalar                    174,176,457,867,882,883,889,967,10
+                                                                                                  05,1018,1034,1049,1061,1075,1089,1
+                                                                                                  100,1113,1125,1137,1149,1161      
+ BYLEV                      Local  146      L(4)            4           scalar                    146,181,512,618                   
+ CHRX                       Local  88       CHAR            20          scalar                    205                               
+ CLOSBF                     Subr   1245                                                           1245                              
+ CLOSMG                     Subr   1244                                                           1244                              
+ CN                         Local  88       CHAR            2           scalar                    205                               
+ CNEM                       Local  122      CHAR            80          scalar                    454,458,968,969,982,985,986,989,99
+                                                                                                  0,994,1003,1004,1009,1015,1017,102
+                                                                                                  3,1031,1033,1039,1046,1048,1054,10
+                                                                                                  59,1060,1065,1073,1074,1083,1086,1
+                                                                                                  088,1093,1098,1099,1106,1111,1112,
+                                                                                                  1117,1123,1124,1129,1135,1136,1141
+                                                                                                  ,1147,1148,1153,1159,1160,1165    
+ COPYMG                     Subr   1217                                                           1217                              
+ COS                        Func   879                                  scalar                    879                               
+ CSTR                       Local  124      CHAR            8           scalar                    906                               
+ CTYP                       Local  123      CHAR            8           scalar                    392,396,398,404,406,407,412,957   
+ CTYP0                      Local  123      CHAR            8           scalar                    391,404,405,406                   
+ CVAL                       Local  124      CHAR            8     1     5                         324,767,807                       
+ D                          Local  542      R(4)            4           scalar                    542,543,544                       
+ DATELEN                    Subr   251                                                            251                               
+ DEG_RAD                    Param  118      R(4)            4           scalar                    879,880                           
+ DHR_8                      Local  135      R(8)            8           scalar                    447,660                           
+ DLATJ                      Local  667      R(4)            4           scalar                    667                               
+ DLONJ                      Local  666      R(4)            4           scalar                    666                               
+ DMIN                       Local  531      R(4)            4           scalar                    531,543,544,583,605,608           
+
+Page 25          Source Listing                  PREPOBS_PREPACPF
+2017-04-18 11:07 Symbol Table                    prepacpf.f
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ DPRES                      Local  599      R(4)            4           scalar                    599,600,601                       
+ DSQRT                      Func   504                                  scalar                    504,652,668                       
+ DT                         Local  660      R(4)            4           scalar                    660,661                           
+ DTJ                        Local  665      R(4)            4           scalar                    665,673,674                       
+ DTLOW_8                    Local  135      R(8)            8           scalar                    483,748,756,975                   
+ DT_TRU_8                   Local  135      R(8)            8           scalar                    845,930,935,979,1104              
+ DXJ                        Local  668      R(4)            4           scalar                    668,674                           
+ DXY                        Local  652      R(4)            4           scalar                    652,653,654,656                   
+ DXYJ                       Local  504      R(4)            4           scalar                    504,506,507                       
+ DXYJMAX                    Local  502      R(4)            4           scalar                    502,506,507,511,512               
+ DXYMAX                     Local  357      R(4)            4           scalar                    357,656,1256                      
+ EOF                        Local  87       L(4)            4           scalar                    87,191                            
+ ERREXIT                    Subr   401                                                            401,1273                          
+ FLOAT                      Func   209                                  scalar                    209,210,227,232                   
+ GCIRC_QC                   Func   542      R(4)            4           scalar                    542                               
+ GETBMISS                   Func   83       R(8)            8           scalar                    174                               
+ GTRU_P_8                   Local  116      R(8)            8     2     1        ALC              265,266,312,329,331,332,334,861,87
+                                                                                                  1,872,875,876                     
+ GTRU_T_8                   Local  115      R(8)            8     2     1        ALC              261,262,280,281,282,283,284,285,32
+                                                                                                  2,323,324,325,766,772,773,774,775,
+                                                                                                  776,805,808,853,856,857           
+ HDR_8                      Local  128      R(8)            8     1     25                        441,442,443,445,447,448,474       
+ I                          Local  261      I(4)            4           scalar                    261,265,269,270,288,322,323,329,33
+                                                                                                  4,705,708,755,802,805,929,1269    
+ IBFMS                      Func   313      I(4)            4           scalar                    313,695,863,878,886,976,1037,1052 
+ IDAT                       Local  139      I(4)            4     1     8                         739,740,741,742,743,752,844       
+ IDATE                      Local  392      I(4)            4           scalar                    392,407,733,734,735,736,957       
+ IDD                        Local  735      I(4)            4           scalar                    735,742                           
+ IDHGT                      Local  566      I(4)            4           scalar                    566,583,591,592                   
+ IDZ                        Local  688      I(4)            4           scalar                    688,690                           
+ IHGT                       Local  205      I(4)            4           scalar                    205,211                           
+ IHR                        Local  736      I(4)            4           scalar                    736,743                           
+ IMM                        Local  734      I(4)            4           scalar                    734,741                           
+ IMSG                       Local  258      I(4)            4           scalar                    258,259                           
+ INT                        Func   322                                  scalar                    322,325,448,465,474,522,644,694,77
+                                                                                                  2,773,774,775,776,808,907,976     
+ IPOAF                      Local  694      I(4)            4           scalar                    694,695,696                       
+ IREADMG                    Func   392      I(4)            4           scalar                    392                               
+ IREADSB                    Func   419      I(4)            4           scalar                    419                               
+ IRET                       Local  969      I(4)            4           scalar                    969,982,986,990,994,1009,1023,1039
+                                                                                                  ,1054,1065,1083,1093,1106,1117,112
+                                                                                                  9,1141,1153,1165                  
+ ISHGT                      Local  94       I(4)            4     1     20000                     211,566,580,1063                  
+ ISN                        Local  205      I(4)            4           scalar                    205                               
+ ISPR                       Local  205      I(4)            4           scalar                    205                               
+ ITOB                       Local  141      I(4)            4     1     8                         752,755,780                       
+ ITRU                       Local  143      I(4)            4     1     8                         791,844,929                       
+ ITRU0                      Local  142      I(4)            4     1     8                         771,772,773,774,775,776,780,791,80
+                                                                                                  2                                 
+ ITYP                       Local  474      I(4)            4           scalar                    474,475                           
+ IYR                        Local  733      I(4)            4           scalar                    733,740                           
+ IZ                         Local  644      I(4)            4           scalar                    644,645,688                       
+ IZ0                        Local  448      I(4)            4           scalar                    448,688                           
+ IZMIN                      Local  465      I(4)            4           scalar                    465,468,566,577                   
+ J                          Local  231      I(4)            4           scalar                    231,232,236,239,240,243,310,312,32
+
+Page 26          Source Listing                  PREPOBS_PREPACPF
+2017-04-18 11:07 Symbol Table                    prepacpf.f
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+                                                                                                  1,322,323,324,325,329,331,332,334,
+                                                                                                  503,504,505,508,522,523,532,630,63
+                                                                                                  1,632,636,638,640,644,648,652,660,
+                                                                                                  664,665,666,667,668,669,694,695,69
+                                                                                                  9,702,705,708,765,766,772,773,774,
+                                                                                                  775,776,790,800,805,808           
+ J1                         Local  306      I(4)            4           scalar                    306,307,308,310                   
+ J2                         Local  306      I(4)            4           scalar                    306,307,308,310                   
+ JM                         Local  762      I(4)            4           scalar                    762,768,799,822,823,827,830,941,94
+                                                                                                  5                                 
+ JMAX                       Local  508      I(4)            4           scalar                    508,511                           
+ JMMAX                      Local  378      I(4)            4           scalar                    378,823,945                       
+ JMMIN                      Local  377      I(4)            4           scalar                    377,822,945                       
+ K                          Local  629      I(4)            4           scalar                    629,630,631,632                   
+ L                          Local  532      I(4)            4           scalar                    532,534,538,540,541,545,551,556,76
+                                                                                                  4,765                             
+ LAT                        Local  205      I(4)            4           scalar                    205,209                           
+ LINE                       Local  86       CHAR            132         scalar                    192,193,202,204                   
+ LLOW                       Local  464      I(4)            4           scalar                    464,465,480,482,483               
+ LMIN                       Local  534      I(4)            4           scalar                    534,545,566,580,761,1063          
+ LON                        Local  205      I(4)            4           scalar                    205,210                           
+ LOW                        Local  590      I(4)            4           scalar                    590,591,592,1249                  
+ LPTR                       Local  100      I(4)            4     1     180                       236,239,240,243,523,532           
+ LPTR0                      Local  229      I(4)            4           scalar                    229,239,240                       
+ LUNOUT                     Local  106      I(4)            4           scalar                    106,371,372,957,982,994,1009,1023,
+                                                                                                  1039,1054,1065,1083,1093,1106,1117
+                                                                                                  ,1129,1141,1153,1165,1195,1217,124
+                                                                                                  4,1245                            
+ LUNPRO                     Local  105      I(4)            4           scalar                    105,351,364,365,372,392,394,419,44
+                                                                                                  1,458,969,986,990,1004,1017,1033,1
+                                                                                                  048,1060,1074,1088,1099,1112,1124,
+                                                                                                  1136,1148,1160,1217               
+ LUNSTN                     Local  103      I(4)            4           scalar                    103,188,192,221                   
+ LUNTRU                     Local  104      I(4)            4           scalar                    104,252,257,258,347,348           
+ MAXHGT                     Local  467      I(4)            4           scalar                    467,468                           
+ MAXSTN                     Param  90       I(4)            4           scalar                    92,93,94,196,197                  
+ MIN                        Func   503                                  scalar                    503,620,621                       
+ MOD                        Func   734                                  scalar                    734,735,736                       
+ MSUB                       Local  394      I(4)            4           scalar                    394,413                           
+ MUNIT                      Local  258      I(4)            4           scalar                    258                               
+ MXNM                       Param  127      I(4)            4           scalar                    128,129,131,441,458,969,982,986,99
+                                                                                                  0,994,1004,1009,1017,1023,1033,103
+                                                                                                  9,1048,1054,1060,1065,1074,1083,10
+                                                                                                  88,1093,1099,1106,1112,1117,1124,1
+                                                                                                  129,1136,1141,1148,1153,1160,1165 
+ MXPS                       Param  110      I(4)            4           scalar                    265,266                           
+ MXTRU                      Local  257      I(4)            4           scalar                    257,259,261,262,265,266,269,270,30
+                                                                                                  8,340,764                         
+ MXTS                       Param  110      I(4)            4           scalar                    261,262,280,281,282,283,284,285   
+ NDX                        Local  117      I(4)            4     1     1        ALC              269,270,280,281,282,283,284,285,28
+                                                                                                  8,765                             
+ NFAR                       Local  387      I(4)            4           scalar                    387,606,1251                      
+ NGTRU                      Local  790      I(4)            4           scalar                    790,817,853,856,857,861,871,872,87
+                                                                                                  5,876,901                         
+ NHDR                       Local  441      I(4)            4           scalar                    441                               
+
+Page 27          Source Listing                  PREPOBS_PREPACPF
+2017-04-18 11:07 Symbol Table                    prepacpf.f
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ NHI                        Local  385      I(4)            4           scalar                    385,469,593,1249                  
+ NJM0                       Local  379      I(4)            4           scalar                    379,828,830,1253                  
+ NL                         Local  239      I(4)            4           scalar                    239,243                           
+ NLEV                       Local  458      I(4)            4           scalar                    458,503,620,621,624,631,632,634,10
+                                                                                                  04,1006,1008,1009,1017,1019,1022,1
+                                                                                                  023,1033,1035,1038,1039,1048,1050,
+                                                                                                  1053,1054,1060,1062,1064,1065,1074
+                                                                                                  ,1076,1082,1083,1088,1090,1092,109
+                                                                                                  3,1099,1101,1105,1106,1112,1114,11
+                                                                                                  16,1117,1124,1126,1128,1129,1136,1
+                                                                                                  138,1140,1141,1148,1150,1152,1153,
+                                                                                                  1160,1162,1164,1165               
+ NLEVPR                     Local  620      I(4)            4           scalar                    620,621,623,629,631,632           
+ NMSG                       Local  382      I(4)            4           scalar                    382,393                           
+ NMSG1                      Local  384      I(4)            4           scalar                    384,416,1236,1238                 
+ NMSUB                      Func   394      I(4)            4           scalar                    394                               
+ NNEM                       Local  1002     I(4)            4           scalar                    1002,1006,1014,1019,1030,1035,1045
+                                                                                                  ,1050,1058,1062,1072,1076,1085,109
+                                                                                                  0,1097,1101,1110,1114,1122,1126,11
+                                                                                                  34,1138,1146,1150,1158,1162       
+ NPRLC                      Local  314      I(4)            4           scalar                    314,340                           
+ NPTR                       Param  98       I(4)            4           scalar                    100,227,231                       
+ NR                         Local  381      I(4)            4           scalar                    381,413,420,571,822,823,943,945   
+ NR1                        Local  383      I(4)            4           scalar                    383,431,470,1205,1222,1224,1248   
+ NR1MAX                     Local  1203     I(4)            4           scalar                    1203,1204,1205,1220,1221,1222     
+ NRARE                      Local  386      I(4)            4           scalar                    386,602,1250                      
+ NRMAX                      Local  823      I(4)            4           scalar                    823,943                           
+ NRMIN                      Local  822      I(4)            4           scalar                    822,943                           
+ NRO                        Local  389      I(4)            4           scalar                    389,1197,1209,1230,1232,1254      
+ NROMAX                     Local  1207     I(4)            4           scalar                    1207,1208,1209,1228,1229,1230     
+ NS                         Local  190      I(4)            4           scalar                    190,194,196,197,201,202,208,209,21
+                                                                                                  0,211,214,217,219,230,233,234,236,
+                                                                                                  243,530,552,582                   
+ NSTOT                      Local  219      I(4)            4           scalar                    219,556                           
+ NT3                        Local  388      I(4)            4           scalar                    388,476,1252                      
+ NTAB                       Local  262      I(4)            4           scalar                    262,266,280,281,282,283,284,285   
+ OPENBF                     Subr   365                                                            365,372                           
+ OPENMB                     Subr   957                                                            957                               
+ ORDERS                     Subr   280                                                            280,281,282,283,284,285           
+ OUT1_8                     Local  128      R(8)            8     1     25                                                          
+ OUT2_8                     Local  129      R(8)            8     2     6375                      1005,1006,1007,1009,1018,1019,1021
+                                                                                                  ,1023,1034,1035,1037,1039,1049,105
+                                                                                                  0,1052,1054,1061,1062,1063,1065,10
+                                                                                                  75,1076,1077,1078,1079,1080,1083,1
+                                                                                                  089,1090,1093,1100,1101,1102,1103,
+                                                                                                  1104,1106,1113,1114,1117,1125,1126
+                                                                                                  ,1129,1137,1138,1141,1149,1150,115
+                                                                                                  3,1161,1162,1165                  
+ PI                         Param  118      R(4)            4           scalar                    118                               
+ PREPOBS_PREPACPF           Prog   78                                                                                               
+ PRLC_8                     Local  125      R(8)            8           scalar                    312,313                           
+ PRO2_8                     Local  128      R(8)            8     2     6375                      1004,1006,1017,1019,1033,1035,1048
+                                                                                                  ,1050,1060,1062,1074,1076,1088,109
+                                                                                                  0,1099,1101,1112,1114,1124,1126,11
+                                                                                                  36,1138,1148,1150,1160,1162       
+
+Page 28          Source Listing                  PREPOBS_PREPACPF
+2017-04-18 11:07 Symbol Table                    prepacpf.f
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ PSTN_8                     Local  133      R(8)            8           scalar                    864,865                           
+ PSTR                       Local  112      CHAR            80          scalar                    114,266,267,305                   
+ P_F_A                      Local  156      R(4)            4           scalar                    864                               
+ P_TRU_8                    Local  133      R(8)            8           scalar                    865,867,915,1021                  
+ RARE                       Local  590      R(4)            4           scalar                    590,600,601,1250                  
+ RINC                       Local  140      R(4)            4     1     5                         747,748,752,779,780,782,783,784,78
+                                                                                                  5,843,844,846,847,848,849         
+ RLAT0                      Local  445      R(4)            4           scalar                    445,652                           
+ RLATMIN                    Local  482      R(4)            4           scalar                    482,542,574                       
+ RLON                       Local  521      R(4)            4           scalar                    521,522,638,639,640,652           
+ RLON0                      Local  443      R(4)            4           scalar                    443,444,652                       
+ RLONMIN                    Local  480      R(4)            4           scalar                    480,481,521,542,574               
+ RNEAR                      Local  590      R(4)            4           scalar                    590,605,608,1251                  
+ RPID                       Local  124      CHAR            8           scalar                    761,767,905,906,945               
+ RPT_8                      Local  135      R(8)            8           scalar                    979,980                           
+ RSTR_8                     Local  125      R(8)            8           scalar                    993                               
+ RVAL_8                     Local  125      R(8)            8     1     5                         324,442,766                       
+ SETBMISS                   Subr   173                                                            173                               
+ SI4                        Local  88       CHAR            4           scalar                                                      
+ SID                        Local  88       CHAR            8           scalar                    205,208                           
+ SIN                        Func   880                                  scalar                    880                               
+ SLAT                       Local  93       R(4)            4     1     20000                     209,541,580                       
+ SLAT2                      Local  541      R(4)            4           scalar                    541,542                           
+ SLON                       Local  93       R(4)            4     1     20000                     210,233,243,523,538,540,580       
+ SLON2                      Local  540      R(4)            4           scalar                    540,542                           
+ SNAME                      Local  88       CHAR            32          scalar                    205                               
+ ST                         Local  88       CHAR            2           scalar                    205                               
+ STID                       Local  92       CHAR            4     1     20000                     208,580,761                       
+ T                          Local  648      R(4)            4           scalar                    648,649                           
+ TDIF                       Local  782      R(4)            4           scalar                    782,788,789,816                   
+ TDIF0                      Local  763      R(4)            4           scalar                    763,788,789,817,933,935           
+ TSTR                       Local  112      CHAR            80          scalar                    113,262,263,304                   
+ T_TRU_DB_8                 Local  133      R(8)            8           scalar                    872,917,1052                      
+ T_TRU_DP_8                 Local  133      R(8)            8           scalar                    871,918,1037                      
+ UFBINT                     Subr   458                                                            458,969,982,986,990,994,1004,1009,
+                                                                                                  1017,1023,1033,1039,1048,1054,1060
+                                                                                                  ,1065,1074,1083,1088,1093,1099,110
+                                                                                                  6,1112,1117,1124,1129,1136,1141,11
+                                                                                                  48,1153,1160,1165                 
+ UFBMEM                     Subr   258                                                            258                               
+ UFBSEQ                     Subr   441                                                            441                               
+ UFBTAB                     Subr   257                                                            257                               
+ UFBTAM                     Subr   262                                                            262,266                           
+ USR2_8                     Local  131      R(8)            8     2     6375                      457,458,465,480,482,483,504,505,63
+                                                                                                  8,640,644,648,652,660,665,666,667,
+                                                                                                  668,669,694,695,699,702,705,708   
+ USR8_8                     Local  111      R(8)            8           scalar                    257                               
+ USR_8                      Local  131      R(8)            8     1     25                        967,969,972,973,975,976,980,982,98
+                                                                                                  6,990,992,993,994                 
+ VJ                         Local  674      R(4)            4           scalar                    674,675                           
+ W3DIFDAT                   Subr   780                                                            780,844                           
+ W3MOVDAT                   Subr   752                                                            752                               
+ W3TAGB                     Subr   164                                                            164                               
+ W3TAGE                     Subr   400                                                            400,1266,1272                     
+ WD_TRU_8                   Local  134      R(8)            8           scalar                    875,878,879,880,920,1079          
+
+Page 29          Source Listing                  PREPOBS_PREPACPF
+2017-04-18 11:07 Symbol Table                    prepacpf.f
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ WRITSB                     Subr   1195                                                           1195                              
+ WR_HDR                     Local  147      L(4)            4           scalar                    147,489,490                       
+ WR_MATCH                   Local  147      L(4)            4           scalar                    147,753,798                       
+ WR_PROF                    Local  148      L(4)            4           scalar                    148,351,370,954,1244,1245         
+ WR_STN                     Local  147      L(4)            4           scalar                    147,568,592,601,607,893           
+ WS_TRU_8                   Local  134      R(8)            8           scalar                    876,878,879,880,886,887,920       
+ WS_TRU_K_8                 Local  134      R(8)            8           scalar                    887,889,1080                      
+ W_U_8                      Local  134      R(8)            8           scalar                    879,882,922,1077                  
+ W_V_8                      Local  134      R(8)            8           scalar                    880,883,922,1078                  
+ X_GTRU_8                   Local  134      R(8)            8           scalar                    853,854,904                       
+ X_TRU_8                    Local  135      R(8)            8           scalar                    854,855,972,1102                  
+ Y_TRU_8                    Local  135      R(8)            8           scalar                    856,904,973,1103                  
+ Z_TRU_8                    Local  133      R(8)            8           scalar                    857,863,864,907,976               
+
+Page 30          Source Listing                  PREPOBS_PREPACPF
+2017-04-18 11:07                                 prepacpf.f
+
+   1276 
+   1277 
+   1278 c ###################################################################
+   1279 c                            function gcirc_qc
+   1280 c ###################################################################
+   1281 c
+   1282       function gcirc_qc(rlat1,rlon1,rlat2,rlon2)
+   1283 c
+   1284 c This fcn computes great circle distances using the Haversine formula.
+   1285 c Reference: http://www.census.gov/cgi-bin/geo/gisfaq?Q5.1
+   1286 c Programmer: P.M. Pauley 2/24/2000
+   1287 c
+   1288 c Additional reference (JAW 9/13/2007):
+   1289 c   http://www.movable-type.co.uk/scripts/GIS-FAQ-5.1.html.
+   1290 c
+   1291       implicit none
+   1292 c
+   1293       real       pi,deg_rad,radius
+   1294       parameter (pi = 3.14159274, deg_rad = pi/180.) ! conversion factor
+   1295       parameter (radius = 6371229.)                  ! earth's radius(m)
+   1296 c
+   1297       real         gcirc_qc     ! great circle distance
+   1298       real         rlat1        ! first latitude (degrees)
+   1299      $,            rlat2        ! second latitude (degrees)
+   1300      $,            rlon1        ! first longitude (degrees)
+   1301      $,            rlon2        ! second longitude (degrees)
+   1302       real         dlon         ! difference in longitude / 2 (radians)
+   1303      $,            dlat         ! difference in latitude / 2 (radians)
+   1304      $,            arg          ! argument for the arcsin
+   1305 c
+   1306       dlon = (rlon2 - rlon1) * deg_rad * 0.5
+   1307       dlat = (rlat2 - rlat1) * deg_rad * 0.5
+   1308 c
+   1309 c What if longitudes are equal?
+   1310 c -----------------------------
+   1311       if(ifix(rlon1*100.0).eq.ifix(rlon2*100.0)) then
+   1312         gcirc_qc = radius * abs(rlat2 - rlat1) * deg_rad
+   1313 c
+   1314 c What if latitudes are equal?
+   1315 c ----------------------------
+   1316       elseif(ifix(rlat1*100.0).eq.ifix(rlat2*100.0)) then
+   1317         arg = abs(cos(rlat1*deg_rad) * sin(dlon))
+   1318         gcirc_qc = radius * 2.0 * asin(min(1.0,arg))
+   1319 c
+   1320 c What if neither are equal?
+   1321 c --------------------------
+   1322       else
+   1323         arg = (sin(dlat))**2
+   1324      $      + cos(rlat1*deg_rad) * cos(rlat2*deg_rad) * (sin(dlon))**2
+   1325         gcirc_qc = radius * 2.0 * asin(min(1.0,sqrt(arg)))
+   1326       endif
+   1327 c
+   1328       return
+   1329       end  ! function gcirc_qc
+
+Page 31          Source Listing                  GCIRC_QC
+2017-04-18 11:07 Entry Points                    prepacpf.f
+
+
+
+ENTRY POINTS
+
+  Name                 
+                       
+ gcirc_qc_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ ABS                        Func   1312                                 scalar                    1312,1317                         
+ ARG                        Local  1304     R(4)            4           scalar                    1317,1318,1323,1325               
+ ASIN                       Func   1318                                 scalar                    1318,1325                         
+ COS                        Func   1317                                 scalar                    1317,1324                         
+ DEG_RAD                    Param  1293     R(4)            4           scalar                    1306,1307,1312,1317,1324          
+ DLAT                       Local  1303     R(4)            4           scalar                    1307,1323                         
+ DLON                       Local  1302     R(4)            4           scalar                    1306,1317,1324                    
+ GCIRC_QC                   Func   1282     R(4)            4           scalar                    1312,1318,1325                    
+ GCIRC_QC@0                 Local  1282     R(4)            4           scalar                                                      
+ IFIX                       Func   1311                                 scalar                    1311,1316                         
+ MIN                        Func   1318                                 scalar                    1318,1325                         
+ PI                         Param  1293     R(4)            4           scalar                    1294                              
+ RADIUS                     Param  1293     R(4)            4           scalar                    1312,1318,1325                    
+ RLAT1                      Dummy  1282     R(4)            4           scalar   ARG,INOUT        1307,1312,1316,1317,1324          
+ RLAT2                      Dummy  1282     R(4)            4           scalar   ARG,INOUT        1307,1312,1316,1324               
+ RLON1                      Dummy  1282     R(4)            4           scalar   ARG,INOUT        1306,1311                         
+ RLON2                      Dummy  1282     R(4)            4           scalar   ARG,INOUT        1306,1311                         
+ SIN                        Func   1317                                 scalar                    1317,1323,1324                    
+ SQRT                       Func   1325                                 scalar                    1325                              
+
+Page 32          Source Listing                  GCIRC_QC
+2017-04-18 11:07                                 prepacpf.f
+
+   1330 c
+   1331 C-----------------------------------------------------------------------
+   1332 
+
+Page 33          Source Listing                  GCIRC_QC
+2017-04-18 11:07 Subprograms/Common Blocks       prepacpf.f
+
+
+
+SUBPROGRAMS/COMMON BLOCKS
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ GCIRC_QC                   Func   1282     R(4)            4           scalar                    1312,1318,1325                    
+ PREPOBS_PREPACPF           Prog   78                                                                                               
+
+COMPILER OPTIONS BEING USED
+
+       -align noall                          -align nonone
+       -align nocommons                      -align nodcommons
+       -align noqcommons                     -align nozcommons
+       -align records                        -align nosequence
+       -align norec1byte                     -align norec2byte
+       -align norec4byte                     -align norec8byte
+       -align norec16byte                    -align norec32byte
+       -align norec64byte                    -align noarray8byte
+       -align noarray16byte                  -align noarray32byte
+       -align noarray64byte                  -align noarray128byte
+       -align noarray256byte                 -altparam
+       -assume accuracy_sensitive            -assume nobscc
+       -assume nobuffered_io                 -assume nobuffered_stdout
+       -assume nobyterecl                    -assume nocc_omp
+       -assume nocstring                     -assume nodummy_aliases
+       -assume nofpe_summary                 -assume noieee_fpe_flags
+       -assume nominus0                      -assume noold_boz
+       -assume old_complex_align             -assume old_unit_star
+       -assume noold_ldout_format            -assume noold_logical_ldio
+       -assume old_maxminloc                 -assume old_xor
+       -assume noprotect_allocates           -assume protect_constants
+       -assume noprotect_parens              -assume split_common
+       -assume source_include                -assume nostd_intent_in
+       -assume std_minus0_rounding           -assume nostd_mod_proc_name
+       -assume std_value                     -assume norealloc_lhs
+       -assume underscore                    -assume no2underscores
+  no   -auto                                 -auto_scalar
+  no   -bintext                              -ccdefault default
+       -check args                           -check arg_temp_created
+       -check assume                         -check bounds
+       -check format                         -check nooutput_conversion
+       -check overflow                       -check pointers
+       -check power                          -check shape
+       -check stack                          -check underflow
+       -check uninitialized                  -coarray-num-procs 0
+  no   -coarray-config-file                  -convert big_endian
+       -cross_reference                      -D __INTEL_COMPILER=1600
+       -D __INTEL_COMPILER_UPDATE=3          -D __unix__
+       -D __unix                             -D __linux__
+       -D __linux                            -D __gnu_linux__
+       -D unix                               -D linux
+       -D __ELF__                            -D __x86_64
+       -D __x86_64__                         -D __amd64
+       -D __amd64__                          -D __INTEL_COMPILER_BUILD_DATE=20160415
+       -D __INTEL_OFFLOAD                    -D __i686
+       -D __i686__                           -D __pentiumpro
+
+Page 34          Source Listing                  GCIRC_QC
+2017-04-18 11:07                                 prepacpf.f
+
+       -D __pentiumpro__                     -D __pentium4
+       -D __pentium4__                       -D __tune_pentium4__
+       -D __SSE2__                           -D __SSE2_MATH__
+       -D __SSE__                            -D __SSE_MATH__
+       -D __MMX__                            -double_size 64
+  no   -d_lines                         no   -Qdyncom
+       -error_limit 30                  no   -f66
+  no   -f77rtl                          no   -fast
+       -fpscomp nofilesfromcmd               -fpscomp nogeneral
+       -fpscomp noioformat                   -fpscomp noldio_spacing
+       -fpscomp nologicals                   -fixed
+  no   -fpconstant                           -fpe0
+       -fprm nearest                    no   -ftz
+       -fp_model noprecise                   -fp_model fast
+       -fp_model nostrict                    -fp_model nosource
+       -fp_model nodouble                    -fp_model noextended
+       -fp_model novery_fast                 -fp_model noexcept
+       -fp_model nono_except                 -fp_modbits nofp_contract
+       -fp_modbits nono_fp_contract          -fp_modbits nofenv_access
+       -fp_modbits nono_fenv_access          -fp_modbits nocx_limited_range
+       -fp_modbits nono_cx_limited_range       -fp_modbits noprec_div
+       -fp_modbits nono_prec_div             -fp_modbits noprec_sqrt
+       -fp_modbits nono_prec_sqrt            -fp_modbits noftz
+       -fp_modbits nono_ftz                  -fp_modbits nointrin_limited_range
+       -fp_modbits nono_intrin_limited_range       -fp_modbits notrunc_compares
+       -fp_modbits nono_trunc_compares       -fp_modbits noieee_nan_compares
+       -fp_modbits nono_ieee_nan_compares       -fp_modbits honor_f32_conversion
+       -fp_modbits nono_honor_f32_conversion       -fp_modbits honor_f64_conversion
+       -fp_modbits nono_honor_f64_conversion       -fp_modbits nono_x87_copy
+       -fp_modbits nono_no_x87_copy          -fp_modbits noexception_semantics
+       -fp_modbits nono_exception_semantics       -fp_modbits noprecise_libm_functions
+       -fp_modbits nono_precise_libm_functions       -heap_arrays 0
+  no   -threadprivate_compat                 -g2
+       -iface nomixed_str_len_arg            -iface nono_mixed_str_len_arg
+       -init noarrays                        -init noinf
+       -init nonan                           -init snan
+       -init nozero                     no   -intconstant
+       -integer_size 32                 no   -mixed_str_len_arg
+  no   -module                               -names lowercase
+  no   -noinclude                            -offload-build=host
+       -O0                              no   -pad_source
+       -real_size 32                    no   -recursive
+       -reentrancy none                 no   -sharable_localsaves
+       -vec=simd                             -show noinclude
+       -show map                             -show options
+  no   -syntax_only                     no   -threadcom
+  no   -U                               no   -vms
+       -w noall                              -w nonone
+       -w alignments                         -w noargument_checking
+       -w nodeclarations                     -w general
+       -w noignore_bounds                    -w noignore_loc
+       -w nointerfaces                       -w notruncated_source
+       -w uncalled                           -w uninitialized
+       -w nounused                           -w usage
+  no   -wrap-margins
+
+       -includepath : /usrx/local/intel/2016SP3/daal/include/,/usr/include/,.FOR,./.FOR,/usrx/local/intel/2016SP3/ipp/include/.FOR,
+
+Page 35          Source Listing                  GCIRC_QC
+2017-04-18 11:07                                 prepacpf.f
+
+           /usrx/local/intel/2016SP3/mkl/include/.FOR,/usrx/local/intel/2016SP3/tbb/include/.FOR,/usrx/local/intel/2016SP3/daal/include/.FOR,
+           /gpfs/tp1/usrx/local/intel/2016SP3/compilers_and_libraries_2016.3.210/linux/compiler/include/intel64/.FOR,
+           /gpfs/tp1/usrx/local/intel/2016SP3/compilers_and_libraries_2016.3.210/linux/compiler/include/.FOR,/usr/local/include/.FOR,
+           /usr/lib/gcc/x86_64-redhat-linux/4.4.7/include/.FOR,/usr/include/.FOR,/usr/include/.FOR,/usr/include/.FOR
+       -list filename : prepacpf.lst
+       -o    filename : none
+
+COMPILER: Intel(R) Fortran 16.0-1633

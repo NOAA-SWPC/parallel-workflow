@@ -1,0 +1,923 @@
+Page 1           Source Listing                  SUB2MEM_UM
+2017-04-18 11:09                                 sub2mem_um.f
+
+      1 c$$$  Subprogram Documentation Block
+      2 c   BEST VIEWED WITH 94-CHARACTER WIDTH WINDOW
+      3 c
+      4 c Subprogram: sub2mem_um 
+      5 c   Programmer: D. Keyser       Org: NP22       Date: 2012-05-08
+      6 c
+      7 c Abstract: Adds new NRLACQC events for pressure, altitude, temperature, moisture and wind to
+      8 c   the top of event stack in memory for a single merged aircraft report. This is
+      9 c   accomplished via calls to subroutine tranQCflags to translate the QC information (for
+     10 c   each variable) from NRL standards (c_qc_stg array) to their NCEP counterparts and to
+     11 c   establish event reason codes for each variable.
+     12 c
+     13 c Program history log:
+     14 c 2010-11-15  S. Bender -- Original Author
+     15 c 2012-05-08  D. Keyser -- Prepared for operational implementation
+     16 c
+     17 c Usage: call sub2mem_um(c_qc_stg,max_reps,mxnmev,j,nevents,
+     18 c                        pob_ev,pqm_ev,ppc_ev,prc_ev,
+     19 c                        zob_ev,zqm_ev,zpc_ev,zrc_ev,
+     20 c                        tob_ev,tqm_ev,tpc_ev,trc_ev,
+     21 c                        qob_ev,qqm_ev,qpc_ev,qrc_ev,
+     22 c                        uob_ev,vob_ev,wqm_ev,wpc_ev,wrc_ev,
+     23 c     			 nrlacqc_pc,l_allev_pf)
+     24 c
+     25 c   Input argument list:
+     26 c     c_qc_stg    - NRLACQC quality information (11 character string)
+     27 c     max_reps    - Maximum number of reports accepted by acftobs_qc
+     28 c     mxnmev      - Maximum number of events allowed, per variable type
+     29 c     j           - Report number index
+     30 c     nevents     - Array tracking number of events for variables for each report
+     31 c     pob_ev      - Pressure event obs
+     32 c     pqm_ev      - Pressure event quality marks
+     33 c     ppc_ev      - Pressure event program codes
+     34 c     prc_ev      - Pressure event reason codes
+     35 c     zob_ev      - Altitude event obs
+     36 c     zqm_ev      - Altitude event quality marks
+     37 c     zpc_ev      - Altitude event program codes
+     38 c     zrc_ev      - Altitude event reason codes
+     39 c     tob_ev      - Temperature event obs
+     40 c     tqm_ev      - Temperature event quality marks
+     41 c     tpc_ev      - Temperature event program codes
+     42 c     trc_ev      - Temperature event reason codes
+     43 c     qob_ev      - Moisture event obs
+     44 c     qqm_ev      - Moisture event quality marks
+     45 c     qpc_ev      - Moisture event program codes
+     46 c     qrc_ev      - Moisture event reason codes
+     47 c     uob_ev      - Wind/u-comp event obs
+     48 c     vob_ev      - Wind/v-comp event obs
+     49 c     wqm_ev      - Wind event quality marks
+     50 c     wpc_ev      - Wind event program codes
+     51 c     wrc_ev      - Wind event reason codes
+     52 c     nrlacqc_pc  - PREPBUFR program code for the NRLACQC step
+     53 c     l_allev_pf  - Logical whether to process latest (likely NRLACQC) event plus all prior
+     54 c                   events (TRUE) or only latest event (FALSE) into profiles PREPBUFR-like
+     55 c                   file
+     56 c
+     57 c   Output argument list:
+
+Page 2           Source Listing                  SUB2MEM_UM
+2017-04-18 11:09                                 sub2mem_um.f
+
+     58 c     nevents     - Array tracking number of events for variables for each report
+     59 c     pob_ev      - Pressure event obs
+     60 c     ppc_ev      - Pressure event program codes
+     61 c     prc_ev      - Pressure event reason codes
+     62 c     zob_ev      - Altitude event obs
+     63 c     zqm_ev      - Altitude event quality marks
+     64 c     zpc_ev      - Altitude event program codes
+     65 c     zrc_ev      - Altitude event reason codes
+     66 c     tob_ev      - Temperature event obs
+     67 c     tqm_ev      - Temperature event quality marks
+     68 c     tpc_ev      - Temperature event program codes
+     69 c     trc_ev      - Temperature event reason codes
+     70 c     qob_ev      - Moisture event obs
+     71 c     qqm_ev      - Moisture event quality marks
+     72 c     qpc_ev      - Moisture event program codes
+     73 c     qrc_ev      - Moisture event reason codes
+     74 c     uob_ev      - Wind/u-comp event obs
+     75 c     vob_ev      - Wind/v-comp event obs
+     76 c     wqm_ev      - Wind event quality marks
+     77 c     wpc_ev      - Wind event program codes
+     78 c     wrc_ev      - Wind event reason codes
+     79 c
+     80 c   Output files:
+     81 c     Unit 06     - Standard output print
+     82 c
+     83 c   Subprograms called:
+     84 c     Unique:    TRANQCFLAGS
+     85 c     Library:
+     86 c       BUFRLIB: IBFMS
+     87 c
+     88 c   Exit States:
+     89 c     Cond =  0 - successful run
+     90 c
+     91 c Remarks: Called by subroutine output_acqc_prof.
+     92 c
+     93 c Attributes:
+     94 c   Language: FORTRAN 90
+     95 c   Machine:  NCEP WCOSS
+     96 c
+     97 c$$$
+     98       subroutine sub2mem_um(c_qc_stg,max_reps,mxnmev,j,nevents,
+     99      +                      pob_ev,pqm_ev,ppc_ev,prc_ev,
+    100      +                      zob_ev,zqm_ev,zpc_ev,zrc_ev,
+    101      +                      tob_ev,tqm_ev,tpc_ev,trc_ev,
+    102      +                      qob_ev,qqm_ev,qpc_ev,qrc_ev,
+    103      +                      uob_ev,vob_ev,wqm_ev,wpc_ev,wrc_ev,
+    104      +                      nrlacqc_pc,l_allev_pf)
+    105 
+    106       implicit none
+    107 
+    108 c ----------------------
+    109 c Declaration statements
+    110 c ----------------------
+    111 
+    112 c Indices/counters 
+    113 c ----------------
+    114       integer      j                 ! report number index
+
+Page 3           Source Listing                  SUB2MEM_UM
+2017-04-18 11:09                                 sub2mem_um.f
+
+    115 
+    116       character*11 c_qc_stg          ! character QC flags output from NRL QC code
+    117                                      !   1st char - info about reject (if ob was rejected)
+    118                                      !   2nd char - reason why time was rejected
+    119                                      !   3rd char - reason why latitude was rejected
+    120                                      !   4th char - reason why longitude was rejected
+    121                                      !   5th char - reason why pressure/atitude was rejected
+    122                                      !   6th char - readon why temperature was rejected
+    123                                      !   7th char - reason why wind direction was rejected
+    124                                      !   8th char - reason why wind speed was rejected
+    125                                      !   9th char - reason why mixing ratio was rejected
+    126                                      !  10th char - reason for blacklisting the aircraft
+    127                                      !  11th char - info about flight phase
+    128 
+    129 c Variables for updating input reports with QC results/events from NRLACQC
+    130 c ------------------------------------------------------------------------
+    131       logical   l_badrpt_p          ! T = pressure/altitude is bad per NRLACQC info (c_qc_stg)
+    132      +,	        l_badrpt_z          ! T = pressure/altitude is bad per NRLACQC info (c_qc_stg)
+    133      +,         l_badrpt_t          ! T = temperature is bad per NRLACQC info (c_qc_stg)
+    134      +,         l_badrpt_q          ! T = moisture is bad per NRLACQC info (c_qc_stg)
+    135      +,         l_badrpt_w          ! T = wind is bad per NRLACQC info (c_qc_stg)
+    136 
+    137       logical   l_duprpt            ! T = report is marked as a duplicate per NRLACQC info
+    138                                     !  (c_qc_stg(1:1)=D/d)
+    139 
+    140       real*8    pob_topstk          ! event POB at top of stack before adding any events 
+    141                                     !  containing info from NRLACQC
+    142      +,         zob_topstk          ! event ZOB at top of stack before adding any events
+    143                                     !  containing info from NRLACQC
+    144      +,         tob_topstk          ! event TOB at top of stack before adding any events
+    145                                     !  containing info from NRLACQC
+    146      +,	        qob_topstk          ! event QOB at top of stack before adding any events
+    147                                     !  containing info from NRLACQC
+    148      +,	        uob_topstk          ! event UOB at top of stack before adding any events
+    149                                     !  containing info from NRLACQC
+    150      +,	        vob_topstk          ! event VOB at top of stack before adding any events
+    151                                     !  containing info from NRLACQC
+    152 
+    153       integer   ipqm_topstk         ! event PQM at top of stack before adding any events
+    154                                     !  containing info from NRLACQC
+    155      +,         izqm_topstk         ! event ZQM at top of stack before adding any events
+    156                                     !  containing info from NRLACQC
+    157      +,         itqm_topstk         ! event TQM at top of stack before adding any events
+    158                                     !  containing info from NRLACQC
+    159      +,         iqqm_topstk         ! event QQM at top of stack before adding any events
+    160                                     !  containing info from NRLACQC
+    161      +,         iwqm_topstk         ! event WQM at top of stack before adding any events
+    162                                     !  containing info from NRLACQC
+    163 
+    164       integer   ipqm_nrlacqc     ! value for pressure q.m. (PQM) returned from tranQCflags
+    165      +,         iprc_nrlacqc     ! value for pressure r.c. (PRC) returned from tranQCflags
+    166      +,         izqm_nrlacqc     ! value for altitude q.m. (ZQM) returned from tranQCflags
+    167      +,         izrc_nrlacqc     ! value for altitude r.c. (ZRC) returned from tranQCflags
+    168      +,         itqm_nrlacqc     ! value for temperature q.m. (TQM) returned from tranQCflags
+    169      +,         itrc_nrlacqc     ! value for temperature r.c. (TRC) returned from tranQCflags
+    170      +,         iqqm_nrlacqc     ! value for moisture q.m. (QQM) returned from tranQCflags
+    171      +,         iqrc_nrlacqc     ! value for moisture r.c. (QRC) returned from tranQCflags
+
+Page 4           Source Listing                  SUB2MEM_UM
+2017-04-18 11:09                                 sub2mem_um.f
+
+    172      +,         iwqm_nrlacqc     ! value for wind q.m. (WQM) returned from tranQCflags
+    173      +,         iwrc_nrlacqc     ! value for wind r.c. (WRC) returned from tranQCflags
+    174 
+    175 c Variables used to hold original aircraft data read from input PREPBUFR file - necessary for
+    176 c  carrying data through program so that it can be later written to output PREPBUFR-like
+    177 c  profiles file from memory instead of going back to input PREPBUFR file and re-reading that
+    178 c  file before adding any NRLACQC events
+    179 c -------------------------------------------------------------------------------------------
+    180       integer nevents(max_reps,6)   ! array tracking number of events for variables for each
+    181                                     ! report:
+    182                                     !   1 - number of pressure events
+    183                                     !   2 - number of moisture events
+    184                                     !   3 - number of temperature events
+    185                                     !   4 - number of altitude events
+    186                                     !   5 - number of wind (u/v) events
+    187                                     !   6 - number of wind (direction/speed) events
+    188 
+    189       real*8  pob_ev(max_reps,mxnmev) ! POB values for each report, including all events
+    190      +,       pqm_ev(max_reps,mxnmev) ! PQM values for each report, including all events
+    191      +,       ppc_ev(max_reps,mxnmev) ! PPC values for each report, including all events
+    192      +,       prc_ev(max_reps,mxnmev) ! PRC values for each report, including all events
+    193      +,       zob_ev(max_reps,mxnmev) ! ZOB values for each report, including all events
+    194      +,       zqm_ev(max_reps,mxnmev) ! ZQM values for each report, including all events
+    195      +,       zpc_ev(max_reps,mxnmev) ! ZPC values for each report, including all events
+    196      +,       zrc_ev(max_reps,mxnmev) ! ZRC values for each report, including all events
+    197      +,       tob_ev(max_reps,mxnmev) ! TOB values for each report, including all events
+    198      +,       tqm_ev(max_reps,mxnmev) ! TQM values for each report, including all events
+    199      +,       tpc_ev(max_reps,mxnmev) ! TPC values for each report, including all events
+    200      +,       trc_ev(max_reps,mxnmev) ! TRC values for each report, including all events
+    201      +,       qob_ev(max_reps,mxnmev) ! QOB values for each report, including all events
+    202      +,       qqm_ev(max_reps,mxnmev) ! QQM values for each report, including all events
+    203      +,       qpc_ev(max_reps,mxnmev) ! QPC values for each report, including all events
+    204      +,       qrc_ev(max_reps,mxnmev) ! QRC values for each report, including all events
+    205      +,       uob_ev(max_reps,mxnmev) ! UOB values for each report, including all events
+    206      +,       vob_ev(max_reps,mxnmev) ! VOB values for each report, including all events
+    207      +,       wqm_ev(max_reps,mxnmev) ! WQM values for each report, including all events
+    208      +,       wpc_ev(max_reps,mxnmev) ! WPC values for each report, including all events
+    209      +,       wrc_ev(max_reps,mxnmev) ! WRC values for each report, including all events
+    210 
+    211       integer mxnmev,max_reps
+    212 
+    213 c Misc.
+    214 c -----
+    215       real    nrlacqc_pc              ! PREPBUFR program code for the NRLACQC step
+    216 
+    217       integer ibfms                   ! BUFRLIB function for testing for missing
+    218 
+    219       logical l_skip                  ! skip (TRUE) or execute (FALSE) block of code
+    220 
+    221 c Logicals controlling processing (read in from namelist in main program)
+    222 c -----------------------------------------------------------------------
+    223       logical l_allev_pf      ! T=process latest (likely NRLACQC) events plus all prior
+    224                               !   events into profiles PREPBUFR-like file
+    225                               !   **CAUTION: More complete option, but will make code take
+    226                               !              longer to run!!!
+    227                               ! F=process ONLY latest (likely NRLACQC) events into profiles
+    228                               !   PREPBUFR-like file (here means input latest events will
+
+Page 5           Source Listing                  SUB2MEM_UM
+2017-04-18 11:09                                 sub2mem_um.f
+
+    229                               !   likely be written over by NRLACQC events)
+    230                               ! Note : All pre-existing events plus latest (likely NRLACQC)
+    231                               !        events are always encoded into full PREPBUFR file)
+    232 
+    233 
+    234 c *******************************************************************
+    235 
+    236 c Initialize variables
+    237 c --------------------
+    238 
+    239       ipqm_topstk = 9999
+    240       izqm_topstk = 9999
+    241       itqm_topstk = 9999
+    242       iqqm_topstk = 9999
+    243       iwqm_topstk = 9999
+    244 
+    245 c Start subroutine
+    246 c ----------------
+    247 
+    248 c ---------------------------------------------------------------
+    249 c Translate NRLACQC flags to NCEP events and add events to memory
+    250 c ---------------------------------------------------------------
+    251 
+    252 c Also, first initialize the "bad report", "suspect report", and "duplicate report" flags as
+    253 c  false - these flags will be set to true if the NRLACQC quality information (array
+    254 c  c_qc_stg) indicates that the report or any part of it is bad, suspect or a duplicate
+    255 c ------------------------------------------------------------------------------------------
+    256       l_badrpt_p = .false.
+    257       l_badrpt_z = .false.
+    258       l_badrpt_t = .false.
+    259       l_badrpt_q = .false.
+    260       l_badrpt_w = .false.
+    261 
+    262       l_duprpt = .false.
+    263 
+    264 c Pressure
+    265 c --------
+    266 
+    267 c Get pressure OB and QM at top of stack coming in (from memory) and store in pob_topstk and
+    268 c  ipqm_topstk, translate NRLACQC quality flags in c_qc_stg to NCEP standards for pressure
+    269 c  and store in ipqc_nrlacqc, also store reason code in iprc_nrlacqc
+    270 c ------------------------------------------------------------------------------------------
+    271       pob_topstk = pob_ev(j,nevents(j,1))
+    272       if(ibfms(pqm_ev(j,nevents(j,1))).eq.0) then
+    273         if(nint(pqm_ev(j,nevents(j,1))).ge.0.and.
+    274      +     nint(pqm_ev(j,nevents(j,1))).le.15) then
+    275 c PQM for event at top of stack (prior to adding any NRLACQC events)
+    276           ipqm_topstk = nint(pqm_ev(j,nevents(j,1)))
+    277         endif
+    278       endif
+    279 
+    280       call tranQCflags(c_qc_stg,'p',ipqm_nrlacqc,iprc_nrlacqc,
+    281      +                 l_badrpt_p,l_duprpt)
+    282 
+    283 c if PQM = 2 and PRC = 099, returned from tranQCflags, then can't translate!
+    284       if(ipqm_nrlacqc.eq.2 .and. iprc_nrlacqc.eq.099) then
+    285         print *
+
+Page 6           Source Listing                  SUB2MEM_UM
+2017-04-18 11:09                                 sub2mem_um.f
+
+    286         print *, 'Unknown c_qc_stg flag on pressure/altitude:',
+    287      +           c_qc_stg(5:5)
+    288         print *
+    289       endif
+    290 
+    291 c Altitude
+    292 c --------
+    293 
+    294 c Get altitude OB and QM at top of stack coming in (from memory) and store in zob_topstk and
+    295 c  izqm_topstk, translate NRLACQC quality flags in c_qc_stg to NCEP standards for altitude
+    296 c  and store in izqc_nrlacqc, also store reason code in izrc_nrlacqc
+    297 c
+    298 c Use same quality marks for altitude as were used for pressure - NRLACQC has one flag for
+    299 c  both (c_qc_stg(5:5))
+    300 c ------------------------------------------------------------------------------------------
+    301       zob_topstk = zob_ev(j,nevents(j,4))
+    302       if(ibfms(zqm_ev(j,nevents(j,4))).eq.0) then
+    303         if(nint(zqm_ev(j,nevents(j,4))).ge.0.and.
+    304      +     nint(zqm_ev(j,nevents(j,4))).le.15) then
+    305 c ZQM for event at top of stack (prior to adding any NRLACQC events)
+    306           izqm_topstk = nint(zqm_ev(j,nevents(j,4)))
+    307         endif
+    308       endif
+    309 
+    310       call tranQCflags(c_qc_stg,'z',izqm_nrlacqc,izrc_nrlacqc,
+    311      +                 l_badrpt_z,l_duprpt)
+    312 
+    313 c if ZQM = 2 and ZRC = 099 returned from tranQCflags, then can't translate!
+    314       if(izqm_nrlacqc.eq.2 .and. izrc_nrlacqc.eq.099) then
+    315         print *
+    316         print *, 'Unknown c_qc_stg flag on pressure/altitude:',
+    317      +           c_qc_stg(5:5)
+    318         print *
+    319       endif
+    320 
+    321 c Temperature
+    322 c -----------
+    323 
+    324 c Get temperature OB and QM at top of stack coming in (from memory) and store in tob_topstk
+    325 c  and itqm_topstk, translate NRLACQC quality flags in c_qc_stg to NCEP standards for
+    326 c  temperature and store in itqc_nrlacqc, also store reason code in itrc_nrlacqc
+    327 c -----------------------------------------------------------------------------------------
+    328       tob_topstk = tob_ev(j,nevents(j,3))
+    329       if(ibfms(tqm_ev(j,nevents(j,3))).eq.0) then
+    330         if(nint(tqm_ev(j,nevents(j,3))).ge.0.and.
+    331      +     nint(tqm_ev(j,nevents(j,3))).le.15) then
+    332 c TQM for event at top of stack (prior to adding any NRLACQC events)
+    333           itqm_topstk = nint(tqm_ev(j,nevents(j,3)))
+    334         endif
+    335       endif
+    336 
+    337       call tranQCflags(c_qc_stg,'t',itqm_nrlacqc,itrc_nrlacqc,
+    338      +                 l_badrpt_t,l_duprpt)
+    339 
+    340 c if TQM = 2 and TRC = 099 returned from tranQCflags, then can't translate!
+    341       if(itqm_nrlacqc.eq.2 .and. itrc_nrlacqc.eq.099) then
+    342         print *
+
+Page 7           Source Listing                  SUB2MEM_UM
+2017-04-18 11:09                                 sub2mem_um.f
+
+    343         print *, 'Unknown c_qc_stg flag on temperature:',
+    344      +           c_qc_stg(6:6)
+    345         print *
+    346       endif
+    347 
+    348 c Moisture
+    349 c --------
+    350 
+    351 c Get moisture OB and QM at top of stack coming in (from memory) and store in qob_topstk and
+    352 c  iqqm_topstk, translate NRLACQC quality flags in c_qc_stg to NCEP standards for moisture
+    353 c  and store in iqqc_nrlacqc, also store reason code in iqrc_nrlacqc
+    354 c ------------------------------------------------------------------------------------------
+    355       qob_topstk = qob_ev(j,nevents(j,2))
+    356       if(ibfms(qqm_ev(j,nevents(j,2))).eq.0) then
+    357         if(nint(qqm_ev(j,nevents(j,2))).ge.0.and.
+    358      +     nint(qqm_ev(j,nevents(j,2))).le.15) then
+    359 c QQM for event at top of stack (prior to adding any NRLACQC events)
+    360           iqqm_topstk = nint(qqm_ev(j,nevents(j,2)))
+    361         endif
+    362       endif
+    363 
+    364       call tranQCflags(c_qc_stg,'q',iqqm_nrlacqc,iqrc_nrlacqc,
+    365      +                 l_badrpt_q,l_duprpt)
+    366 
+    367 c if QQM = 2 and QRC = 099 returned from tranQCflags, then can't translate!
+    368       if(iqqm_nrlacqc.eq.2 .and. iqrc_nrlacqc.eq.099) then
+    369         print *
+    370         print *, 'Unknown c_qc_stg flag on moisture:',
+    371      +           c_qc_stg(9:9)
+    372         print *
+    373       endif
+    374 
+    375 c Wind
+    376 c ----
+    377 
+    378 c Get wind OB (u- and v-) and QM at top of stack coming in (from memory) and store in
+    379 c  uob_topstk, vob_topstk, and iwqm_topstk, translate NRLACQC quality flags in c_qc_stg to
+    380 c  NCEP standards for wind and store in iwqc_nrlacqc, also store reason code in iwrc_nrlacqc
+    381 c ------------------------------------------------------------------------------------------
+    382       uob_topstk = uob_ev(j,nevents(j,5))
+    383       vob_topstk = vob_ev(j,nevents(j,5))
+    384       if(ibfms(wqm_ev(j,nevents(j,5))).eq.0) then
+    385         if(nint(wqm_ev(j,nevents(j,5))).ge.0.and.
+    386      +     nint(wqm_ev(j,nevents(j,5))).le.15) then
+    387 c WQM for event at top of stack (prior to adding any NRLACQC events)
+    388           iwqm_topstk = nint(wqm_ev(j,nevents(j,5)))
+    389         endif
+    390       endif
+    391 
+    392       call tranQCflags(c_qc_stg,'w',iwqm_nrlacqc,iwrc_nrlacqc,
+    393      +                 l_badrpt_w,l_duprpt)
+    394 
+    395 c if WQM = 2 and WRC = 099 returned from tranQCflags, then can't translate!
+    396       if(iwqm_nrlacqc.eq.2 .and. iwrc_nrlacqc.eq.099) then
+    397         print *
+    398         print *, 'Unknown c_qc_stg flag on wind:',
+    399      +           c_qc_stg(7:7),'/',c_qc_stg(8:8)
+
+Page 8           Source Listing                  SUB2MEM_UM
+2017-04-18 11:09                                 sub2mem_um.f
+
+    400         print *
+    401       endif
+    402 
+    403 c If entire report is to be rejected, put reject flags (QM=13) on pressure, altitude,
+    404 c  temperature, moisture, and wind
+    405 c -----------------------------------------------------------------------------------
+    406       if(l_badrpt_p .or. l_badrpt_z .or.
+    407      +   l_badrpt_t .or. l_badrpt_q .or. l_badrpt_w) then
+    408         ipqm_nrlacqc = 13 ! PQM
+    409     ! PRC already encoded into iprc_nrlacqc in subr. tranQCflags
+    410 
+    411         izqm_nrlacqc = 13 ! ZQM
+    412     ! ZRC already encoded into izrc_nrlacqc in subr. tranQCflags
+    413 
+    414         itqm_nrlacqc = 13 ! TQM
+    415     ! TRC already encoded into itrc_nrlacqc in subr. tranQCflags
+    416 
+    417         iqqm_nrlacqc = 13 ! QQM
+    418     ! QRC already encoded into iqrc_nrlacqc in subr. tranQCflags
+    419 
+    420         iwqm_nrlacqc = 13 ! WQM
+    421     ! WRC already encoded into iwrc_nrlacqc in subr. tranQCflags
+    422 
+    423       endif ! l_badrpt_[p,z,t,q,w]
+    424 
+    425 c If report is marked as a duplicate (c_qc_stg(1:1) = d or D), then mark the entire report
+    426 c  with a bad NCEP quality mark (=13)
+    427 c ----------------------------------------------------------------------------------------
+    428       if(l_duprpt) then
+    429         ipqm_nrlacqc = 13 ! PQM
+    430     ! PRC already encoded into iprc_nrlacqc in subr. tranQCflags
+    431 
+    432         izqm_nrlacqc = 13 ! ZQM
+    433     ! ZRC already encoded into izrc_nrlacqc in subr. tranQCflags
+    434 
+    435         itqm_nrlacqc = 13 ! TQM
+    436     ! TRC already encoded into itrc_nrlacqc in subr. tranQCflags
+    437 
+    438         iqqm_nrlacqc = 13 ! QQM
+    439     ! QRC already encoded into iqrc_nrlacqc in subr. tranQCflags
+    440 
+    441         iwqm_nrlacqc = 13 ! WQM
+    442     ! WRC already encoded into iwrc_nrlacqc in subr. tranQCflags
+    443 
+    444       endif ! l_duprpt
+    445 
+    446 c Update pressure, altitude, temperature, moisture and wind stacks with new event in memory
+    447 c  when there has been a qualty mark change by NRLACQC (don't need to write out an event if
+    448 c  quality mark has not been changed by this program)
+    449 c
+    450 c EXCEPTION: Retain (honor) the incoming quality mark at the top of the stack (i.e., do not
+    451 c            write event) when:
+    452 c
+    453 c       (1) The incoming quality mark at the top of the stack is 0 (keep flag)
+    454 c       (2) The incoming quality mark at the top of the stack is between 4 and 15 (bad) -
+    455 c           except when NRLACQC itself generates a BAD quality mark (translated to NCEP
+    456 c           value of 13), allows reason code to denote why action taken by NRLACQC to mark
+
+Page 9           Source Listing                  SUB2MEM_UM
+2017-04-18 11:09                                 sub2mem_um.f
+
+    457 c           obs as bad
+    458 c       (3) The incoming quality mark at the top of the stack is not between 0 and 15
+    459 c           (i.e.,missing)
+    460 c       (4) The incoming quality mark at the top of the stack is 3 (suspect) and the NRLACQC
+    461 c           generates a GOOD or NEUTRAL or SUSPECT quality mark (translated to NCEP values of
+    462 c           1, 2 and 3 resp.) {in other words, unless an ob previously marked as suspect was
+    463 c           marked bad by NRLACQC, don't change a suspect quality mark assigned by a PREPBUFR
+    464 c           processing step prior to the NRLACQC step}
+    465 c       (5) The quality mark translated to its NCEP value is 2 (neutral) and the reason code
+    466 c           is returned from tranQCflags is 099 - this indicates that the NRLACQC quality
+    467 c           flags in c_qc_stg pertaining to this ob are unknown to transQCflags (the routine
+    468 c           tranQCflags may need to be updated to account for the c_qc_stg flags that is
+    469 c           coming out of the NRLACQC QC routine for this ob - this would probably only
+    470 c           happen if NRL provides an updated/upgraded acftobs_qc module to NCEP)
+    471 c       (6) The NCEP equivalent of the NRLACQC is the same as the incoming quality mark of
+    472 c           the stack - if there is no change in the quality mark, then do not add a new
+    473 c           event and leave the event at the top of the event stack as is with TWO
+    474 c           exceptions:
+    475 c              a) NRLACQC itself generates a GOOD quality mark (translated to NCEP value of
+    476 c                 1)
+    477 c              b) NRLACQC itself generates a BAD quality mark (translated to NCEP value of
+    478 c                 13)  (see 2 above for more on this)
+    479 c -------------------------------------------------------------------------------------------
+    480 
+    481 c Pressure
+    482 c --------
+    483 
+    484       l_skip = .true. ! SKIP LOGIC TO WRITE PRESSURE EVENTS - there is no need to do so since
+    485                       !  pressure is a vertical coordinate and it is not analyzed, in
+    486                       !  addition, adding pressure events complicates reason code logic
+    487 
+    488       if(.not.l_skip) then
+    489 
+    490 c .... if here, include logic to write pressure events
+    491         if(ipqm_topstk.eq.0  .or.
+    492      +    (ipqm_topstk.ge.4 .and. ipqm_topstk.le.15) .or.  ! ob has already been marked bad
+    493                                                            !  by NCEP codes
+    494      +     ipqm_topstk.eq.9999 .or.
+    495      +    (ipqm_topstk.eq.3.and.ipqm_nrlacqc.le.3) .or.
+    496      +    (ipqm_nrlacqc.eq.2.and.iprc_nrlacqc.eq.099) .or.
+    497      +    (ipqm_topstk.eq.ipqm_nrlacqc.and.ipqm_nrlacqc.ne.1)
+    498      +            ) then                               ! no event needed; leave PQM as is
+    499 
+    500           ipqm_nrlacqc = ipqm_topstk
+    501 
+    502         else ! NRL QC produced an event; add this event to top of stack in memory
+    503           if(l_allev_pf) nevents(j,1) = nevents(j,1) + 1 ! add new event (do not write over
+    504                                                          !  event currently at top of stack
+    505                                                          !  since l_allev_pf=TRUE)
+    506           pob_ev(j,nevents(j,1)) = pob_topstk
+    507           pqm_ev(j,nevents(j,1)) = ipqm_nrlacqc
+    508      	  ppc_ev(j,nevents(j,1)) = nrlacqc_pc
+    509      	  prc_ev(j,nevents(j,1)) = iprc_nrlacqc
+    510 
+    511         endif
+    512 
+    513       else
+
+Page 10          Source Listing                  SUB2MEM_UM
+2017-04-18 11:09                                 sub2mem_um.f
+
+    514 
+    515 c .... if here, SKIP logic to write pressure events
+    516         ipqm_nrlacqc = ipqm_topstk
+    517 
+    518       endif
+    519 
+    520 c Altitude
+    521 c --------
+    522 
+    523       l_skip = .true. ! SKIP LOGIC TO WRITE ALTITUDE EVENTS - there is no need to do so since
+    524                       !  altitude is a vertical coordinate and it is not analyzed, in
+    525                       !  addition, adding altitude events complicates reason code logic
+    526 
+    527       if(.not.l_skip) then
+    528 
+    529 c .... if here, include logic to write altitude events
+    530         if(izqm_topstk.eq.0  .or.
+    531      +    (izqm_topstk.ge.4 .and. izqm_topstk.le.15) .or.  ! ob has already been marked bad
+    532                                                            !  by NCEP codes
+    533      +     izqm_topstk.eq.9999 .or.
+    534      +    (izqm_topstk.eq.3.and.izqm_nrlacqc.le.3) .or.
+    535      +    (izqm_nrlacqc.eq.2.and.izrc_nrlacqc.eq.099) .or.
+    536      +    (izqm_topstk.eq.izqm_nrlacqc.and.izqm_nrlacqc.ne.1)
+    537      +            ) then                               ! no event needed; leave ZQM as is
+    538           izqm_nrlacqc = izqm_topstk
+    539 
+    540         else ! NRL QC produced an event; add this event to top of stack in memory
+    541           if(l_allev_pf) nevents(j,4) = nevents(j,4) + 1 ! add new event (do not write over
+    542                                                          !  event currently at top of stack
+    543                                                          !  since l_allev_pf=TRUE)
+    544           zob_ev(j,nevents(j,4)) = zob_topstk
+    545           zqm_ev(j,nevents(j,4)) = izqm_nrlacqc
+    546           zpc_ev(j,nevents(j,4)) = nrlacqc_pc
+    547           zrc_ev(j,nevents(j,4)) = izrc_nrlacqc
+    548      
+    549         endif
+    550 
+    551       else
+    552 
+    553 c .... if here, SKIP logic to write altitude events
+    554         izqm_nrlacqc = izqm_topstk
+    555 
+    556       endif
+    557 
+    558 c Temperature
+    559 c -----------
+    560 
+    561 c Obs/Events
+    562       if((itqm_topstk.eq.0  .or.
+    563      +  (itqm_topstk.ge.4 .and. itqm_topstk.le.15) .or.  ! ob has already been marked bad by
+    564                                                          !  NCEP codes
+    565      +   itqm_topstk.eq.9999 .or.
+    566      +  (itqm_topstk.eq.3.and.itqm_nrlacqc.le.3) .or.
+    567      +  (itqm_nrlacqc.eq.2.and.itrc_nrlacqc.eq.099) .or.
+    568      +  (itqm_topstk.eq.itqm_nrlacqc.and.itqm_nrlacqc.ne.1)
+    569      +        ) .and. (itqm_nrlacqc.ne.13.or.
+    570      +                 itqm_topstk.eq.9999)) then  ! no event needed; leave TQM as is
+
+Page 11          Source Listing                  SUB2MEM_UM
+2017-04-18 11:09                                 sub2mem_um.f
+
+    571         itqm_nrlacqc = itqm_topstk
+    572 
+    573       else ! NRL QC produced an event; add this event to top of stack in memory
+    574         if(l_allev_pf) nevents(j,3) = nevents(j,3) + 1 ! add new event (do not write over
+    575                                                        !  event currently at top of stack
+    576                                                        !  since l_allev_pf=TRUE)
+    577         if(int(itrc_nrlacqc/100).eq.9 .and.
+    578      +     itqm_nrlacqc.eq.13)  itqm_nrlacqc = 14 ! if temperature marked bad here due to it
+    579                                                   !  being on reject list, reset TQM to 14
+    580         tob_ev(j,nevents(j,3)) = tob_topstk
+    581         tqm_ev(j,nevents(j,3)) = itqm_nrlacqc
+    582         tpc_ev(j,nevents(j,3)) = nrlacqc_pc
+    583         trc_ev(j,nevents(j,3)) = itrc_nrlacqc
+    584 
+    585       endif
+    586 
+    587 c Moisture
+    588 c --------
+    589 
+    590 c Obs/Events
+    591       if((iqqm_topstk.eq.0  .or.
+    592      +  (iqqm_topstk.ge.4 .and. iqqm_topstk.le.15) .or.  ! ob has already been marked bad by
+    593                                                          !  NCEP codes
+    594      +   iqqm_topstk.eq.9999 .or.
+    595      +  (iqqm_topstk.eq.3 .and. iqqm_nrlacqc.le.3) .or.
+    596      +  (iqqm_nrlacqc.eq.2.and.iqrc_nrlacqc.eq.099) .or.
+    597      +  (iqqm_topstk.eq.iqqm_nrlacqc.and.iqqm_nrlacqc.ne.1)
+    598      +        ) .and. (iqqm_nrlacqc.ne.13.or.
+    599      +                 iqqm_topstk.eq.9999)) then  ! no event needed; leave QQM as is
+    600         iqqm_nrlacqc = iqqm_topstk
+    601 
+    602       else ! NRL QC produced a new event; add this event to top of stack in memory
+    603         if(l_allev_pf) nevents(j,2) = nevents(j,2) + 1 ! add new event (do not write over
+    604                                                        !  event currently at top of stack
+    605                                                        !  since l_allev_pf=TRUE)
+    606         if(int(iqrc_nrlacqc/100).eq.9 .and.
+    607      +     iqqm_nrlacqc.eq.13)  iqqm_nrlacqc = 14 ! if moisture marked bad here due to
+    608                                                   !  temperature  being on reject list, reset
+    609                                                   !  QQM to 14
+    610         qob_ev(j,nevents(j,2)) = qob_topstk
+    611         qqm_ev(j,nevents(j,2)) = iqqm_nrlacqc
+    612         qpc_ev(j,nevents(j,2)) = nrlacqc_pc
+    613         qrc_ev(j,nevents(j,2)) = iqrc_nrlacqc
+    614 
+    615       endif
+    616 
+    617 c Wind
+    618 c ----
+    619 
+    620 c Obs/Events
+    621       if((iwqm_topstk.eq.0  .or.
+    622      +  (iwqm_topstk.ge.4 .and. iwqm_topstk.le.15) .or.  ! ob has already been marked bad by
+    623                                                          !  NCEP codes
+    624      +   iwqm_topstk.eq.9999 .or.
+    625      +  (iwqm_topstk.eq.3 .and. iwqm_nrlacqc.le.3) .or.
+    626      +  (iwqm_nrlacqc.eq.2.and.iwrc_nrlacqc.eq.099) .or.
+    627      +  (iwqm_topstk.eq.iwqm_nrlacqc.and.iwqm_nrlacqc.ne.1)
+
+Page 12          Source Listing                  SUB2MEM_UM
+2017-04-18 11:09                                 sub2mem_um.f
+
+    628      +        ) .and. (iwqm_nrlacqc.ne.13.or.
+    629      +                 iwqm_topstk.eq.9999)) then  ! no event needed; leave WQM as is
+    630         iwqm_nrlacqc = iwqm_topstk
+    631 
+    632       else ! NRL QC produced a new event; add this event to top of stack in memory
+    633         if(l_allev_pf) nevents(j,5) = nevents(j,5) + 1 ! add new event (do not write over
+    634                                                        !  event currently at top of stack
+    635                                                        !  since l_allev_pf=TRUE)
+    636         if(int(iwrc_nrlacqc/100).eq.9 .and.
+    637      +     iwqm_nrlacqc.eq.13)  iwqm_nrlacqc = 14 ! if wind marked bad here due to it being
+    638                                                   !  on reject list, reset WQM to 14
+    639         uob_ev(j,nevents(j,5)) = uob_topstk
+    640         vob_ev(j,nevents(j,5)) = vob_topstk
+    641         wqm_ev(j,nevents(j,5)) = iwqm_nrlacqc
+    642         wpc_ev(j,nevents(j,5)) = nrlacqc_pc
+    643         wrc_ev(j,nevents(j,5)) = iwrc_nrlacqc
+    644 
+    645       endif
+    646 
+    647       return
+    648 
+    649       end
+
+
+ENTRY POINTS
+
+  Name                   
+                         
+ sub2mem_um_             
+
+Page 13          Source Listing                  SUB2MEM_UM
+2017-04-18 11:09 Symbol Table                    sub2mem_um.f
+
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ C_QC_STG                   Dummy  98       CHAR            11          scalar   ARG,INOUT        280,287,310,317,337,344,364,371,39
+                                                                                                  2,399                             
+ IBFMS                      Func   217      I(4)            4           scalar                    272,302,329,356,384               
+ INT                        Func   577                                  scalar                    577,606,636                       
+ IPQM_NRLACQC               Local  164      I(4)            4           scalar                    280,284,408,429,495,496,497,500,50
+                                                                                                  7,516                             
+ IPQM_TOPSTK                Local  153      I(4)            4           scalar                    239,276,491,492,494,495,497,500,51
+                                                                                                  6                                 
+ IPRC_NRLACQC               Local  165      I(4)            4           scalar                    280,284,496,509                   
+ IQQM_NRLACQC               Local  170      I(4)            4           scalar                    364,368,417,438,595,596,597,598,60
+                                                                                                  0,607,611                         
+ IQQM_TOPSTK                Local  159      I(4)            4           scalar                    242,360,591,592,594,595,597,599,60
+                                                                                                  0                                 
+ IQRC_NRLACQC               Local  171      I(4)            4           scalar                    364,368,596,606,613               
+ ITQM_NRLACQC               Local  168      I(4)            4           scalar                    337,341,414,435,566,567,568,569,57
+                                                                                                  1,578,581                         
+ ITQM_TOPSTK                Local  157      I(4)            4           scalar                    241,333,562,563,565,566,568,570,57
+                                                                                                  1                                 
+ ITRC_NRLACQC               Local  169      I(4)            4           scalar                    337,341,567,577,583               
+ IWQM_NRLACQC               Local  172      I(4)            4           scalar                    392,396,420,441,625,626,627,628,63
+                                                                                                  0,637,641                         
+ IWQM_TOPSTK                Local  161      I(4)            4           scalar                    243,388,621,622,624,625,627,629,63
+                                                                                                  0                                 
+ IWRC_NRLACQC               Local  173      I(4)            4           scalar                    392,396,626,636,643               
+ IZQM_NRLACQC               Local  166      I(4)            4           scalar                    310,314,411,432,534,535,536,538,54
+                                                                                                  5,554                             
+ IZQM_TOPSTK                Local  155      I(4)            4           scalar                    240,306,530,531,533,534,536,538,55
+                                                                                                  4                                 
+ IZRC_NRLACQC               Local  167      I(4)            4           scalar                    310,314,535,547                   
+ J                          Dummy  98       I(4)            4           scalar   ARG,INOUT        271,272,273,274,276,301,302,303,30
+                                                                                                  4,306,328,329,330,331,333,355,356,
+                                                                                                  357,358,360,382,383,384,385,386,38
+                                                                                                  8,503,506,507,508,509,541,544,545,
+                                                                                                  546,547,574,580,581,582,583,603,61
+                                                                                                  0,611,612,613,633,639,640,641,642,
+                                                                                                  643                               
+ L_ALLEV_PF                 Dummy  104      L(4)            4           scalar   ARG,INOUT        503,541,574,603,633               
+ L_BADRPT_P                 Local  131      L(4)            4           scalar                    256,281,406                       
+ L_BADRPT_Q                 Local  134      L(4)            4           scalar                    259,365,407                       
+ L_BADRPT_T                 Local  133      L(4)            4           scalar                    258,338,407                       
+ L_BADRPT_W                 Local  135      L(4)            4           scalar                    260,393,407                       
+ L_BADRPT_Z                 Local  132      L(4)            4           scalar                    257,311,406                       
+ L_DUPRPT                   Local  137      L(4)            4           scalar                    262,281,311,338,365,393,428       
+ L_SKIP                     Local  219      L(4)            4           scalar                    484,488,523,527                   
+ MAX_REPS                   Dummy  98       I(4)            4           scalar   ARG,INOUT        180,189,190,191,192,193,194,195,19
+                                                                                                  6,197,198,199,200,201,202,203,204,
+                                                                                                  205,206,207,208,209               
+ MXNMEV                     Dummy  98       I(4)            4           scalar   ARG,INOUT        189,190,191,192,193,194,195,196,19
+                                                                                                  7,198,199,200,201,202,203,204,205,
+                                                                                                  206,207,208,209                   
+ NEVENTS                    Dummy  98       I(4)            4     2     0        ARG,INOUT        271,272,273,274,276,301,302,303,30
+
+Page 14          Source Listing                  SUB2MEM_UM
+2017-04-18 11:09 Symbol Table                    sub2mem_um.f
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+                                                                                                  4,306,328,329,330,331,333,355,356,
+                                                                                                  357,358,360,382,383,384,385,386,38
+                                                                                                  8,503,506,507,508,509,541,544,545,
+                                                                                                  546,547,574,580,581,582,583,603,61
+                                                                                                  0,611,612,613,633,639,640,641,642,
+                                                                                                  643                               
+ NINT                       Func   273                                  scalar                    273,274,276,303,304,306,330,331,33
+                                                                                                  3,357,358,360,385,386,388         
+ NRLACQC_PC                 Dummy  104      R(4)            4           scalar   ARG,INOUT        508,546,582,612,642               
+ POB_EV                     Dummy  99       R(8)            8     2     0        ARG,INOUT        271,506                           
+ POB_TOPSTK                 Local  140      R(8)            8           scalar                    271,506                           
+ PPC_EV                     Dummy  99       R(8)            8     2     0        ARG,INOUT        508                               
+ PQM_EV                     Dummy  99       R(8)            8     2     0        ARG,INOUT        272,273,274,276,507               
+ PRC_EV                     Dummy  99       R(8)            8     2     0        ARG,INOUT        509                               
+ QOB_EV                     Dummy  102      R(8)            8     2     0        ARG,INOUT        355,610                           
+ QOB_TOPSTK                 Local  146      R(8)            8           scalar                    355,610                           
+ QPC_EV                     Dummy  102      R(8)            8     2     0        ARG,INOUT        612                               
+ QQM_EV                     Dummy  102      R(8)            8     2     0        ARG,INOUT        356,357,358,360,611               
+ QRC_EV                     Dummy  102      R(8)            8     2     0        ARG,INOUT        613                               
+ SUB2MEM_UM                 Subr   98                                                                                               
+ TOB_EV                     Dummy  101      R(8)            8     2     0        ARG,INOUT        328,580                           
+ TOB_TOPSTK                 Local  144      R(8)            8           scalar                    328,580                           
+ TPC_EV                     Dummy  101      R(8)            8     2     0        ARG,INOUT        582                               
+ TQM_EV                     Dummy  101      R(8)            8     2     0        ARG,INOUT        329,330,331,333,581               
+ TRANQCFLAGS                Subr   280                                                            280,310,337,364,392               
+ TRC_EV                     Dummy  101      R(8)            8     2     0        ARG,INOUT        583                               
+ UOB_EV                     Dummy  103      R(8)            8     2     0        ARG,INOUT        382,639                           
+ UOB_TOPSTK                 Local  148      R(8)            8           scalar                    382,639                           
+ VOB_EV                     Dummy  103      R(8)            8     2     0        ARG,INOUT        383,640                           
+ VOB_TOPSTK                 Local  150      R(8)            8           scalar                    383,640                           
+ WPC_EV                     Dummy  103      R(8)            8     2     0        ARG,INOUT        642                               
+ WQM_EV                     Dummy  103      R(8)            8     2     0        ARG,INOUT        384,385,386,388,641               
+ WRC_EV                     Dummy  103      R(8)            8     2     0        ARG,INOUT        643                               
+ ZOB_EV                     Dummy  100      R(8)            8     2     0        ARG,INOUT        301,544                           
+ ZOB_TOPSTK                 Local  142      R(8)            8           scalar                    301,544                           
+ ZPC_EV                     Dummy  100      R(8)            8     2     0        ARG,INOUT        546                               
+ ZQM_EV                     Dummy  100      R(8)            8     2     0        ARG,INOUT        302,303,304,306,545               
+ ZRC_EV                     Dummy  100      R(8)            8     2     0        ARG,INOUT        547                               
+
+Page 15          Source Listing                  SUB2MEM_UM
+2017-04-18 11:09 Subprograms/Common Blocks       sub2mem_um.f
+
+
+
+SUBPROGRAMS/COMMON BLOCKS
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ SUB2MEM_UM                 Subr   98                                                                                               
+
+COMPILER OPTIONS BEING USED
+
+       -align noall                          -align nonone
+       -align nocommons                      -align nodcommons
+       -align noqcommons                     -align nozcommons
+       -align records                        -align nosequence
+       -align norec1byte                     -align norec2byte
+       -align norec4byte                     -align norec8byte
+       -align norec16byte                    -align norec32byte
+       -align norec64byte                    -align noarray8byte
+       -align noarray16byte                  -align noarray32byte
+       -align noarray64byte                  -align noarray128byte
+       -align noarray256byte                 -altparam
+       -assume accuracy_sensitive            -assume nobscc
+       -assume nobuffered_io                 -assume nobuffered_stdout
+       -assume nobyterecl                    -assume nocc_omp
+       -assume nocstring                     -assume nodummy_aliases
+       -assume nofpe_summary                 -assume noieee_fpe_flags
+       -assume nominus0                      -assume noold_boz
+       -assume old_complex_align             -assume old_unit_star
+       -assume noold_ldout_format            -assume noold_logical_ldio
+       -assume old_maxminloc                 -assume old_xor
+       -assume noprotect_allocates           -assume protect_constants
+       -assume noprotect_parens              -assume split_common
+       -assume source_include                -assume nostd_intent_in
+       -assume std_minus0_rounding           -assume nostd_mod_proc_name
+       -assume std_value                     -assume norealloc_lhs
+       -assume underscore                    -assume no2underscores
+  no   -auto                                 -auto_scalar
+  no   -bintext                              -ccdefault default
+       -check noargs                         -check noarg_temp_created
+       -check noassume                       -check nobounds
+       -check noformat                       -check nooutput_conversion
+       -check nooverflow                     -check nopointers
+       -check power                          -check noshape
+       -check nostack                        -check nounderflow
+       -check nouninitialized                -coarray-num-procs 0
+  no   -coarray-config-file                  -convert big_endian
+       -cross_reference                      -D __INTEL_COMPILER=1600
+       -D __INTEL_COMPILER_UPDATE=3          -D __unix__
+       -D __unix                             -D __linux__
+       -D __linux                            -D __gnu_linux__
+       -D unix                               -D linux
+       -D __ELF__                            -D __x86_64
+       -D __x86_64__                         -D __amd64
+       -D __amd64__                          -D __INTEL_COMPILER_BUILD_DATE=20160415
+       -D __INTEL_OFFLOAD                    -D __i686
+       -D __i686__                           -D __pentiumpro
+       -D __pentiumpro__                     -D __pentium4
+
+Page 16          Source Listing                  SUB2MEM_UM
+2017-04-18 11:09                                 sub2mem_um.f
+
+       -D __pentium4__                       -D __tune_pentium4__
+       -D __SSE2__                           -D __SSE2_MATH__
+       -D __SSE__                            -D __SSE_MATH__
+       -D __MMX__                            -double_size 64
+  no   -d_lines                         no   -Qdyncom
+       -error_limit 30                  no   -f66
+  no   -f77rtl                          no   -fast
+       -fpscomp nofilesfromcmd               -fpscomp nogeneral
+       -fpscomp noioformat                   -fpscomp noldio_spacing
+       -fpscomp nologicals                   -fixed
+  no   -fpconstant                           -fpe3
+       -fprm nearest                    no   -ftz
+       -fp_model noprecise                   -fp_model fast
+       -fp_model nostrict                    -fp_model nosource
+       -fp_model nodouble                    -fp_model noextended
+       -fp_model novery_fast                 -fp_model noexcept
+       -fp_model nono_except                 -heap_arrays 0
+  no   -threadprivate_compat                 -g2
+       -iface nomixed_str_len_arg            -iface nono_mixed_str_len_arg
+       -init noarrays                        -init noinf
+       -init nonan                           -init nosnan
+       -init nozero                     no   -intconstant
+       -integer_size 32                 no   -mixed_str_len_arg
+  no   -module                               -names lowercase
+  no   -noinclude                            -offload-build=host
+       -O2                              no   -pad_source
+       -real_size 32                    no   -recursive
+       -reentrancy none                 no   -sharable_localsaves
+       -vec=simd                             -show noinclude
+       -show map                             -show options
+  no   -syntax_only                     no   -threadcom
+  no   -U                               no   -vms
+       -w noall                              -w nonone
+       -w alignments                         -w noargument_checking
+       -w nodeclarations                     -w general
+       -w noignore_bounds                    -w noignore_loc
+       -w nointerfaces                       -w notruncated_source
+       -w uncalled                           -w uninitialized
+       -w nounused                           -w usage
+  no   -wrap-margins
+
+       -includepath : /usrx/local/intel/2016SP3/daal/include/,/usr/include/,.FOR,./.FOR,/usrx/local/intel/2016SP3/ipp/include/.FOR,
+           /usrx/local/intel/2016SP3/mkl/include/.FOR,/usrx/local/intel/2016SP3/tbb/include/.FOR,/usrx/local/intel/2016SP3/daal/include/.FOR,
+           /gpfs/tp1/usrx/local/intel/2016SP3/compilers_and_libraries_2016.3.210/linux/compiler/include/intel64/.FOR,
+           /gpfs/tp1/usrx/local/intel/2016SP3/compilers_and_libraries_2016.3.210/linux/compiler/include/.FOR,/usr/local/include/.FOR,
+           /usr/lib/gcc/x86_64-redhat-linux/4.4.7/include/.FOR,/usr/include/.FOR,/usr/include/.FOR,/usr/include/.FOR
+       -list filename : sub2mem_um.lst
+       -o    filename : none
+
+COMPILER: Intel(R) Fortran 16.0-1633

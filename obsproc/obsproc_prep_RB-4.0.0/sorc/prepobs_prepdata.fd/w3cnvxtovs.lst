@@ -1,0 +1,353 @@
+Page 1           Source Listing                  W3CNVXTOVS
+2017-04-18 11:09                                 w3cnvxtovs.f
+
+      1       SUBROUTINE W3CNVXTOVS (IBUFTN,IFLDUN,stnid,INSTR,KINDX,NN)
+      2 C$$$  SUBPROGRAM DOCUMENTATION BLOCK
+      3 C
+      4 C SUBPROGRAM:    W3CNVXTOVS
+      5 C   PRGMMR: KEYSER           ORG: NP22       DATE: 2014-11-25
+      6 C
+      7 C ABSTRACT: CONVERTS AN RTOVS OR ATOVS REPORT ORIGINALLY IN UNPACKED
+      8 C   NMCEDS FORMAT TO UNPACKED IW3UNPBF FORMAT (AS DESCRIBED IN ROUTINE
+      9 C   IW3UNPBF).  THE UNPACKED NMCEDS FORMAT IS FILLED ONLY WITH THOSE
+     10 C   VALUES NEEDED FOR RTOVS OR ATOVS PROCESSING BY THE PREPDATA
+     11 C   PROGRAM.
+     12 C
+     13 C PROGRAM HISTORY LOG:
+     14 C 1998-02-17  D. A. KEYSER -- ORIGINAL AUTHOR (ADAPTED FROM W3LIB
+     15 C        ROUTINE W3FI43).
+     16 C 1998-06-15  D. A. KEYSER -- ADAPTED FOR USE ONLY WITH RTOVS DATA
+     17 C        (AFTER TOVS DEMISE) (I.E., NO PARTLY-CLOUDY PATH AVAILABLE,
+     18 C        ONLY ESSENTIAL DATA IN UNPACKED NMCEDS FORMAT); WRITES OUT
+     19 C        ONLY CATEGORY 1 IW3UNPBF DATA SINCE THIS IS ALL THAT IS
+     20 C        PROCESSED IN PREPDATA; OTHERWISE STREAMLINED
+     21 C 1998-09-21  D .A. KEYSER -- SUBROUTINE NOW Y2K AND FORTRAN 90
+     22 C        COMPLIANT
+     23 C 1999-11-19  D. A. KEYSER -- INCLUDES NOAA-15 ATOVS DATA (AS WELL AS
+     24 C        RTOVS DATA); RENAMED SUBROUTINE
+     25 C 2001-10-29  D. A. KEYSER -- RETURNS SATELLITE ID AS DEFINED IN
+     26 C        BUFR CODE TABLE 0-01-007 IN WORD 6 OF UNPACKED IW3UNPBF
+     27 C        FORMAT (INTEGER)
+     28 C 2004-09-09  D. A. KEYSER -- MODIFIED INDEXING FOR UNPACKED IW3UNPBF
+     29 C        FORMAT TO COMPLY WITH CHANGES MADE IN ROUTINES IW3UNPBF AND
+     30 C        W3UNPKB7; ALLOW OUTPUT ARGUMENT IFLDUN TO HAVE ADJUSTABLE
+     31 C        DIMENSION BASED ON WHATEVER IS PASSED IN FROM CALLING PROGRAM
+     32 C        (BEFORE WAS ONLY 273 WORDS WHICH DIDN'T MATCH 2500-WORDS IN
+     33 C        prepdata.f - LUCKY MEMORY WASN'T CLOBBERED)
+     34 C 2012-11-30  J. WOOLLEN  INITIAL PORT TO WCOSS 
+     35 C 2013-02-14  D. A. KEYSER -- FINAL CHANGES TO RUN ON WCOSS
+     36 C 2014-11-25  D. A. KEYSER -- NOW OBTAINS THE BUFR SATELLITE ID (FOR
+     37 C        STORING INTO WORD 6 OF OUTPUT ARRAY "IDATA") DIRECTLY FROM
+     38 C        VALUE NOW STORED IN WORD 2 OF INPUT ARRAY "IBUFTN" (VIA A
+     39 C        CORRESPONDING CHANGE TO SUBROUTINE W3XTOVSEDS) RATHER THAN
+     40 C        CALCULATING IT FROM THE LOCAL/NESDIS SATELLITE ID STORED IN
+     41 C        WORD 1 OF "IBUFTN" (REMOVES CONVOLUTED LOGIC BASED ON CENTRAL
+     42 C        DATE YEAR SINCE, UNLIKE THE BUFR SATELLITE ID, THE LOCAL/
+     43 C        NESDIS SATELLITE ID IS NOT UNIQUE FOR EACH SATELLITE - ALSO
+     44 C        THIS SUBROUTINE WILL NEVER AGAIN HAVE TO BE UPDATED TO ACCOUNT
+     45 C        FOR NEW SATELLITES); REMOVED INPUT ARGUMENT "IDATE" (CENTRAL
+     46 C        DATE) SINCE YEAR  {IDATE(1)} IS NO LONGER NEEDED TO OBTAIN
+     47 C        BUFR SATELLITE ID.
+     48 C
+     49 C USAGE:    CALL W3CNVXTOVS(IBUFTN,IFLDUN,STNID,INSTR,KINDX,NN)
+     50 C   INPUT ARGUMENT LIST:
+     51 C     IBUFTN   - ADDRESS HOLDING A SINGLE RTOVS/ATOVS REPORT (140
+     52 C              - INTEGER WORDS) IN UNPACKED NMCEDS FORMAT (THE UNPACKED
+     53 C              - NMCEDS FORMAT IS FILLED ONLY WITH THOSE VALUES NEEDED
+     54 C              - FOR RTOVS/ATOVS PROCESSING BY THE PREPDATA PROGRAM)
+     55 C     INSTR    - INDICATOR FOR RETRIEVAL PATH (EITHER 1 FOR CLEAR OR
+     56 C              - 3 FOR CLOUDY)
+     57 C     KINDX    - INTEGER  1-5 DIGIT NUMBER USED TO GENERATE FIRST
+
+Page 2           Source Listing                  W3CNVXTOVS
+2017-04-18 11:09                                 w3cnvxtovs.f
+
+     58 C              - 5 CHARACTERS OF STATION ID (USUALLY JUST A REPORT
+     59 C              - COUNTER INDEX EXCEPT FIRST NUMBER MAY BE NADIR
+     60 C              - PROXIMITY INDICATOR -- SEE PREPDATA PROGRAM)
+     61 C     NN       - SWITCH TO INDICATE RTOVS (NN=1) OR ATOVS (NN=2)
+     62 C
+     63 C   OUTPUT ARGUMENT LIST:
+     64 C     IFLDUN   - INTEGER *-WORD ARRAY HOLDING A SINGLE RTOVS/ATOVS
+     65 C              - REPORT IN UNPACKED IW3UNPBF FORMAT (SEE ROUTINE
+     66 C              - IW3UNPBF) (NOTE: DOES NOT INCLUDE STATION ID)
+     67 C              - (MUST BE DIMENSIONED TO AT LEAST 283-WORDS BY
+     68 C              - CALLING PROGRAM, ONLY FIRST 283-WORDS ARE FILLED)
+     69 C     STNID    - CHARACTER*8 SINGLE REPORT STATION IDENTIFICATION (UP
+     70 C              - TO 8 CHARACTERS, LEFT-JUSTIFIED)
+     71 C
+     72 C
+     73 C REMARKS: MUST BE CALLED AFTER CALL TO W3FA07 WHICH FILLS IN VALUES
+     74 C          IN COMMON BLOCK /FA07AA/.
+     75 C
+     76 C ATTRIBUTES:
+     77 C   LANGUAGE: FORTRAN 90
+     78 C   MACHINE:  NCEP WCOSS
+     79 C
+     80 C$$$
+     81  
+     82       REAL  RDATA(283),PMAND(20)
+     83  
+     84       INTEGER  IDATA(283),IFLDUN(*),IBUFTN(140)
+     85  
+     86       CHARACTER*1  CSUFX(3,4),CSAT(2)
+     87       CHARACTER*8  STNID
+     88  
+     89       COMMON/FA07AA/TM(20),Z(20),MLVLS
+     90  
+     91       EQUIVALENCE (IDATA,RDATA)
+     92  
+     93       SAVE
+     94  
+     95       DATA  CSUFX /'W','?','Y',    'E','?','G',
+     96      $             'S','?','U',    'A','?','C'/
+     97       DATA  CSAT  /'R','A'/
+     98       DATA  XMISS/99999./,IMISS/99999/
+     99       DATA  PMAND/10000.,8500.,7000.,5000.,4000.,3000.,2500.,2000.,
+    100      $ 1500.,1000.,700.,500.,300.,200.,100.,70.,50.,30.,20.,10./
+    101  
+    102 
+    103 C  INITIALIZE ALL CATEGORY TYPES AND NUMBER OF LEVELS TO ZERO
+    104  
+    105       IDATA(13:52) = 0
+    106  
+    107 C  ALLOWS 21 LEVELS FOR CAT. 1 - THIS IS THE ONLY CATEGORY THAT IS
+    108 C   PROCESSED  (SET ALL WORDS IN CAT. 1 TO MISSING)
+    109  
+    110       RDATA(53:283) = XMISS
+    111  
+    112 C  SET Q.M.'S TO 2 FOR CATEGORY 1 (DEFAULT)
+    113  
+    114       RDATA(59:279:11) = 2.0
+
+Page 3           Source Listing                  W3CNVXTOVS
+2017-04-18 11:09                                 w3cnvxtovs.f
+
+    115       RDATA(60:280:11) = 2.0
+    116       RDATA(61:281:11) = 2.0
+    117       RDATA(62:282:11) = 2.0
+    118       RDATA(63:283:11) = 2.0
+    119  
+    120 C  FILL IN IW3UNPBF REPORT HEADER
+    121  
+    122       RDATA(1)  = IBUFTN(5)/100.
+    123       RDATA(2)  = IBUFTN(6)/100.
+    124       IF(IBUFTN(6).LT.0)  RDATA(2) = 360. + IBUFTN(6)/100.
+    125       IF(RDATA(2).EQ.360.0)  RDATA(2) = 0.0
+    126       RDATA(3)  = 0.
+    127       IHR  = MOD(IBUFTN(3),256)
+    128       IB4  = IBUFTN(4)/256
+    129       XMIN = IB4/60.
+    130       RDATA(4)  = IHR + XMIN
+    131       IDATA(5)  = IMISS
+    132       IDATA(6)  = IBUFTN(2)
+    133       RDATA(7)  = IBUFTN(8)
+    134       IDATA(8)  = IMISS
+    135       IDATA(9)  = 61
+    136       RDATA(10) = 0.
+    137       RDATA(11) = XMISS
+    138       IDATA(12) = IMISS
+    139  
+    140 C  STN. ID: POS. 1-5 FROM 'KINDX', POS. 6 FROM CHAR. BASED ON SATELLITE
+    141 C   NUMBER & RETRIEVAL PATH, POS. 7 INDICATES RTOVS ("R") OR ATOVS ("A")
+    142  
+    143 C       POSITION 6 CHARACTER POSSIBILITIES ARE:
+    144 C            ODD  SATELLITE NUMBERS 3, 7, 11, 15, ETC.:  A, C
+    145 C            ODD  SATELLITE NUMBERS 1, 5,  9, 13, ETC.:  E, G
+    146 C            EVEN SATELLITE NUMBERS 2, 6, 10, 14, ETC.:  S, U
+    147 C            EVEN SATELLITE NUMBERS 4, 8, 12, 16, ETC.:  W, Y
+    148 C    WHERE: CHARACTERS  A, E, S, W  ARE FOR CLEAR PATH (DEFAULT)
+    149 C           CHARACTERS  C, G, U, Y  ARE FOR CLOUDY (MICROWAVE) PATH
+    150  
+    151       MODSAT = MOD(IBUFTN(1),4) + 1
+    152  
+    153 C  STATION IDENTIFICATION IN "STNID" (8 CHARACTERS)
+    154  
+    155       WRITE(STNID,1)  KINDX,CSUFX(INSTR,MODSAT),CSAT(NN)
+    156     1 FORMAT(I5.5,A1,A1,' ')
+    157  
+    158 C  FILL IN IW3UNPBF CATEGORY 1 (MANDATORY LEVEL DATA)
+    159  
+    160       IDATA(13) = MLVLS + 1
+    161       IDATA(14) = 53
+    162       K = 53
+    163  
+    164       DO I = 1,MLVLS
+    165          IF(I.EQ.2)  THEN
+    166             RDATA(K) = 9250.
+    167             K = K + 11
+    168          END IF
+    169          RDATA(K) = PMAND(I)
+    170          RDATA(K+1) = Z(I) + 0.5
+    171          IF(TM(I).LT.10273.)  RDATA(K+2) = (TM(I) - 273.16) * 10.
+
+Page 4           Source Listing                  W3CNVXTOVS
+2017-04-18 11:09                                 w3cnvxtovs.f
+
+    172          K = K + 11
+    173       ENDDO
+    174  
+    175 C  COPY IW3UNPBF FIELD (IDATA) TO IFLDUN FOR TRANSFER OUT OF SUBROUTINE
+    176  
+    177       IFLDUN(1:283) = IDATA
+    178  
+    179       RETURN
+    180       END
+
+
+ENTRY POINTS
+
+  Name                   
+                         
+ w3cnvxtovs_             
+
+
+SYMBOL CROSS REFERENCE
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ 1                          Label  156                                                            155                               
+ CSAT                       Local  86       CHAR            1     1     2        SAVE             97,155                            
+ CSUFX                      Local  86       CHAR            1     2     12       SAVE             95,155                            
+ FA07AA                     Common 89                                   164      SAVE                                               
+ I                          Local  164      I(4)            4           scalar   SAVE             164,165,169,170,171               
+ IB4                        Local  128      I(4)            4           scalar   SAVE             128,129                           
+ IBUFTN                     Dummy  1        I(4)            4     1     140      ARG,INOUT        122,123,124,127,128,132,133,151   
+ IDATA                      Local  84       I(4)            4     1     283      SAVE             105,131,132,134,135,138,160,161,17
+                                                                                                  7                                 
+ IFLDUN                     Dummy  1        I(4)            4     1     0        ARG,INOUT        177                               
+ IHR                        Local  127      I(4)            4           scalar   SAVE             127,130                           
+ IMISS                      Local  98       I(4)            4           scalar   SAVE             98,131,134,138                    
+ INSTR                      Dummy  1        I(4)            4           scalar   ARG,INOUT        155                               
+ K                          Local  162      I(4)            4           scalar   SAVE             162,166,167,169,170,171,172       
+ KINDX                      Dummy  1        I(4)            4           scalar   ARG,INOUT        155                               
+ MLVLS                      Scalar 89       I(4)            4           scalar   COM              160,164                           
+ MOD                        Func   127                                  scalar                    127,151                           
+ MODSAT                     Local  151      I(4)            4           scalar   SAVE             151,155                           
+ NN                         Dummy  1        I(4)            4           scalar   ARG,INOUT        155                               
+ PMAND                      Local  82       R(4)            4     1     20       SAVE             99,169                            
+ RDATA                      Local  82       R(4)            4     1     283      SAVE             110,114,115,116,117,118,122,123,12
+                                                                                                  4,125,126,130,133,136,137,166,169,
+                                                                                                  170,171                           
+ STNID                      Dummy  1        CHAR            8           scalar   ARG,INOUT        155                               
+ TM                         Scalar 89       R(4)            4     1     20       COM              171                               
+ W3CNVXTOVS                 Subr   1                                                                                                
+ XMIN                       Local  129      R(4)            4           scalar   SAVE             129,130                           
+ XMISS                      Local  98       R(4)            4           scalar   SAVE             98,110,137                        
+ Z                          Scalar 89       R(4)            4     1     20       COM              170                               
+
+Page 5           Source Listing                  W3CNVXTOVS
+2017-04-18 11:09 Subprograms/Common Blocks       w3cnvxtovs.f
+
+
+
+SUBPROGRAMS/COMMON BLOCKS
+
+ Name                       Object Declared Type            Bytes Dimen Elements Attributes       References                        
+                                                                                                                                    
+ FA07AA                     Common 89                                   164      SAVE                                               
+ W3CNVXTOVS                 Subr   1                                                                                                
+
+COMPILER OPTIONS BEING USED
+
+       -align noall                          -align nonone
+       -align nocommons                      -align nodcommons
+       -align noqcommons                     -align nozcommons
+       -align records                        -align nosequence
+       -align norec1byte                     -align norec2byte
+       -align norec4byte                     -align norec8byte
+       -align norec16byte                    -align norec32byte
+       -align norec64byte                    -align noarray8byte
+       -align noarray16byte                  -align noarray32byte
+       -align noarray64byte                  -align noarray128byte
+       -align noarray256byte                 -altparam
+       -assume accuracy_sensitive            -assume nobscc
+       -assume nobuffered_io                 -assume nobuffered_stdout
+       -assume nobyterecl                    -assume nocc_omp
+       -assume nocstring                     -assume nodummy_aliases
+       -assume nofpe_summary                 -assume noieee_fpe_flags
+       -assume nominus0                      -assume noold_boz
+       -assume old_complex_align             -assume old_unit_star
+       -assume noold_ldout_format            -assume noold_logical_ldio
+       -assume old_maxminloc                 -assume old_xor
+       -assume noprotect_allocates           -assume protect_constants
+       -assume noprotect_parens              -assume split_common
+       -assume source_include                -assume nostd_intent_in
+       -assume std_minus0_rounding           -assume nostd_mod_proc_name
+       -assume std_value                     -assume norealloc_lhs
+       -assume underscore                    -assume no2underscores
+       -auto                            no   -auto_scalar
+  no   -bintext                              -ccdefault default
+       -check noargs                         -check noarg_temp_created
+       -check noassume                       -check nobounds
+       -check noformat                       -check nooutput_conversion
+       -check nooverflow                     -check nopointers
+       -check power                          -check noshape
+       -check nostack                        -check nounderflow
+       -check nouninitialized                -coarray-num-procs 0
+  no   -coarray-config-file                  -convert big_endian
+       -cross_reference                      -D __INTEL_COMPILER=1600
+       -D __INTEL_COMPILER_UPDATE=3          -D __unix__
+       -D __unix                             -D __linux__
+       -D __linux                            -D __gnu_linux__
+       -D unix                               -D linux
+       -D __ELF__                            -D __x86_64
+       -D __x86_64__                         -D __amd64
+       -D __amd64__                          -D __INTEL_COMPILER_BUILD_DATE=20160415
+       -D __INTEL_OFFLOAD                    -D __i686
+       -D __i686__                           -D __pentiumpro
+
+Page 6           Source Listing                  W3CNVXTOVS
+2017-04-18 11:09                                 w3cnvxtovs.f
+
+       -D __pentiumpro__                     -D __pentium4
+       -D __pentium4__                       -D __tune_pentium4__
+       -D __SSE2__                           -D __SSE2_MATH__
+       -D __SSE__                            -D __SSE_MATH__
+       -D __MMX__                            -double_size 64
+  no   -d_lines                         no   -Qdyncom
+       -error_limit 30                  no   -f66
+  no   -f77rtl                          no   -fast
+       -fpscomp nofilesfromcmd               -fpscomp nogeneral
+       -fpscomp noioformat                   -fpscomp noldio_spacing
+       -fpscomp nologicals                   -fixed
+  no   -fpconstant                           -fpe3
+       -fprm nearest                    no   -ftz
+       -fp_model noprecise                   -fp_model fast
+       -fp_model nostrict                    -fp_model nosource
+       -fp_model nodouble                    -fp_model noextended
+       -fp_model novery_fast                 -fp_model noexcept
+       -fp_model nono_except                 -heap_arrays 0
+  no   -threadprivate_compat                 -g2
+       -iface nomixed_str_len_arg            -iface nono_mixed_str_len_arg
+       -init noarrays                        -init noinf
+       -init nonan                           -init nosnan
+       -init nozero                     no   -intconstant
+       -integer_size 32                 no   -mixed_str_len_arg
+  no   -module                               -names lowercase
+  no   -noinclude                            -offload-build=host
+       -O2                              no   -pad_source
+       -real_size 32                    no   -recursive
+       -reentrancy none                 no   -sharable_localsaves
+       -vec=simd                             -show noinclude
+       -show map                             -show options
+  no   -syntax_only                     no   -threadcom
+  no   -U                               no   -vms
+       -w noall                              -w nonone
+       -w alignments                         -w noargument_checking
+       -w nodeclarations                     -w general
+       -w noignore_bounds                    -w noignore_loc
+       -w nointerfaces                       -w notruncated_source
+       -w uncalled                           -w uninitialized
+       -w nounused                           -w usage
+  no   -wrap-margins
+
+       -includepath : /usrx/local/intel/2016SP3/daal/include/,/usr/include/,.FOR,./.FOR,/usrx/local/intel/2016SP3/ipp/include/.FOR,
+           /usrx/local/intel/2016SP3/mkl/include/.FOR,/usrx/local/intel/2016SP3/tbb/include/.FOR,/usrx/local/intel/2016SP3/daal/include/.FOR,
+           /gpfs/tp1/usrx/local/intel/2016SP3/compilers_and_libraries_2016.3.210/linux/compiler/include/intel64/.FOR,
+           /gpfs/tp1/usrx/local/intel/2016SP3/compilers_and_libraries_2016.3.210/linux/compiler/include/.FOR,/usr/local/include/.FOR,
+           /usr/lib/gcc/x86_64-redhat-linux/4.4.7/include/.FOR,/usr/include/.FOR,/usr/include/.FOR,/usr/include/.FOR
+       -list filename : w3cnvxtovs.lst
+       -o    filename : none
+
+COMPILER: Intel(R) Fortran 16.0-1633
